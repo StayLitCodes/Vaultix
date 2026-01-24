@@ -13,4 +13,9 @@ pub enum EscrowError {
     DuplicateParty = 7,
     InvalidAmount = 8,
     ConditionsNotMet = 9,
+    InvalidState = 10,
+    UnauthorizedParty = 11,
+    OverDeposit = 12,
+    AlreadyDeposited = 13,
+    ReentrancyDetected = 14,
 }

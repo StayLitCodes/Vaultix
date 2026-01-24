@@ -105,6 +105,8 @@ impl EscrowContract {
             state: EscrowState::Pending,
             created_at: env.ledger().timestamp(),
             expires_at,
+            deposits: soroban_sdk::Map::new(&env),
+            total_deposited: 0,
         };
         
         // Store escrow in persistent storage
@@ -134,45 +136,140 @@ impl EscrowContract {
         env: Env,
         escrow_id: BytesN<32>,
         depositor: Address,
+        token_address: Address,
         amount: i128,
     ) -> Result<(), EscrowError> {
-        // Placeholder implementation - returns error for now
-        Err(EscrowError::EscrowNotFound)
-    }
+        // Reentrancy protection: use a storage-based lock flag
+        let lock_key = ("deposit_lock", escrow_id.clone());
+        if env.storage().temporary().has(&lock_key) {
+            return Err(EscrowError::ReentrancyDetected);
+        }
+        env.storage().temporary().set(&lock_key, &true);
 
-    /// Confirms participation in an escrow by a party
-    ///
-    /// # Arguments
-    /// * `escrow_id` - The unique identifier of the escrow
-    /// * `party` - The address of the confirming party
-    pub fn confirm(
-        env: Env,
-        escrow_id: BytesN<32>,
-        party: Address,
-    ) -> Result<(), EscrowError> {
-        // Placeholder implementation - returns error for now
-        Err(EscrowError::EscrowNotFound)
-    }
+        // Check if escrow exists
+        let mut escrow = match EscrowStorage::get_escrow(&env, &escrow_id) {
+            Some(e) => e,
+            None => return Err(EscrowError::EscrowNotFound),
+        };
 
-    /// Releases funds from escrow to the intended recipient
-    ///
-    /// # Arguments
-    /// * `escrow_id` - The unique identifier of the escrow
-    /// * `releaser` - The address authorized to release funds
-    pub fn release(
-        env: Env,
-        escrow_id: BytesN<32>,
-        releaser: Address,
-    ) -> Result<(), EscrowError> {
-        // Placeholder implementation - returns error for now
-        Err(EscrowError::EscrowNotFound)
-    }
+        // Only allow deposit if escrow is Pending or Active
+        match escrow.state {
+            EscrowState::Pending | EscrowState::Active => {},
+            _ => return Err(EscrowError::InvalidState),
+        }
 
-    /// Initiates a dispute for an escrow agreement
-    ///
-    /// # Arguments
-    /// * `escrow_id` - The unique identifier of the escrow
-    /// * `disputer` - The address initiating the dispute
+        // Check if depositor is a party
+        let is_party = escrow.parties.iter().any(|p| p.address == depositor);
+        if !is_party {
+            return Err(EscrowError::UnauthorizedParty);
+        }
+
+        // Prevent zero or negative deposit
+        if amount <= 0 {
+            return Err(EscrowError::InvalidAmount);
+        }
+
+        // Prevent over-deposit
+        let remaining = escrow.amount - escrow.total_deposited;
+        if amount > remaining {
+            return Err(EscrowError::OverDeposit);
+        }
+
+        // Prevent duplicate full deposit
+        if escrow.total_deposited == escrow.amount {
+            return Err(EscrowError::AlreadyDeposited);
+        }
+
+        // Update per-party deposit
+        let mut party_deposit = escrow.deposits.get(depositor.clone()).unwrap_or(0);
+        party_deposit += amount;
+        escrow.deposits.set(depositor.clone(), party_deposit);
+
+        // Authenticate the depositor
+        depositor.require_auth();
+
+        // Check if escrow exists
+        let mut escrow = match EscrowStorage::get_escrow(&env, &escrow_id) {
+            Some(e) => e,
+            None => return Err(EscrowError::EscrowNotFound),
+        };
+
+        // Only allow deposit if escrow is Pending or Active
+        match escrow.state {
+            EscrowState::Pending | EscrowState::Active => {},
+            _ => return Err(EscrowError::InvalidState),
+        }
+
+        // Check if depositor is a party
+        let is_party = escrow.parties.iter().any(|p| p.address == depositor);
+        if !is_party {
+            return Err(EscrowError::UnauthorizedParty);
+        }
+
+        // Prevent zero or negative deposit
+        if amount <= 0 {
+            return Err(EscrowError::InvalidAmount);
+        }
+
+        // Prevent over-deposit
+        let remaining = escrow.amount - escrow.total_deposited;
+        if amount > remaining {
+            return Err(EscrowError::OverDeposit);
+        }
+
+        // Prevent duplicate full deposit
+        if escrow.total_deposited == escrow.amount {
+            return Err(EscrowError::AlreadyDeposited);
+        }
+
+        // Reentrancy protection: use a storage-based lock flag
+        let lock_key = ("deposit_lock", escrow_id.clone());
+        if env.storage().temporary().has(&lock_key) {
+            return Err(EscrowError::ReentrancyDetected);
+        }
+        env.storage().temporary().set(&lock_key, &true);
+
+        // Token transfer logic
+        let token_client = soroban_sdk::token::Client::new(&env, &token_address);
+        let balance = token_client.balance(&depositor);
+        if balance < amount {
+            env.storage().temporary().remove(&lock_key);
+            return Err(EscrowError::InsufficientFunds);
+        }
+        token_client.transfer(&depositor, &env.current_contract_address(), &amount);
+
+        // Update per-party deposit
+        let mut party_deposit = escrow.deposits.get(depositor.clone()).unwrap_or(0);
+        party_deposit += amount;
+        escrow.deposits.set(depositor.clone(), party_deposit);
+
+        // Update total deposited
+        escrow.total_deposited += amount;
+
+        // State transition: Pending -> Active if fully funded
+        if escrow.total_deposited == escrow.amount {
+            escrow.state = EscrowState::Active;
+        }
+
+        // Store updated escrow
+        EscrowStorage::store_escrow(&env, &escrow_id, &escrow);
+
+        // Emit deposit event
+        let event = events::EscrowDeposited {
+            escrow_id: escrow_id.clone(),
+            depositor: depositor.clone(),
+            amount,
+            total_deposited: escrow.total_deposited,
+        };
+        env.events().publish(
+            events::EscrowDeposited::TOPIC,
+            event
+        );
+
+        env.storage().temporary().remove(&lock_key); // Release lock
+        Ok(())
+    }
+        
     pub fn dispute(
         env: Env,
         escrow_id: BytesN<32>,
@@ -201,8 +298,151 @@ impl EscrowContract {
     }
 }
 
+
 #[cfg(test)]
 mod tests {
+        #[test]
+        fn test_deposit_authorized_party() {
+            let env = Env::default();
+            let contract_id = env.register_contract(None, EscrowContract);
+            let client = EscrowContractClient::new(&env, &contract_id);
+
+            let party1 = <soroban_sdk::Address as AddressTestUtils>::generate(&env);
+            let party2 = <soroban_sdk::Address as AddressTestUtils>::generate(&env);
+            let parties = vec![&env, party1.clone(), party2.clone()];
+            let amount = 1000i128;
+            let conditions_hash = BytesN::from_array(&env, &[1u8; 32]);
+            let escrow_id = client.create_escrow(&parties, &amount, &conditions_hash, &None);
+
+            // Authorized deposit
+            let deposit_amount = 400i128;
+            let result = client.deposit(&escrow_id, &party1, &deposit_amount);
+            assert!(result.is_ok());
+            let escrow = client.get_escrow(&escrow_id).unwrap();
+            assert_eq!(escrow.total_deposited, deposit_amount);
+            assert_eq!(escrow.state, EscrowState::Pending);
+        }
+
+        #[test]
+        fn test_deposit_unauthorized_party() {
+            let env = Env::default();
+            let contract_id = env.register_contract(None, EscrowContract);
+            let client = EscrowContractClient::new(&env, &contract_id);
+
+            let party1 = <soroban_sdk::Address as AddressTestUtils>::generate(&env);
+            let party2 = <soroban_sdk::Address as AddressTestUtils>::generate(&env);
+            let not_party = <soroban_sdk::Address as AddressTestUtils>::generate(&env);
+            let parties = vec![&env, party1.clone(), party2.clone()];
+            let amount = 1000i128;
+            let conditions_hash = BytesN::from_array(&env, &[1u8; 32]);
+            let escrow_id = client.create_escrow(&parties, &amount, &conditions_hash, &None);
+
+            // Unauthorized deposit
+            let result = client.try_deposit(&escrow_id, &not_party, &100i128);
+            assert!(result.is_err());
+            assert_eq!(result.err().unwrap(), EscrowError::UnauthorizedParty);
+        }
+
+        #[test]
+        fn test_deposit_full_transitions_active() {
+            let env = Env::default();
+            let contract_id = env.register_contract(None, EscrowContract);
+            let client = EscrowContractClient::new(&env, &contract_id);
+
+            let party1 = <soroban_sdk::Address as AddressTestUtils>::generate(&env);
+            let party2 = <soroban_sdk::Address as AddressTestUtils>::generate(&env);
+            let parties = vec![&env, party1.clone(), party2.clone()];
+            let amount = 1000i128;
+            let conditions_hash = BytesN::from_array(&env, &[1u8; 32]);
+            let escrow_id = client.create_escrow(&parties, &amount, &conditions_hash, &None);
+
+            // Full deposit
+            let result = client.deposit(&escrow_id, &party1, &1000i128);
+            assert!(result.is_ok());
+            let escrow = client.get_escrow(&escrow_id).unwrap();
+            assert_eq!(escrow.total_deposited, 1000i128);
+            assert_eq!(escrow.state, EscrowState::Active);
+        }
+
+        #[test]
+        fn test_deposit_partial_updates_balance() {
+            let env = Env::default();
+            let contract_id = env.register_contract(None, EscrowContract);
+            let client = EscrowContractClient::new(&env, &contract_id);
+
+            let party1 = <soroban_sdk::Address as AddressTestUtils>::generate(&env);
+            let party2 = <soroban_sdk::Address as AddressTestUtils>::generate(&env);
+            let parties = vec![&env, party1.clone(), party2.clone()];
+            let amount = 1000i128;
+            let conditions_hash = BytesN::from_array(&env, &[1u8; 32]);
+            let escrow_id = client.create_escrow(&parties, &amount, &conditions_hash, &None);
+
+            // Partial deposit
+            let result1 = client.deposit(&escrow_id, &party1, &400i128);
+            let result2 = client.deposit(&escrow_id, &party2, &300i128);
+            assert!(result1.is_ok() && result2.is_ok());
+            let escrow = client.get_escrow(&escrow_id).unwrap();
+            assert_eq!(escrow.total_deposited, 700i128);
+            assert_eq!(escrow.state, EscrowState::Pending);
+        }
+
+        #[test]
+        fn test_deposit_to_nonexistent_escrow() {
+            let env = Env::default();
+            let contract_id = env.register_contract(None, EscrowContract);
+            let client = EscrowContractClient::new(&env, &contract_id);
+
+            let party = <soroban_sdk::Address as AddressTestUtils>::generate(&env);
+            let escrow_id = BytesN::from_array(&env, &[9u8; 32]);
+            let result = client.try_deposit(&escrow_id, &party, &100i128);
+            assert!(result.is_err());
+            assert_eq!(result.err().unwrap(), EscrowError::EscrowNotFound);
+        }
+
+        #[test]
+        fn test_deposit_over_deposit() {
+            let env = Env::default();
+            let contract_id = env.register_contract(None, EscrowContract);
+            let client = EscrowContractClient::new(&env, &contract_id);
+
+            let party1 = <soroban_sdk::Address as AddressTestUtils>::generate(&env);
+            let party2 = <soroban_sdk::Address as AddressTestUtils>::generate(&env);
+            let parties = vec![&env, party1.clone(), party2.clone()];
+            let amount = 1000i128;
+            let conditions_hash = BytesN::from_array(&env, &[1u8; 32]);
+            let escrow_id = client.create_escrow(&parties, &amount, &conditions_hash, &None);
+
+            // Over deposit
+            let result = client.try_deposit(&escrow_id, &party1, &2000i128);
+            assert!(result.is_err());
+            assert_eq!(result.err().unwrap(), EscrowError::OverDeposit);
+        }
+
+        #[test]
+        fn test_deposit_event_emitted() {
+            let env = Env::default();
+            let contract_id = env.register_contract(None, EscrowContract);
+            let client = EscrowContractClient::new(&env, &contract_id);
+
+            let party1 = <soroban_sdk::Address as AddressTestUtils>::generate(&env);
+            let party2 = <soroban_sdk::Address as AddressTestUtils>::generate(&env);
+            let parties = vec![&env, party1.clone(), party2.clone()];
+            let amount = 1000i128;
+            let conditions_hash = BytesN::from_array(&env, &[1u8; 32]);
+            let escrow_id = client.create_escrow(&parties, &amount, &conditions_hash, &None);
+
+            let deposit_amount = 500i128;
+            let _ = client.deposit(&escrow_id, &party1, &deposit_amount);
+            let events = env.events().all();
+            let deposit_event = events.iter().find(|e| e.topic.0 == "escrow" && e.topic.1 == "deposited");
+            assert!(deposit_event.is_some());
+            let event = deposit_event.unwrap();
+            let event_tuple: (BytesN<32>, Address, i128, i128) = event.data.clone().try_into().unwrap();
+            assert_eq!(event_tuple.0, escrow_id);
+            assert_eq!(event_tuple.1, party1);
+            assert_eq!(event_tuple.2, deposit_amount);
+            assert_eq!(event_tuple.3, deposit_amount);
+        }
     use super::*;
     use soroban_sdk::testutils::{Address as AddressTestUtils, Events as EventsTestUtils};
     use soroban_sdk::{vec, Address, Env};

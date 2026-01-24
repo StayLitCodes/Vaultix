@@ -27,4 +27,6 @@ pub struct EscrowAgreement {
     pub state: EscrowState,
     pub created_at: u64,
     pub expires_at: Option<u64>,
+    pub total_deposited: i128,
+    pub deposits: soroban_sdk::Map<Address, i128>,
 }

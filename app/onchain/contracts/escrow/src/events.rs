@@ -1,4 +1,4 @@
-use soroban_sdk::{Address, BytesN, Vec};
+use soroban_sdk::{Address, BytesN, Vec, contracttype};
 
 /// Event emitted when a new escrow is created
 pub struct EscrowCreated {
@@ -16,6 +16,9 @@ impl EscrowCreated {
 }
 
 /// Event emitted when funds are deposited into an escrow
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EscrowDeposited {
     pub escrow_id: BytesN<32>,
     pub depositor: Address,
