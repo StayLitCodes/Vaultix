@@ -19,7 +19,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 },
                 {
-                  "i128": "50"
+                  "i128": "0"
                 }
               ]
             }
@@ -57,7 +57,7 @@
               "function_name": "create_escrow",
               "args": [
                 {
-                  "u64": "2"
+                  "u64": "105"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
@@ -74,7 +74,7 @@
                             "symbol": "amount"
                           },
                           "val": {
-                            "i128": "5000"
+                            "i128": "10000"
                           }
                         },
                         {
@@ -82,39 +82,7 @@
                             "symbol": "description"
                           },
                           "val": {
-                            "symbol": "Phase1"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "status"
-                          },
-                          "val": {
-                            "vec": [
-                              {
-                                "symbol": "Pending"
-                              }
-                            ]
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "map": [
-                        {
-                          "key": {
-                            "symbol": "amount"
-                          },
-                          "val": {
-                            "i128": "5000"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "description"
-                          },
-                          "val": {
-                            "symbol": "Phase2"
+                            "symbol": "NoFee"
                           }
                         },
                         {
@@ -172,7 +140,7 @@
               "function_name": "release_milestone",
               "args": [
                 {
-                  "u64": "2"
+                  "u64": "105"
                 },
                 {
                   "u32": 0
@@ -187,7 +155,6 @@
         }
       ]
     ],
-    [],
     [],
     []
   ],
@@ -255,7 +222,7 @@
                     "symbol": "escrow"
                   },
                   {
-                    "u64": "2"
+                    "u64": "105"
                   }
                 ]
               },
@@ -283,7 +250,7 @@
                                 "symbol": "amount"
                               },
                               "val": {
-                                "i128": "5000"
+                                "i128": "10000"
                               }
                             },
                             {
@@ -291,7 +258,7 @@
                                 "symbol": "description"
                               },
                               "val": {
-                                "symbol": "Phase1"
+                                "symbol": "NoFee"
                               }
                             },
                             {
@@ -302,38 +269,6 @@
                                 "vec": [
                                   {
                                     "symbol": "Released"
-                                  }
-                                ]
-                              }
-                            }
-                          ]
-                        },
-                        {
-                          "map": [
-                            {
-                              "key": {
-                                "symbol": "amount"
-                              },
-                              "val": {
-                                "i128": "5000"
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "description"
-                              },
-                              "val": {
-                                "symbol": "Phase2"
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "status"
-                              },
-                              "val": {
-                                "vec": [
-                                  {
-                                    "symbol": "Pending"
                                   }
                                 ]
                               }
@@ -376,7 +311,7 @@
                       "symbol": "total_released"
                     },
                     "val": {
-                      "i128": "5000"
+                      "i128": "10000"
                     }
                   }
                 ]
@@ -407,7 +342,7 @@
                         "symbol": "fee_bps"
                       },
                       "val": {
-                        "i128": "50"
+                        "i128": "0"
                       }
                     },
                     {
@@ -532,59 +467,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "5000"
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "authorized"
-                    },
-                    "val": {
-                      "bool": true
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "clawback"
-                    },
-                    "val": {
-                      "bool": false
-                    }
-                  }
-                ]
-              }
-            }
-          },
-          "ext": "v0"
-        },
-        "live_until": 518400
-      },
-      {
-        "entry": {
-          "last_modified_ledger_seq": 0,
-          "data": {
-            "contract_data": {
-              "ext": "v0",
-              "contract": "CCABDO7UZXYE4W6GVSEGSNNZTKSLFQGKXXQTH6OX7M7GKZ4Z6CUJNGZN",
-              "key": {
-                "vec": [
-                  {
-                    "symbol": "Balance"
-                  },
-                  {
-                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                  }
-                ]
-              },
-              "durability": "persistent",
-              "val": {
-                "map": [
-                  {
-                    "key": {
-                      "symbol": "amount"
-                    },
-                    "val": {
-                      "i128": "25"
+                      "i128": "0"
                     }
                   },
                   {
@@ -636,7 +519,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "4975"
+                      "i128": "10000"
                     }
                   },
                   {

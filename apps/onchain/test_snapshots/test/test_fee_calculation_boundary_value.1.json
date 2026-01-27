@@ -57,7 +57,7 @@
               "function_name": "create_escrow",
               "args": [
                 {
-                  "u64": "2"
+                  "u64": "103"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
@@ -74,7 +74,7 @@
                             "symbol": "amount"
                           },
                           "val": {
-                            "i128": "5000"
+                            "i128": "200"
                           }
                         },
                         {
@@ -82,39 +82,7 @@
                             "symbol": "description"
                           },
                           "val": {
-                            "symbol": "Phase1"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "status"
-                          },
-                          "val": {
-                            "vec": [
-                              {
-                                "symbol": "Pending"
-                              }
-                            ]
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "map": [
-                        {
-                          "key": {
-                            "symbol": "amount"
-                          },
-                          "val": {
-                            "i128": "5000"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "description"
-                          },
-                          "val": {
-                            "symbol": "Phase2"
+                            "symbol": "Boundary"
                           }
                         },
                         {
@@ -153,7 +121,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
                 },
                 {
-                  "i128": "10000"
+                  "i128": "200"
                 }
               ]
             }
@@ -172,7 +140,7 @@
               "function_name": "release_milestone",
               "args": [
                 {
-                  "u64": "2"
+                  "u64": "103"
                 },
                 {
                   "u32": 0
@@ -187,7 +155,6 @@
         }
       ]
     ],
-    [],
     [],
     []
   ],
@@ -255,7 +222,7 @@
                     "symbol": "escrow"
                   },
                   {
-                    "u64": "2"
+                    "u64": "103"
                   }
                 ]
               },
@@ -283,7 +250,7 @@
                                 "symbol": "amount"
                               },
                               "val": {
-                                "i128": "5000"
+                                "i128": "200"
                               }
                             },
                             {
@@ -291,7 +258,7 @@
                                 "symbol": "description"
                               },
                               "val": {
-                                "symbol": "Phase1"
+                                "symbol": "Boundary"
                               }
                             },
                             {
@@ -302,38 +269,6 @@
                                 "vec": [
                                   {
                                     "symbol": "Released"
-                                  }
-                                ]
-                              }
-                            }
-                          ]
-                        },
-                        {
-                          "map": [
-                            {
-                              "key": {
-                                "symbol": "amount"
-                              },
-                              "val": {
-                                "i128": "5000"
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "description"
-                              },
-                              "val": {
-                                "symbol": "Phase2"
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "status"
-                              },
-                              "val": {
-                                "vec": [
-                                  {
-                                    "symbol": "Pending"
                                   }
                                 ]
                               }
@@ -368,7 +303,7 @@
                       "symbol": "total_amount"
                     },
                     "val": {
-                      "i128": "10000"
+                      "i128": "200"
                     }
                   },
                   {
@@ -376,7 +311,7 @@
                       "symbol": "total_released"
                     },
                     "val": {
-                      "i128": "5000"
+                      "i128": "200"
                     }
                   }
                 ]
@@ -532,7 +467,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "5000"
+                      "i128": "0"
                     }
                   },
                   {
@@ -584,7 +519,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "25"
+                      "i128": "1"
                     }
                   },
                   {
@@ -636,7 +571,7 @@
                       "symbol": "amount"
                     },
                     "val": {
-                      "i128": "4975"
+                      "i128": "199"
                     }
                   },
                   {
