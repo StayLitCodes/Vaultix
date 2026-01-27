@@ -54,7 +54,7 @@ const Footer: React.FC = () => {
             </div>
             <p className="mt-2 text-gray-400 max-w-md">
               Building the future of decentralized applications powered by
-              Stellar's revolutionary Layer 2 technology.
+              Stellar&apos;s revolutionary Layer 2 technology.
             </p>
           </div>
 
