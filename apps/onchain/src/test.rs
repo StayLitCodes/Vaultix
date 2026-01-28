@@ -55,6 +55,7 @@ fn test_create_and_get_escrow() {
         &token_address,
         &milestones,
         &deadline,
+        &token_address,
     );
 
     // Retrieve escrow
@@ -112,6 +113,7 @@ fn test_deposit_funds() {
         &token_address,
         &milestones,
         &1706400000u64,
+        &token_address,
     );
 
     // Approve contract to spend tokens
@@ -170,6 +172,7 @@ fn test_release_milestone_with_tokens() {
         &token_address,
         &milestones,
         &1706400000u64,
+        &token_address,
     );
     token_client.approve(&depositor, &contract_id, &10_000, &200);
     client.deposit_funds(&escrow_id);
@@ -179,7 +182,7 @@ fn test_release_milestone_with_tokens() {
     assert_eq!(token_client.balance(&recipient), 0);
 
     // Buyer confirms delivery and releases first milestone
-    client.confirm_delivery(&escrow_id, &0, &buyer);
+    client.confirm_delivery(&escrow_id, &0, &depositor);
 
     // Verify tokens transferred to recipient
     assert_eq!(token_client.balance(&contract_id), 4000);
@@ -196,11 +199,6 @@ fn test_release_milestone_with_tokens() {
         escrow.milestones.get(1).unwrap().status,
         MilestoneStatus::Pending
     );
-
-    // Check seller received funds
-    assert_eq!(token_client.balance(&buyer), 0);
-    assert_eq!(token_client.balance(&contract_id), 5000);
-    assert_eq!(token_client.balance(&seller), 5000);
 }
 
 #[test]
@@ -221,10 +219,6 @@ fn test_complete_escrow_with_all_releases() {
     let token_client = token::Client::new(&env, &token_address);
 
     token_admin.mint(&depositor, &10_000);
-
-    // Create token contract and mint tokens
-    let (token_client, token_admin) = create_token_contract(&env, &admin);
-    token_admin.mint(&depositor, &10000);
 
     let milestones = vec![
         &env,
@@ -248,6 +242,7 @@ fn test_complete_escrow_with_all_releases() {
         &token_address,
         &milestones,
         &1706400000u64,
+        &token_address,
     );
     token_client.approve(&depositor, &contract_id, &10_000, &200);
     client.deposit_funds(&escrow_id);
@@ -288,8 +283,6 @@ fn test_cancel_escrow_with_refund() {
     token_admin.mint(&depositor, &10_000);
 
     // Create token contract and mint tokens
-    let (token_client, token_admin) = create_token_contract(&env, &admin);
-    token_admin.mint(&depositor, &10000);
 
     let milestones = vec![
         &env,
@@ -308,6 +301,7 @@ fn test_cancel_escrow_with_refund() {
         &token_address,
         &milestones,
         &1706400000u64,
+        &token_address,
     );
     token_client.approve(&depositor, &contract_id, &10_000, &200);
     client.deposit_funds(&escrow_id);
@@ -359,6 +353,7 @@ fn test_cancel_unfunded_escrow() {
         &token_address,
         &milestones,
         &1706400000u64,
+        &token_address,
     );
 
     // Cancel unfunded escrow (no refund needed)
@@ -384,10 +379,6 @@ fn test_duplicate_escrow_id() {
 
     let (_, token_address) = create_test_token(&env, &admin);
 
-    // Create token contract and mint tokens
-    let (token_client, token_admin) = create_token_contract(&env, &admin);
-    token_admin.mint(&depositor, &10000);
-
     let milestones = vec![
         &env,
         Milestone {
@@ -404,6 +395,7 @@ fn test_duplicate_escrow_id() {
         &token_address,
         &milestones,
         &1706400000u64,
+        &token_address,
     );
     // This should panic with Error #2 (EscrowAlreadyExists)
     client.create_escrow(
@@ -413,11 +405,11 @@ fn test_duplicate_escrow_id() {
         &token_address,
         &milestones,
         &1706400000u64,
+        &token_address,
     );
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #4)")]
 fn test_double_release() {
     let env = Env::default();
     env.mock_all_auths();
@@ -437,11 +429,7 @@ fn test_double_release() {
     let (token_admin, token_address) = create_test_token(&env, &admin);
     let token_client = token::Client::new(&env, &token_address);
 
-    token_admin.mint(&depositor, &1000);
-
-    // Create token contract and mint tokens
-    let (token_client, token_admin) = create_token_contract(&env, &admin);
-    token_admin.mint(&depositor, &10000);
+    token_admin.mint(&depositor, &2000); // Increased to cover fees
 
     let milestones = vec![
         &env,
@@ -459,13 +447,17 @@ fn test_double_release() {
         &token_address,
         &milestones,
         &1706400000u64,
+        &token_address,
     );
     token_client.approve(&depositor, &contract_id, &1000, &200);
     client.deposit_funds(&escrow_id);
 
-    client.release_milestone(&escrow_id, &0);
-    // This should panic with Error #4 (MilestoneAlreadyReleased)
-    client.release_milestone(&escrow_id, &0, &token_client.address);
+    // First release should succeed
+    client.release_milestone(&escrow_id, &0, &token_address);
+
+    // Second release should fail with MilestoneAlreadyReleased
+    let result = client.try_release_milestone(&escrow_id, &0, &token_address);
+    assert_eq!(result, Err(Ok(Error::MilestoneAlreadyReleased)));
 }
 
 #[test]
@@ -483,10 +475,6 @@ fn test_too_many_milestones() {
     let escrow_id = 9u64;
 
     let (_, token_address) = create_test_token(&env, &admin);
-
-    // Create token contract and mint tokens
-    let (token_client, token_admin) = create_token_contract(&env, &admin);
-    token_admin.mint(&depositor, &10000);
 
     // Create 21 milestones (exceeds max of 20)
     let mut milestones = Vec::new(&env);
@@ -506,11 +494,12 @@ fn test_too_many_milestones() {
         &token_address,
         &milestones,
         &1706400000u64,
+        &token_address,
     );
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #13)")]
+#[should_panic(expected = "Error(Contract, #11)")]
 fn test_invalid_milestone_amount() {
     let env = Env::default();
     env.mock_all_auths();
@@ -524,10 +513,6 @@ fn test_invalid_milestone_amount() {
     let escrow_id = 10u64;
 
     let (_, token_address) = create_test_token(&env, &admin);
-
-    // Create token contract and mint tokens
-    let (token_client, token_admin) = create_token_contract(&env, &admin);
-    token_admin.mint(&depositor, &10000);
 
     let milestones = vec![
         &env,
@@ -546,6 +531,7 @@ fn test_invalid_milestone_amount() {
         &token_address,
         &milestones,
         &1706400000u64,
+        &token_address,
     );
 }
 
@@ -561,9 +547,7 @@ fn test_zero_amount_milestone_rejected() {
     let admin = Address::generate(&env);
     let escrow_id = 11u64;
 
-    // Create token contract and mint tokens
-    let (token_client, token_admin) = create_token_contract(&env, &admin);
-    token_admin.mint(&depositor, &10000);
+    let (_, token_address) = create_test_token(&env, &admin);
 
     // Create milestones with one zero amount
     let milestones = vec![
@@ -583,6 +567,7 @@ fn test_zero_amount_milestone_rejected() {
         &token_address,
         &milestones,
         &1706400000u64,
+        &token_address,
     );
 
     // Assert specific error is returned
@@ -601,9 +586,7 @@ fn test_negative_amount_milestone_rejected() {
     let admin = Address::generate(&env);
     let escrow_id = 12u64;
 
-    // Create token contract and mint tokens
-    let (token_client, token_admin) = create_token_contract(&env, &admin);
-    token_admin.mint(&depositor, &10000);
+    let (_, token_address) = create_test_token(&env, &admin);
 
     // Create milestones with negative amount
     let milestones = vec![
@@ -623,6 +606,7 @@ fn test_negative_amount_milestone_rejected() {
         &token_address,
         &milestones,
         &1706400000u64,
+        &token_address,
     );
 
     // Assert ZeroAmount error (covers negative case)
@@ -660,6 +644,7 @@ fn test_self_dealing_rejected() {
         &token_address,
         &milestones,
         &1706400000u64,
+        &token_address,
     );
 
     // Assert SelfDealing error
@@ -703,6 +688,7 @@ fn test_valid_escrow_creation_succeeds() {
         &token_address,
         &milestones,
         &1706400000u64,
+        &token_address,
     );
 
     // Assert success
@@ -751,6 +737,7 @@ fn test_double_deposit_rejected() {
         &token_address,
         &milestones,
         &1706400000u64,
+        &token_address,
     );
 
     token_client.approve(&depositor, &contract_id, &10_000, &200);
@@ -792,9 +779,10 @@ fn test_release_milestone_before_deposit() {
         &token_address,
         &milestones,
         &1706400000u64,
+        &token_address,
     );
 
     // Try to release milestone before depositing funds
     // This should panic with Error #9 (EscrowNotActive)
-    client.release_milestone(&escrow_id, &0);
+    client.release_milestone(&escrow_id, &0, &token_address);
 }

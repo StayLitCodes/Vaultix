@@ -66,6 +66,8 @@ pub enum Error {
     SelfDealing = 13,
     EscrowAlreadyFunded = 14, // NEW: Prevent double funding
     TokenTransferFailed = 15, // NEW: Token transfer error
+    TreasuryNotInitialized = 16,
+    InvalidFeeConfiguration = 17,
 }
 
 // Platform fee configuration (in basis points: 1 bps = 0.01%)
@@ -216,6 +218,7 @@ impl VaultixEscrow {
             total_amount,
             total_released: 0,
             milestones: initialized_milestones,
+            token: token,
             status: EscrowStatus::Created, // Initially Created, becomes Active after deposit
             deadline,
         };
@@ -282,10 +285,6 @@ impl VaultixEscrow {
         env.storage()
             .persistent()
             .extend_ttl(&storage_key, 100, 2_000_000);
-
-        // Transfer funds from depositor to contract
-        let token_client = token::Client::new(&env, &token);
-        token_client.transfer(&depositor, env.current_contract_address(), &total_amount);
 
         Ok(())
     }
@@ -358,20 +357,11 @@ impl VaultixEscrow {
             .get(milestone_index)
             .ok_or(Error::MilestoneNotFound)?;
 
-        // Check if already released
+        // CHECK IF ALREADY RELEASED FIRST - BEFORE ANY TOKEN OPERATIONS
         if milestone.status == MilestoneStatus::Released {
             return Err(Error::MilestoneAlreadyReleased);
         }
 
-        // Initialize token client
-        let token_client = token::Client::new(&env, &escrow.token_address);
-
-        // Transfer milestone amount from contract to recipient
-        token_client.transfer(
-            &env.current_contract_address(), // from (contract address)
-            &escrow.recipient,               // to (recipient address)
-            &milestone.amount,               // amount to release
-        );
         // Get treasury and fee configuration
         let (treasury, fee_bps) = Self::get_config(env.clone())?;
 
@@ -384,7 +374,7 @@ impl VaultixEscrow {
             .ok_or(Error::InvalidMilestoneAmount)?;
 
         // Create token client for transfers
-        let token_client = token::TokenClient::new(&env, &token_address);
+        let token_client = token::Client::new(&env, &token_address);
 
         // Transfer payout to recipient (seller)
         token_client.transfer(&env.current_contract_address(), &escrow.recipient, &payout);
