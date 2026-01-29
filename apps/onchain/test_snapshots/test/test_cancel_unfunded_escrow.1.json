@@ -35,7 +35,7 @@
               "function_name": "create_escrow",
               "args": [
                 {
-                  "u64": "14"
+                  "u64": "6"
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
@@ -55,7 +55,7 @@
                             "symbol": "amount"
                           },
                           "val": {
-                            "i128": "3000"
+                            "i128": "5000"
                           }
                         },
                         {
@@ -63,39 +63,7 @@
                             "symbol": "description"
                           },
                           "val": {
-                            "symbol": "Phase1"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "status"
-                          },
-                          "val": {
-                            "vec": [
-                              {
-                                "symbol": "Pending"
-                              }
-                            ]
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "map": [
-                        {
-                          "key": {
-                            "symbol": "amount"
-                          },
-                          "val": {
-                            "i128": "7000"
-                          }
-                        },
-                        {
-                          "key": {
-                            "symbol": "description"
-                          },
-                          "val": {
-                            "symbol": "Phase2"
+                            "symbol": "Task"
                           }
                         },
                         {
@@ -119,6 +87,25 @@
                 },
                 {
                   "address": "CDLDVFKHEZ2RVB3NG4UQA4VPD3TSHV6XMHXMHP2BSGCJ2IIWVTOHGDSG"
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "function_name": "cancel_escrow",
+              "args": [
+                {
+                  "u64": "6"
                 }
               ]
             }
@@ -193,7 +180,7 @@
                     "symbol": "escrow"
                   },
                   {
-                    "u64": "14"
+                    "u64": "6"
                   }
                 ]
               },
@@ -229,7 +216,7 @@
                                 "symbol": "amount"
                               },
                               "val": {
-                                "i128": "3000"
+                                "i128": "5000"
                               }
                             },
                             {
@@ -237,39 +224,7 @@
                                 "symbol": "description"
                               },
                               "val": {
-                                "symbol": "Phase1"
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "status"
-                              },
-                              "val": {
-                                "vec": [
-                                  {
-                                    "symbol": "Pending"
-                                  }
-                                ]
-                              }
-                            }
-                          ]
-                        },
-                        {
-                          "map": [
-                            {
-                              "key": {
-                                "symbol": "amount"
-                              },
-                              "val": {
-                                "i128": "7000"
-                              }
-                            },
-                            {
-                              "key": {
-                                "symbol": "description"
-                              },
-                              "val": {
-                                "symbol": "Phase2"
+                                "symbol": "Task"
                               }
                             },
                             {
@@ -304,7 +259,7 @@
                     "val": {
                       "vec": [
                         {
-                          "symbol": "Created"
+                          "symbol": "Cancelled"
                         }
                       ]
                     }
@@ -330,7 +285,7 @@
                       "symbol": "total_amount"
                     },
                     "val": {
-                      "i128": "10000"
+                      "i128": "5000"
                     }
                   },
                   {
@@ -371,6 +326,26 @@
           "ext": "v0"
         },
         "live_until": 4095
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+              "key": {
+                "ledger_key_nonce": {
+                  "nonce": "1033654523790656264"
+                }
+              },
+              "durability": "temporary",
+              "val": "void"
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 6311999
       },
       {
         "entry": {
