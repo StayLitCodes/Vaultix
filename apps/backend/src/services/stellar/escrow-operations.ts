@@ -1,4 +1,4 @@
-import * as StellarSdk from 'stellar-sdk';
+import * as StellarSdk from '@stellar/stellar-sdk';
 import { Injectable, Logger } from '@nestjs/common';
 
 @Injectable()
@@ -54,7 +54,7 @@ export class EscrowOperationsService {
       return operations;
     } catch (error) {
       this.logger.error(
-        `Failed to create escrow initialization ops: ${error.message}`,
+        `Failed to create escrow initialization ops: ${this.getErrorMessage(error)}`,
       );
       throw error;
     }
@@ -112,7 +112,9 @@ export class EscrowOperationsService {
       );
       return operations;
     } catch (error) {
-      this.logger.error(`Failed to create funding ops: ${error.message}`);
+      this.logger.error(
+        `Failed to create funding ops: ${this.getErrorMessage(error)}`,
+      );
       throw error;
     }
   }
@@ -167,7 +169,7 @@ export class EscrowOperationsService {
       return operations;
     } catch (error) {
       this.logger.error(
-        `Failed to create milestone release ops: ${error.message}`,
+        `Failed to create milestone release ops: ${this.getErrorMessage(error)}`,
       );
       throw error;
     }
@@ -215,7 +217,9 @@ export class EscrowOperationsService {
       );
       return operations;
     } catch (error) {
-      this.logger.error(`Failed to create confirmation ops: ${error.message}`);
+      this.logger.error(
+        `Failed to create confirmation ops: ${this.getErrorMessage(error)}`,
+      );
       throw error;
     }
   }
@@ -254,7 +258,9 @@ export class EscrowOperationsService {
       );
       return operations;
     } catch (error) {
-      this.logger.error(`Failed to create cancel ops: ${error.message}`);
+      this.logger.error(
+        `Failed to create cancel ops: ${this.getErrorMessage(error)}`,
+      );
       throw error;
     }
   }
@@ -297,8 +303,24 @@ export class EscrowOperationsService {
       );
       return operations;
     } catch (error) {
-      this.logger.error(`Failed to create completion ops: ${error.message}`);
+      this.logger.error(
+        `Failed to create completion ops: ${this.getErrorMessage(error)}`,
+      );
       throw error;
     }
+  }
+
+  /**
+   * Safely extracts error message from unknown error type
+   */
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    if (typeof error === 'object' && error !== null && 'message' in error) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      return String((error as any).message);
+    }
+    return 'Unknown error';
   }
 }

@@ -2,7 +2,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import * as StellarSdk from 'stellar-sdk';
+import * as StellarSdk from '@stellar/stellar-sdk';
 import { Escrow } from '../entities/escrow.entity';
 import { Party } from '../entities/party.entity';
 import { Condition } from '../entities/condition.entity';
@@ -104,7 +104,7 @@ export class EscrowStellarIntegrationService {
       return result.hash;
     } catch (error) {
       this.logger.error(
-        `Failed to create on-chain escrow ${escrowId}: ${error.message}`,
+        `Failed to create on-chain escrow ${escrowId}: ${this.getErrorMessage(error)}`,
       );
       throw error;
     }
@@ -159,7 +159,7 @@ export class EscrowStellarIntegrationService {
       return result.hash;
     } catch (error) {
       this.logger.error(
-        `Failed to fund on-chain escrow ${escrowId}: ${error.message}`,
+        `Failed to fund on-chain escrow ${escrowId}: ${this.getErrorMessage(error)}`,
       );
       throw error;
     }
@@ -220,7 +220,7 @@ export class EscrowStellarIntegrationService {
       return result.hash;
     } catch (error) {
       this.logger.error(
-        `Failed to release milestone ${milestoneId} for escrow ${escrowId}: ${error.message}`,
+        `Failed to release milestone ${milestoneId} for escrow ${escrowId}: ${this.getErrorMessage(error)}`,
       );
       throw error;
     }
@@ -266,7 +266,7 @@ export class EscrowStellarIntegrationService {
       return result.hash;
     } catch (error) {
       this.logger.error(
-        `Failed to confirm escrow ${escrowId}: ${error.message}`,
+        `Failed to confirm escrow ${escrowId}: ${this.getErrorMessage(error)}`,
       );
       throw error;
     }
@@ -282,6 +282,7 @@ export class EscrowStellarIntegrationService {
   async cancelOnChainEscrow(
     escrowId: string,
     cancellerPublicKey: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     refundDestination: string,
   ): Promise<string> {
     try {
@@ -309,7 +310,7 @@ export class EscrowStellarIntegrationService {
       return result.hash;
     } catch (error) {
       this.logger.error(
-        `Failed to cancel on-chain escrow ${escrowId}: ${error.message}`,
+        `Failed to cancel on-chain escrow ${escrowId}: ${this.getErrorMessage(error)}`,
       );
       throw error;
     }
@@ -350,7 +351,7 @@ export class EscrowStellarIntegrationService {
       return result.hash;
     } catch (error) {
       this.logger.error(
-        `Failed to complete on-chain escrow ${escrowId}: ${error.message}`,
+        `Failed to complete on-chain escrow ${escrowId}: ${this.getErrorMessage(error)}`,
       );
       throw error;
     }
@@ -389,9 +390,24 @@ export class EscrowStellarIntegrationService {
     };
 
     // Stream transactions for the account
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return this.stellarService.streamTransactions(
       accountPublicKey,
       filteredCallback,
     );
+  }
+
+  /**
+   * Safely extracts error message from unknown error type
+   */
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    if (typeof error === 'object' && error !== null && 'message' in error) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      return String((error as any).message);
+    }
+    return 'Unknown error';
   }
 }

@@ -1,5 +1,6 @@
 // Type definitions for Stellar SDK to avoid 'any' usage
-export interface StellarAccountResponse {
+import * as StellarSdk from '@stellar/stellar-sdk';
+export interface StellarAccountResponse extends StellarSdk.Account {
   id: string;
   account_id: string;
   sequence: string;
