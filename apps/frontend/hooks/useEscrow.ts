@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Escrow, UseEscrowReturn } from '@/types/escrow';
+import { IEscrowExtended, IUseEscrowReturn } from '@/types/escrow';
 
-export const useEscrow = (id: string): UseEscrowReturn => {
-  const [escrow, setEscrow] = useState<Escrow | null>(null);
+export const useEscrow = (id: string): IUseEscrowReturn => {
+  const [escrow, setEscrow] = useState<IEscrowExtended | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 

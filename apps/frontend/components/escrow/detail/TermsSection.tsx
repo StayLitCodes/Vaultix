@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Escrow } from '@/types/escrow';
+import { IEscrowExtended } from '@/types/escrow';
 
 interface TermsSectionProps {
-  escrow: Escrow;
+  escrow: IEscrowExtended;
   userRole: 'creator' | 'counterparty' | null;
 }
 

@@ -10,7 +10,7 @@ import PartiesSection from '@/components/escrow/detail/PartiesSection';
 import TermsSection from '@/components/escrow/detail/TermsSection';
 import TimelineSection from '@/components/escrow/detail/TimelineSection';
 import TransactionHistory from '@/components/escrow/detail/TransactionHistory';
-import { Escrow } from '@/types/escrow';
+import { IEscrowExtended } from '@/types/escrow';
 
 const EscrowDetailPage = () => {
   const { id } = useParams();

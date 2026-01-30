@@ -1,9 +1,9 @@
 import React from 'react';
 import { Share, Copy, Wallet, Clock, CheckCircle, AlertTriangle, XCircle, ShareIcon } from 'lucide-react';
-import { Escrow } from '@/types/escrow';
+import { IEscrowExtended } from '@/types/escrow';
 
 interface EscrowHeaderProps {
-  escrow: Escrow;
+  escrow: IEscrowExtended;
   userRole: 'creator' | 'counterparty' | null;
   connected: boolean;
   connect: () => void;

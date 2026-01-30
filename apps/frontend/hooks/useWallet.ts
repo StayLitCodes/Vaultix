@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { WalletHookReturn } from '@/types/escrow';
+import { IWalletHookReturn } from '@/types/escrow';
 
-export const useWallet = (): WalletHookReturn => {
+export const useWallet = (): IWalletHookReturn => {
   const [connected, setConnected] = useState(false);
   const [publicKey, setPublicKey] = useState<string | null>(null);
 

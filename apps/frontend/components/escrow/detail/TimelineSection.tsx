@@ -1,8 +1,8 @@
 import React from 'react';
-import { Escrow } from '@/types/escrow';
+import { IEscrowExtended } from '@/types/escrow';
 
 interface TimelineSectionProps {
-  escrow: Escrow;
+  escrow: IEscrowExtended;
 }
 
 const getEventIcon = (eventType: string) => {

@@ -1,4 +1,5 @@
-import Image from "next/image";
+  import Image from "next/image";
+  import Link from "next/link";
 
 export default function Home() {
   return (
@@ -27,18 +28,18 @@ export default function Home() {
           </p>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <a
+            <Link
               href="/dashboard"
               className="rounded-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-medium text-lg px-8 py-3 transition-all duration-200 ease-in-out transform hover:scale-105 shadow-lg"
             >
               Access Dashboard
-            </a>
-            <a
+            </Link>
+            <Link
               href="/escrow/create"
               className="rounded-full border-2 border-gray-300 hover:border-gray-400 text-gray-700 hover:text-gray-900 font-medium text-lg px-8 py-3 transition-all duration-200 ease-in-out transform hover:scale-105"
             >
               Create Escrow
-            </a>
+            </Link>
           </div>
         </div>
 
@@ -64,26 +65,26 @@ export default function Home() {
       </main>
       
       <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
+        <Link
           className="flex items-center gap-2 hover:underline hover:underline-offset-4"
           href="/dashboard"
         >
           Dashboard
-        </a>
-        <a
+        </Link>
+        <Link
           className="flex items-center gap-2 hover:underline hover:underline-offset-4"
           href="/escrow/create"
         >
           Create Escrow
-        </a>
-        <a
+        </Link>
+        <Link
           className="flex items-center gap-2 hover:underline hover:underline-offset-4"
           href="https://github.com/Vaultix"
           target="_blank"
           rel="noopener noreferrer"
         >
           GitHub
-        </a>
+        </Link>
       </footer>
     </div>
   );

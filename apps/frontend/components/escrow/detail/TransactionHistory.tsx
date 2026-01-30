@@ -1,13 +1,13 @@
 import React from 'react';
-import { Escrow } from '@/types/escrow';
+import { IEscrowExtended } from '@/types/escrow';
 
 interface TransactionHistoryProps {
-  escrow: Escrow;
+  escrow: IEscrowExtended;
 }
 
 const TransactionHistory: React.FC<TransactionHistoryProps> = ({ escrow }: TransactionHistoryProps) => {
   // Filter events that represent transactions
-  const transactionEvents = escrow.events.filter(event => 
+  const transactionEvents = escrow.events.filter((event: any) => 
     event.eventType === 'FUNDED' || 
     event.eventType === 'CONDITION_MET' || 
     event.eventType === 'COMPLETED' || 
@@ -43,7 +43,7 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({ escrow }: Trans
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {transactionEvents.map((event) => (
+              {transactionEvents.map((event: any) => (
                 <tr key={event.id}>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm font-medium text-gray-900 capitalize">
