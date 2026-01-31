@@ -28,7 +28,7 @@ export default function Navbar(): JSX.Element {
             <Link href="/" className="flex items-center">
               <div className="h-10 w-10 relative">
                 <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-blue-500 rounded-lg transform rotate-45"></div>
-                <div className="absolute inset-1 bg-black rounded-lg transform  flex items-center justify-center">
+                <div className="absolute inset-1 bg-black rounded-lg transform flex items-center justify-center">
                   <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400 font-bold">
                     V
                   </span>
@@ -43,34 +43,29 @@ export default function Navbar(): JSX.Element {
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-8">
             <Link
-              href="#features"
+              href="/"
               className="text-gray-300 hover:text-white transition-colors"
             >
-              Features
+              Home
             </Link>
             <Link
-              href="#how-it-works"
+              href="/dashboard"
               className="text-gray-300 hover:text-white transition-colors"
             >
-              How It Works
+              Dashboard
             </Link>
             <Link
-              href="#dao"
+              href="/escrow/create"
               className="text-gray-300 hover:text-white transition-colors"
             >
-              DAO
+              Create Escrow
             </Link>
             <Link
-              href="#docs"
+              href="https://github.com/Vaultix"
+              target="_blank"
               className="text-gray-300 hover:text-white transition-colors"
             >
-              Docs
-            </Link>
-            <Link
-              href="/launch-app"
-              className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white px-5 py-2 rounded-full font-medium transition-all duration-200 ease-in-out transform hover:scale-105"
-            >
-              Launch App
+              GitHub
             </Link>
           </div>
 
@@ -92,39 +87,33 @@ export default function Navbar(): JSX.Element {
         <div className="md:hidden">
           <div className="bg-black/95 backdrop-blur-lg px-4 pt-2 pb-4 space-y-4 h-[100vh]">
             <Link
-              href="#features"
+              href="/"
               onClick={() => setIsMenuOpen(false)}
               className="block text-gray-300 hover:text-white transition-colors"
             >
-              Features
+              Home
             </Link>
             <Link
-              href="#how-it-works"
+              href="/dashboard"
               onClick={() => setIsMenuOpen(false)}
               className="block text-gray-300 hover:text-white transition-colors"
             >
-              How It Works
+              Dashboard
             </Link>
             <Link
-              href="#dao"
+              href="/escrow/create"
               onClick={() => setIsMenuOpen(false)}
               className="block text-gray-300 hover:text-white transition-colors"
             >
-              DAO
+              Create Escrow
             </Link>
             <Link
-              href="#docs"
+              href="https://github.com/Vaultix"
+              target="_blank"
               onClick={() => setIsMenuOpen(false)}
               className="block text-gray-300 hover:text-white transition-colors"
             >
-              Docs
-            </Link>
-            <Link
-              href="/launch-app"
-              onClick={() => setIsMenuOpen(false)}
-              className="block w-full text-center bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white px-5 py-2 rounded-full font-medium"
-            >
-              Launch App
+              GitHub
             </Link>
           </div>
         </div>
