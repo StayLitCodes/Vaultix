@@ -84,3 +84,16 @@ export interface IEscrowFilters {
   page?: number;
   limit?: number;
 }
+
+export interface IEscrowEventResponse {
+  events: IEscrowEvent[];
+  hasNextPage: boolean;
+  totalCount: number;
+}
+
+export interface IEscrowEventFilters {
+  escrowId?: string;
+  eventType?: string;
+  page?: number;
+  limit?: number;
+}

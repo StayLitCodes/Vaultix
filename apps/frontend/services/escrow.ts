@@ -1,4 +1,11 @@
-import { IEscrow, IEscrowResponse, IEscrowFilters } from '@/types/escrow';
+import {
+  IEscrow,
+  IEscrowResponse,
+  IEscrowFilters,
+  IEscrowEvent,
+  IEscrowEventResponse,
+  IEscrowEventFilters
+} from '@/types/escrow';
 
 // Mock data for demonstration purposes
 const MOCK_ESCROWS: IEscrow[] = [
@@ -95,22 +102,81 @@ const MOCK_ESCROWS: IEscrow[] = [
   },
 ];
 
+const MOCK_EVENTS: IEscrowEvent[] = [
+  {
+    id: 'e1',
+    eventType: 'CREATED',
+    actorId: 'GABC...',
+    createdAt: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
+    data: { escrowId: '1' }
+  },
+  {
+    id: 'e2',
+    eventType: 'PARTY_ADDED',
+    actorId: 'GABC...',
+    createdAt: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
+    data: { escrowId: '1', partyId: 'p2' }
+  },
+  {
+    id: 'e3',
+    eventType: 'FUNDED',
+    actorId: 'GABC...',
+    createdAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+    data: { escrowId: '1', amount: '1000', asset: 'XLM' }
+  },
+  {
+    id: 'e4',
+    eventType: 'CONDITION_MET',
+    actorId: 'GDEF...',
+    createdAt: new Date(Date.now() - 1000 * 60 * 20).toISOString(),
+    data: { escrowId: '1', conditionId: 'c1' }
+  },
+  {
+    id: 'e5',
+    eventType: 'COMPLETED',
+    actorId: 'SYSTEM',
+    createdAt: new Date(Date.now() - 1000 * 60 * 25).toISOString(),
+    data: { escrowId: '3' }
+  },
+  {
+    id: 'e6',
+    eventType: 'DISPUTED',
+    actorId: 'GTUV...',
+    createdAt: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+    data: { escrowId: '4', reason: 'Delayed delivery' }
+  },
+  {
+    id: 'e7',
+    eventType: 'CREATED',
+    actorId: 'GHIJ...',
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
+    data: { escrowId: '2' }
+  },
+  {
+    id: 'e8',
+    eventType: 'CANCELLED',
+    actorId: 'GJKL...',
+    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
+    data: { escrowId: '7' }
+  }
+];
+
 // Simulate API delay
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export class EscrowService {
   static async getEscrows(filters: IEscrowFilters = {}): Promise<IEscrowResponse> {
     await delay(800); // Simulate network delay
-    
+
     const { status, search, sortBy, sortOrder, page = 1, limit = 10 } = filters;
-    
+
     let filteredEscrows = [...MOCK_ESCROWS];
-    
+
     // Apply status filter
     if (status && status !== 'all') {
       switch (status) {
         case 'active':
-          filteredEscrows = filteredEscrows.filter(e => 
+          filteredEscrows = filteredEscrows.filter(e =>
             ['created', 'funded', 'confirmed'].includes(e.status)
           );
           break;
@@ -125,7 +191,7 @@ export class EscrowService {
           break;
       }
     }
-    
+
     // Apply search filter
     if (search) {
       const searchTerm = search.toLowerCase();
@@ -134,12 +200,12 @@ export class EscrowService {
         e.counterpartyAddress.toLowerCase().includes(searchTerm)
       );
     }
-    
+
     // Apply sorting
     if (sortBy) {
       filteredEscrows.sort((a, b) => {
         let comparison = 0;
-        
+
         switch (sortBy) {
           case 'date':
             comparison = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
@@ -151,21 +217,59 @@ export class EscrowService {
             comparison = new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
             break;
         }
-        
+
         return sortOrder === 'asc' ? comparison : -comparison;
       });
     }
-    
+
     // Apply pagination
     const startIndex = (page - 1) * limit;
     const endIndex = startIndex + limit;
     const paginatedEscrows = filteredEscrows.slice(startIndex, endIndex);
-    
+
     return {
       escrows: paginatedEscrows,
       hasNextPage: endIndex < filteredEscrows.length,
       totalPages: Math.ceil(filteredEscrows.length / limit),
       totalCount: filteredEscrows.length,
+    };
+  }
+
+  static async getEvents(filters: IEscrowEventFilters = {}): Promise<IEscrowEventResponse> {
+    await delay(500);
+
+    const { escrowId, eventType, page = 1, limit = 10 } = filters;
+
+    let filteredEvents = [...MOCK_EVENTS];
+
+    if (escrowId) {
+      filteredEvents = filteredEvents.filter(e => e.data?.escrowId === escrowId);
+    }
+
+    if (eventType && eventType !== 'ALL') {
+      filteredEvents = filteredEvents.filter(e => e.eventType === eventType);
+    }
+
+    // Add real-time feel by randomly adding a new event if it's the first page
+    if (page === 1 && Math.random() > 0.8) {
+      const newEvent: IEscrowEvent = {
+        id: `e-new-${Date.now()}`,
+        eventType: 'UPDATED',
+        actorId: 'SYSTEM',
+        createdAt: new Date().toISOString(),
+        data: { message: 'Heartbeat update' }
+      };
+      filteredEvents = [newEvent, ...filteredEvents];
+    }
+
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedEvents = filteredEvents.slice(startIndex, endIndex);
+
+    return {
+      events: paginatedEvents,
+      hasNextPage: endIndex < filteredEvents.length,
+      totalCount: filteredEvents.length,
     };
   }
 

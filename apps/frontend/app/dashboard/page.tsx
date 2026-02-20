@@ -6,20 +6,21 @@ import EscrowList from '@/component/dashboard/EscrowList';
 import EscrowFilters from '@/component/dashboard/EscrowFilters';
 import { useEscrows } from '../../hooks/useEscrows';
 import { IEscrow } from '@/types/escrow';
+import ActivityFeed from '@/components/common/ActivityFeed';
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'pending' | 'completed' | 'disputed'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'date' | 'amount' | 'deadline'>('date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  
-  const { 
-    data: escrowsData, 
-    isLoading, 
-    isError, 
-    hasNextPage, 
-    fetchNextPage, 
-    isFetchingNextPage 
+
+  const {
+    data: escrowsData,
+    isLoading,
+    isError,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage
   } = useEscrows({
     status: activeTab,
     search: searchQuery,
@@ -57,27 +58,33 @@ export default function DashboardPage() {
             Manage all your escrow agreements in one place
           </p>
         </div>
-        
-        <div className="bg-white rounded-lg shadow-md p-6">
-          <StatusTabs activeTab={activeTab} onTabChange={handleTabChange} />
-          
-          <EscrowFilters 
-            searchQuery={searchQuery}
-            onSearchChange={handleSearchChange}
-            sortBy={sortBy}
-            sortOrder={sortOrder}
-            onSortChange={handleSortChange}
-          />
-          
-          <EscrowList 
-            escrows={flatEscrows}
-            isLoading={isLoading}
-            isError={isError}
-            activeTab={activeTab}
-            hasNextPage={hasNextPage}
-            fetchNextPage={fetchNextPage}
-            isFetchingNextPage={isFetchingNextPage}
-          />
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 bg-white rounded-lg shadow-md p-6 h-fit">
+            <StatusTabs activeTab={activeTab} onTabChange={handleTabChange} />
+
+            <EscrowFilters
+              searchQuery={searchQuery}
+              onSearchChange={handleSearchChange}
+              sortBy={sortBy}
+              sortOrder={sortOrder}
+              onSortChange={handleSortChange}
+            />
+
+            <EscrowList
+              escrows={flatEscrows}
+              isLoading={isLoading}
+              isError={isError}
+              activeTab={activeTab}
+              hasNextPage={hasNextPage}
+              fetchNextPage={fetchNextPage}
+              isFetchingNextPage={isFetchingNextPage}
+            />
+          </div>
+
+          <div className="lg:col-span-1">
+            <ActivityFeed className="h-[calc(100vh-12rem)] sticky top-8" />
+          </div>
         </div>
       </div>
     </div>
