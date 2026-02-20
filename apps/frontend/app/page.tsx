@@ -1,4 +1,5 @@
-  import Image from "next/image";
+
+import Image from "next/image";
   import Link from "next/link";
 
 export default function Home() {
@@ -42,7 +43,8 @@ export default function Home() {
             </Link>
           </div>
         </div>
-
+          
+        
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-12 max-w-4xl">
           <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
             <div className="text-blue-600 text-3xl mb-4">🔒</div>
@@ -60,6 +62,7 @@ export default function Home() {
             <div className="text-teal-600 text-3xl mb-4">🌐</div>
             <h3 className="text-xl font-semibold text-gray-900 mb-2">Global Access</h3>
             <p className="text-gray-600">Access your escrow agreements from anywhere in the world</p>
+          
           </div>
         </div>
       </main>
