@@ -12,12 +12,15 @@ import TimelineSection from '@/components/escrow/detail/TimelineSection';
 import TransactionHistory from '@/components/escrow/detail/TransactionHistory';
 import ActivityFeed from '@/components/common/ActivityFeed';
 import { IEscrowExtended } from '@/types/escrow';
+import FileDisputeModal from '@/components/escrow/detail/file-dispute-modal';
+import { Button } from '@/components/ui/button';
 
 const EscrowDetailPage = () => {
   const { id } = useParams();
   const { escrow, loading, error } = useEscrow(id as string);
   const { connected, publicKey, connect } = useWallet(); // Assuming wallet hook exists
   const [userRole, setUserRole] = useState<'creator' | 'counterparty' | null>(null);
+  const [disputeOpen, setDisputeOpen] = useState(false);
 
   useEffect(() => {
     if (escrow && publicKey) {
@@ -104,6 +107,12 @@ const EscrowDetailPage = () => {
           </div>
         </div>
       </div>
+
+      <FileDisputeModal
+        open={disputeOpen}
+        onClose={() => setDisputeOpen(false)}
+        escrowId={escrow.id}
+      />
     </div>
   );
 };
