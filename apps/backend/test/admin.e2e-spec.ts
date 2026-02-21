@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
+import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { getRepository } from 'typeorm';
 import { User, UserRole } from '../src/modules/user/entities/user.entity';
@@ -20,7 +20,7 @@ describe('Admin API (e2e)', () => {
 
     // Create test users
     const userRepository = getRepository(User);
-    
+
     const admin = userRepository.create({
       walletAddress: 'ADMIN_TEST_WALLET',
       role: UserRole.ADMIN,
