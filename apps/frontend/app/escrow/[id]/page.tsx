@@ -12,10 +12,12 @@ import TimelineSection from '@/components/escrow/detail/TimelineSection';
 import TransactionHistory from '@/components/escrow/detail/TransactionHistory';
 import ActivityFeed from '@/components/common/ActivityFeed';
 import { IEscrowExtended } from '@/types/escrow';
+import { EscrowDetailSkeleton } from '@/components/ui/EscrowDetailSkeleton';
 
 const EscrowDetailPage = () => {
   const { id } = useParams();
-  const { escrow, loading, error } = useEscrow(id as string);
+
+  const { escrow, error, loading } = useEscrow(id as string);
   const { connected, publicKey, connect } = useWallet(); // Assuming wallet hook exists
   const [userRole, setUserRole] = useState<'creator' | 'counterparty' | null>(null);
 
@@ -31,12 +33,13 @@ const EscrowDetailPage = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="mt-4 text-lg text-gray-600">Loading escrow details...</p>
-        </div>
-      </div>
+      // <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      //   <div className="text-center">
+      //     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+      //     <p className="mt-4 text-lg text-gray-600">Loading escrow details...</p>
+      //   </div>
+      // </div>
+      <EscrowDetailSkeleton />
     );
   }
 
