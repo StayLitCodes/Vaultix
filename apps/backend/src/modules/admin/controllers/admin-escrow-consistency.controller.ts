@@ -1,6 +1,9 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { ConsistencyCheckerService } from '../services/consistency-checker.service';
-import { ConsistencyCheckRequest, ConsistencyCheckResponse } from '../dto/consistency-check.dto';
+import {
+  ConsistencyCheckRequest,
+  ConsistencyCheckResponse,
+} from '../dto/consistency-check.dto';
 import { AdminGuard } from '../../auth/middleware/admin.guard';
 
 @Controller('admin/escrows')

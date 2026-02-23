@@ -19,7 +19,9 @@ describe('AdminEscrowConsistencyController', () => {
       ],
     }).compile();
 
-    controller = module.get<AdminEscrowConsistencyController>(AdminEscrowConsistencyController);
+    controller = module.get<AdminEscrowConsistencyController>(
+      AdminEscrowConsistencyController,
+    );
     checkerService = module.get(ConsistencyCheckerService);
   });
 
@@ -28,9 +30,22 @@ describe('AdminEscrowConsistencyController', () => {
   });
 
   it('should call checkerService.checkConsistency', async () => {
-    checkerService.checkConsistency.mockResolvedValueOnce({ reports: [], summary: { totalChecked: 1, totalInconsistent: 0, totalMissingInDb: 0, totalMissingOnChain: 0, totalErrored: 0 } });
+    const mockResult = {
+      reports: [],
+      summary: {
+        totalChecked: 1,
+        totalInconsistent: 0,
+        totalMissingInDb: 0,
+        totalMissingOnChain: 0,
+        totalErrored: 0,
+      },
+    };
+    const spy = jest
+      .spyOn(checkerService, 'checkConsistency')
+      .mockResolvedValueOnce(mockResult);
+
     const result = await controller.checkConsistency({ escrowIds: [1] });
     expect(result.summary.totalChecked).toBe(1);
-    expect(checkerService.checkConsistency).toHaveBeenCalledWith({ escrowIds: [1] });
+    expect(spy).toHaveBeenCalledWith({ escrowIds: [1] });
   });
 });

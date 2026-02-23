@@ -6,8 +6,8 @@ export type ConsistencyCheckRequest =
 
 export interface FieldMismatch {
   fieldName: string;
-  dbValue: any;
-  onchainValue: any;
+  dbValue: unknown;
+  onchainValue: unknown;
 }
 
 export interface EscrowDiffReport {
