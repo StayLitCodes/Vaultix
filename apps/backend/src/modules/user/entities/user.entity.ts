@@ -5,7 +5,10 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
 } from 'typeorm';
+
 import { UserRole } from './user-role.enum';
+import { Organization } from '../../organization/entities/organization.entity';
+import { ManyToOne, JoinColumn } from 'typeorm';
 
 export { UserRole } from './user-role.enum';
 
@@ -29,6 +32,10 @@ export class User {
     default: UserRole.USER,
   })
   role: UserRole;
+
+  @ManyToOne(() => Organization, (org) => org.users, { nullable: false })
+  @JoinColumn({ name: 'org_id' })
+  organization: Organization;
 
   @CreateDateColumn()
   createdAt: Date;
