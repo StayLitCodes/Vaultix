@@ -2,11 +2,16 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import type { Server } from 'http';
+import { DataSource, Repository } from 'typeorm';
 import { AppModule } from '../src/app.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RefreshToken } from '../src/modules/user/entities/refresh-token.entity';
 import { User } from '../src/modules/user/entities/user.entity';
-import { Escrow } from '../src/modules/escrow/entities/escrow.entity';
+import {
+  Escrow,
+  EscrowStatus,
+  EscrowType,
+} from '../src/modules/escrow/entities/escrow.entity';
 import { Party, PartyRole } from '../src/modules/escrow/entities/party.entity';
 import { Condition } from '../src/modules/escrow/entities/condition.entity';
 import { EscrowEvent } from '../src/modules/escrow/entities/escrow-event.entity';
@@ -41,6 +46,7 @@ describe('Escrow (e2e)', () => {
   let secondWalletAddress: string;
   let secondAccessToken: string;
   let secondUserId: string;
+  let escrowRepository: Repository<Escrow>;
 
   beforeAll(async () => {
     testKeypair = createMockKeypair();
@@ -65,6 +71,7 @@ describe('Escrow (e2e)', () => {
     app.useGlobalPipes(new ValidationPipe({ transform: true }));
     await app.init();
     httpServer = app.getHttpServer() as Server;
+    escrowRepository = app.get(DataSource).getRepository(Escrow);
 
     // Authenticate first user
     const challengeResponse = await request(httpServer)
@@ -127,6 +134,28 @@ describe('Escrow (e2e)', () => {
     total: number;
     page: number;
     limit: number;
+  }
+
+  interface EscrowOverviewItem {
+    escrowId: string;
+    depositor: string;
+    recipient: string | null;
+    token: string;
+    totalAmount: number;
+    totalReleased: number;
+    remainingAmount: number;
+    status: string;
+    deadline: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }
+
+  interface EscrowOverviewResponse {
+    data: EscrowOverviewItem[];
+    totalItems: number;
+    totalPages: number;
+    page: number;
+    pageSize: number;
   }
 
   describe('POST /escrows', () => {
@@ -233,6 +262,149 @@ describe('Escrow (e2e)', () => {
 
     it('should return 401 without auth token', async () => {
       await request(httpServer).get('/escrows').expect(401);
+    });
+  });
+
+  describe('GET /escrows/overview', () => {
+    async function createOverviewEscrow(params: {
+      title: string;
+      amount?: number;
+      asset?: string;
+      expiresAt?: string;
+    }): Promise<string> {
+      const response = await request(httpServer)
+        .post('/escrows')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          title: params.title,
+          amount: params.amount ?? 100,
+          asset: params.asset ?? 'XLM',
+          type: EscrowType.STANDARD,
+          expiresAt: params.expiresAt,
+          parties: [{ userId: secondUserId, role: PartyRole.SELLER }],
+        })
+        .expect(201);
+
+      return (response.body as EscrowResponse).id;
+    }
+
+    it('should filter by role and status', async () => {
+      const pendingId = await createOverviewEscrow({
+        title: 'Overview Pending Escrow',
+      });
+      const completedId = await createOverviewEscrow({
+        title: 'Overview Completed Escrow',
+      });
+
+      await escrowRepository.update(completedId, {
+        status: EscrowStatus.COMPLETED,
+        isReleased: true,
+      });
+
+      const depositorCompletedResponse = await request(httpServer)
+        .get('/escrows/overview?role=depositor&status=completed')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      const depositorCompletedBody =
+        depositorCompletedResponse.body as EscrowOverviewResponse;
+      const completedEscrow = depositorCompletedBody.data.find(
+        (item) => item.escrowId === completedId,
+      );
+
+      expect(completedEscrow).toBeDefined();
+      expect(completedEscrow?.status).toBe('completed');
+      expect(completedEscrow?.depositor).toBe(userId);
+      expect(completedEscrow?.recipient).toBe(secondUserId);
+      expect(completedEscrow?.totalReleased).toBe(completedEscrow?.totalAmount);
+      expect(completedEscrow?.remainingAmount).toBe(0);
+      expect(
+        depositorCompletedBody.data.some((item) => item.escrowId === pendingId),
+      ).toBe(false);
+
+      const recipientPendingResponse = await request(httpServer)
+        .get('/escrows/overview?role=recipient&status=created')
+        .set('Authorization', `Bearer ${secondAccessToken}`)
+        .expect(200);
+
+      const recipientPendingBody =
+        recipientPendingResponse.body as EscrowOverviewResponse;
+      expect(
+        recipientPendingBody.data.some((item) => item.escrowId === pendingId),
+      ).toBe(true);
+      recipientPendingBody.data.forEach((item) => {
+        expect(item.status).toBe('pending');
+        expect(item.recipient).toBe(secondUserId);
+      });
+    });
+
+    it('should return accurate pagination metadata and handle out-of-range pages', async () => {
+      await createOverviewEscrow({ title: 'Overview Pagination 1' });
+      await createOverviewEscrow({ title: 'Overview Pagination 2' });
+      await createOverviewEscrow({ title: 'Overview Pagination 3' });
+
+      const pageOneResponse = await request(httpServer)
+        .get('/escrows/overview?page=1&pageSize=2&sortBy=createdAt&sortOrder=desc')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      const pageOneBody = pageOneResponse.body as EscrowOverviewResponse;
+      expect(pageOneBody.page).toBe(1);
+      expect(pageOneBody.pageSize).toBe(2);
+      expect(pageOneBody.totalItems).toBeGreaterThanOrEqual(3);
+      expect(pageOneBody.totalPages).toBe(
+        Math.ceil(pageOneBody.totalItems / pageOneBody.pageSize),
+      );
+      expect(pageOneBody.data.length).toBeLessThanOrEqual(2);
+
+      const outOfRangeResponse = await request(httpServer)
+        .get('/escrows/overview?page=999&pageSize=2')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      const outOfRangeBody = outOfRangeResponse.body as EscrowOverviewResponse;
+      expect(outOfRangeBody.page).toBe(999);
+      expect(outOfRangeBody.pageSize).toBe(2);
+      expect(outOfRangeBody.data).toEqual([]);
+    });
+
+    it('should sort by created date and deadline', async () => {
+      const idOld = await createOverviewEscrow({
+        title: 'Overview Sort Old',
+        expiresAt: '2026-06-10T10:00:00.000Z',
+      });
+      const idNew = await createOverviewEscrow({
+        title: 'Overview Sort New',
+        expiresAt: '2026-06-01T10:00:00.000Z',
+      });
+
+      await escrowRepository.update(idOld, {
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      });
+      await escrowRepository.update(idNew, {
+        createdAt: new Date('2026-01-15T00:00:00.000Z'),
+      });
+
+      const createdSortResponse = await request(httpServer)
+        .get('/escrows/overview?sortBy=createdAt&sortOrder=asc&pageSize=50')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      const createdSortBody = createdSortResponse.body as EscrowOverviewResponse;
+      const createdIds = createdSortBody.data.map((item) => item.escrowId);
+      expect(createdIds.indexOf(idOld)).toBeLessThan(createdIds.indexOf(idNew));
+
+      const deadlineSortResponse = await request(httpServer)
+        .get('/escrows/overview?sortBy=deadline&sortOrder=asc&pageSize=50')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200);
+
+      const deadlineSortBody =
+        deadlineSortResponse.body as EscrowOverviewResponse;
+      const deadlineIds = deadlineSortBody.data.map((item) => item.escrowId);
+      expect(deadlineIds.indexOf(idNew)).toBeLessThan(
+        deadlineIds.indexOf(idOld),
+      );
     });
   });
 

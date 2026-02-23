@@ -14,6 +14,12 @@ import {
 } from '@nestjs/common';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
 import { WebhookService } from '../../../services/webhook/webhook.service';
+import {
+  EscrowOverviewRole,
+  EscrowOverviewSortBy,
+  EscrowOverviewSortOrder,
+  EscrowOverviewStatus,
+} from '../dto/escrow-overview.dto';
 
 describe('EscrowService', () => {
   let service: EscrowService;
@@ -317,6 +323,99 @@ describe('EscrowService', () => {
       );
 
       expect(result).toBe(false);
+    });
+  });
+
+  describe('findOverview', () => {
+    function createOverviewQueryBuilder() {
+      const qb: any = {
+        select: jest.fn().mockReturnThis(),
+        addSelect: jest.fn().mockReturnThis(),
+        setParameter: jest.fn().mockReturnThis(),
+        subQuery: jest.fn().mockReturnThis(),
+        from: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        offset: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getCount: jest.fn().mockResolvedValue(3),
+        getRawMany: jest.fn().mockResolvedValue([
+          {
+            escrowId: 'escrow-1',
+            depositor: 'user-123',
+            recipient: 'user-456',
+            token: 'XLM',
+            totalAmount: '100',
+            totalReleased: '0',
+            remainingAmount: '100',
+            status: 'pending',
+            deadline: null,
+            createdAt: new Date('2026-01-01T00:00:00.000Z'),
+            updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+          },
+        ]),
+        getQuery: jest.fn().mockReturnValue('SELECT 1'),
+      };
+
+      return qb;
+    }
+
+    it('should return overview with default pagination and mapped numeric amounts', async () => {
+      const qb = createOverviewQueryBuilder();
+      escrowRepository.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.findOverview('user-123', {});
+
+      expect(result.page).toBe(1);
+      expect(result.pageSize).toBe(20);
+      expect(result.totalItems).toBe(3);
+      expect(result.totalPages).toBe(1);
+      expect(result.data[0].totalAmount).toBe(100);
+      expect(result.data[0].totalReleased).toBe(0);
+      expect(result.data[0].remainingAmount).toBe(100);
+      expect(qb.orderBy).toHaveBeenCalledWith('escrow.createdAt', 'DESC');
+      expect(qb.offset).toHaveBeenCalledWith(0);
+      expect(qb.limit).toHaveBeenCalledWith(20);
+    });
+
+    it('should apply role and status filters and sort by deadline ascending', async () => {
+      const qb = createOverviewQueryBuilder();
+      escrowRepository.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findOverview('user-456', {
+        role: EscrowOverviewRole.RECIPIENT,
+        status: EscrowOverviewStatus.CREATED,
+        sortBy: EscrowOverviewSortBy.DEADLINE,
+        sortOrder: EscrowOverviewSortOrder.ASC,
+      });
+
+      expect(qb.where).toHaveBeenCalled();
+      expect(qb.andWhere).toHaveBeenCalledWith('escrow.status = :status', {
+        status: EscrowStatus.PENDING,
+      });
+      expect(qb.orderBy).toHaveBeenCalledWith('escrow.expiresAt', 'ASC');
+    });
+
+    it('should handle empty result pagination edge case', async () => {
+      const qb = createOverviewQueryBuilder();
+      qb.getCount.mockResolvedValue(0);
+      qb.getRawMany.mockResolvedValue([]);
+      escrowRepository.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.findOverview('user-123', {
+        page: 3,
+        pageSize: 5,
+      });
+
+      expect(result.totalItems).toBe(0);
+      expect(result.totalPages).toBe(0);
+      expect(result.page).toBe(3);
+      expect(result.pageSize).toBe(5);
+      expect(result.data).toEqual([]);
+      expect(qb.offset).toHaveBeenCalledWith(10);
+      expect(qb.limit).toHaveBeenCalledWith(5);
     });
   });
 });

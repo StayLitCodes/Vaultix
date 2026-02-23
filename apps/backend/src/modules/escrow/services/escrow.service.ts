@@ -5,7 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, SelectQueryBuilder } from 'typeorm';
+import { Brackets, Repository, SelectQueryBuilder } from 'typeorm';
 import { Escrow, EscrowStatus } from '../entities/escrow.entity';
 import { Party, PartyRole } from '../entities/party.entity';
 import { Condition } from '../entities/condition.entity';
@@ -14,6 +14,14 @@ import { CreateEscrowDto } from '../dto/create-escrow.dto';
 import { UpdateEscrowDto } from '../dto/update-escrow.dto';
 import { ListEscrowsDto, SortOrder } from '../dto/list-escrows.dto';
 import { CancelEscrowDto } from '../dto/cancel-escrow.dto';
+import {
+  EscrowOverviewQueryDto,
+  EscrowOverviewResponseDto,
+  EscrowOverviewRole,
+  EscrowOverviewSortBy,
+  EscrowOverviewSortOrder,
+  EscrowOverviewStatus,
+} from '../dto/escrow-overview.dto';
 import { validateTransition, isTerminalStatus } from '../escrow-state-machine';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
 import { WebhookService } from '../../../services/webhook/webhook.service';
@@ -86,6 +94,150 @@ export class EscrowService {
     });
 
     return this.findOne(savedEscrow.id);
+  }
+
+  async findOverview(
+    userId: string,
+    query: EscrowOverviewQueryDto,
+  ): Promise<EscrowOverviewResponseDto> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const role = query.role ?? EscrowOverviewRole.ANY;
+    const sortBy = query.sortBy ?? EscrowOverviewSortBy.CREATED_AT;
+    const sortOrder =
+      query.sortOrder === EscrowOverviewSortOrder.ASC ? 'ASC' : 'DESC';
+
+    const qb = this.escrowRepository.createQueryBuilder('escrow');
+
+    qb.select([
+      'escrow.id AS escrowId',
+      'escrow.creatorId AS depositor',
+      'escrow.asset AS token',
+      'escrow.amount AS totalAmount',
+      'escrow.status AS status',
+      'escrow.expiresAt AS deadline',
+      'escrow.createdAt AS createdAt',
+      'escrow.updatedAt AS updatedAt',
+    ])
+      .addSelect(
+        `CASE WHEN escrow.isReleased = 1 OR escrow.status = :completedStatus THEN escrow.amount ELSE 0 END`,
+        'totalReleased',
+      )
+      .addSelect(
+        `CASE WHEN escrow.isReleased = 1 OR escrow.status = :completedStatus THEN 0 ELSE escrow.amount END`,
+        'remainingAmount',
+      )
+      .addSelect(
+        (recipientSubquery) =>
+          recipientSubquery
+            .select('recipientParty.userId')
+            .from(Party, 'recipientParty')
+            .where('recipientParty.escrowId = escrow.id')
+            .andWhere('recipientParty.role = :recipientRole')
+            .limit(1),
+        'recipient',
+      )
+      .setParameter('completedStatus', EscrowStatus.COMPLETED)
+      .setParameter('recipientRole', PartyRole.SELLER);
+
+    const recipientExistsSubquery = qb
+      .subQuery()
+      .select('1')
+      .from(Party, 'partyFilter')
+      .where('partyFilter.escrowId = escrow.id')
+      .andWhere('partyFilter.userId = :userId')
+      .andWhere('partyFilter.role = :recipientRole')
+      .getQuery();
+
+    if (role === EscrowOverviewRole.DEPOSITOR) {
+      qb.where('escrow.creatorId = :userId', { userId });
+    } else if (role === EscrowOverviewRole.RECIPIENT) {
+      qb.where(`EXISTS (${recipientExistsSubquery})`, { userId });
+    } else {
+      qb.where(
+        new Brackets((overviewScope) => {
+          overviewScope
+            .where('escrow.creatorId = :userId', { userId })
+            .orWhere(`EXISTS (${recipientExistsSubquery})`, { userId });
+        }),
+      );
+    }
+
+    if (query.status) {
+      if (query.status === EscrowOverviewStatus.EXPIRED) {
+        qb.andWhere('escrow.expiresAt IS NOT NULL')
+          .andWhere('escrow.expiresAt < :now', { now: new Date() })
+          .andWhere('escrow.status IN (:...expirableStatuses)', {
+            expirableStatuses: [EscrowStatus.PENDING, EscrowStatus.ACTIVE],
+          });
+      } else if (query.status === EscrowOverviewStatus.CREATED) {
+        qb.andWhere('escrow.status = :status', {
+          status: EscrowStatus.PENDING,
+        });
+      } else {
+        qb.andWhere('escrow.status = :status', { status: query.status });
+      }
+    }
+
+    if (query.token) {
+      qb.andWhere('escrow.asset = :asset', { asset: query.token });
+    }
+
+    if (query.from) {
+      qb.andWhere('escrow.createdAt >= :fromDate', {
+        fromDate: new Date(query.from),
+      });
+    }
+
+    if (query.to) {
+      qb.andWhere('escrow.createdAt <= :toDate', {
+        toDate: new Date(query.to),
+      });
+    }
+
+    if (sortBy === EscrowOverviewSortBy.DEADLINE) {
+      qb.orderBy('escrow.expiresAt', sortOrder);
+    } else {
+      qb.orderBy('escrow.createdAt', sortOrder);
+    }
+
+    const totalItems = await qb.getCount();
+    const rows = await qb
+      .offset((page - 1) * pageSize)
+      .limit(pageSize)
+      .getRawMany<{
+        escrowId: string;
+        depositor: string;
+        recipient: string | null;
+        token: string;
+        totalAmount: string | number;
+        totalReleased: string | number;
+        remainingAmount: string | number;
+        status: string;
+        deadline: Date | null;
+        createdAt: Date;
+        updatedAt: Date;
+      }>();
+
+    return {
+      data: rows.map((row) => ({
+        escrowId: row.escrowId,
+        depositor: row.depositor,
+        recipient: row.recipient,
+        token: row.token,
+        totalAmount: Number(row.totalAmount),
+        totalReleased: Number(row.totalReleased),
+        remainingAmount: Number(row.remainingAmount),
+        status: row.status,
+        deadline: row.deadline,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+      })),
+      totalItems,
+      totalPages: totalItems > 0 ? Math.ceil(totalItems / pageSize) : 0,
+      page,
+      pageSize,
+    };
   }
 
   async findAll(

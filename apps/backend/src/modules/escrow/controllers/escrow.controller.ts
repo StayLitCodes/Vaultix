@@ -12,6 +12,12 @@ import {
 } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { Request as ExpressRequest } from 'express';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { AuthGuard } from '../../auth/middleware/auth.guard';
 import { EscrowAccessGuard } from '../guards/escrow-access.guard';
 import { EscrowService } from '../services/escrow.service';
@@ -19,12 +25,18 @@ import { CreateEscrowDto } from '../dto/create-escrow.dto';
 import { UpdateEscrowDto } from '../dto/update-escrow.dto';
 import { ListEscrowsDto } from '../dto/list-escrows.dto';
 import { CancelEscrowDto } from '../dto/cancel-escrow.dto';
+import {
+  EscrowOverviewQueryDto,
+  EscrowOverviewResponseDto,
+} from '../dto/escrow-overview.dto';
 
 interface AuthenticatedRequest extends ExpressRequest {
   user: { sub: string; walletAddress: string };
 }
 
 @Controller('escrows')
+@ApiTags('escrows')
+@ApiBearerAuth()
 @UseGuards(ThrottlerGuard, AuthGuard)
 export class EscrowController {
   constructor(private readonly escrowService: EscrowService) {}
@@ -46,6 +58,19 @@ export class EscrowController {
   ) {
     const userId = req.user.sub;
     return this.escrowService.findAll(userId, query);
+  }
+
+  @Get('overview')
+  @ApiOperation({
+    summary: 'Get paginated escrow overview for authenticated user dashboard',
+  })
+  @ApiOkResponse({ type: EscrowOverviewResponseDto })
+  async findOverview(
+    @Query() query: EscrowOverviewQueryDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.sub;
+    return this.escrowService.findOverview(userId, query);
   }
 
   @Get(':id')
