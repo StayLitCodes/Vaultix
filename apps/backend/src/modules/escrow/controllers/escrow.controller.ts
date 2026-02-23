@@ -8,6 +8,7 @@ import {
   Query,
   UseGuards,
   Request,
+  Req,
 } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { Request as ExpressRequest } from 'express';
@@ -75,5 +76,24 @@ export class EscrowController {
     const userId = req.user.sub;
     const ipAddress = req.ip || req.socket?.remoteAddress;
     return this.escrowService.cancel(id, dto, userId, ipAddress);
+  }
+
+  @Post(':id/release')
+  @UseGuards(AuthGuard)
+  async releaseEscrow(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const escrow = await this.escrowService.releaseEscrow(
+      id,
+      req.user.sub,
+      true, // manual trigger
+    );
+
+    return {
+      id: escrow.id,
+      status: escrow.status,
+      transactionHash: escrow.releaseTransactionHash,
+    };
   }
 }

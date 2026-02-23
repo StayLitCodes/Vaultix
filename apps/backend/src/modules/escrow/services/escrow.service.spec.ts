@@ -12,6 +12,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
+import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
 
 describe('EscrowService', () => {
   let service: EscrowService;
@@ -77,6 +78,12 @@ describe('EscrowService', () => {
         { provide: getRepositoryToken(Party), useValue: mockPartyRepo },
         { provide: getRepositoryToken(Condition), useValue: mockConditionRepo },
         { provide: getRepositoryToken(EscrowEvent), useValue: mockEventRepo },
+        {
+          provide: EscrowStellarIntegrationService,
+          useValue: {
+            completeOnChainEscrow: jest.fn().mockResolvedValue('mock-tx-hash'),
+          },
+        },
       ],
     }).compile();
 
@@ -106,7 +113,7 @@ describe('EscrowService', () => {
         parties: [mockParty],
       } as Escrow);
       partyRepository.create.mockReturnValue(mockParty as Party);
-      partyRepository.save.mockResolvedValue([mockParty] as Party[]);
+      partyRepository.save.mockResolvedValue(mockParty as Party);
       eventRepository.create.mockReturnValue({} as EscrowEvent);
       eventRepository.save.mockResolvedValue({} as EscrowEvent);
 
@@ -133,9 +140,9 @@ describe('EscrowService', () => {
       escrowRepository.save.mockResolvedValue(mockEscrow as Escrow);
       escrowRepository.findOne.mockResolvedValue(mockEscrow as Escrow);
       partyRepository.create.mockReturnValue(mockParty as Party);
-      partyRepository.save.mockResolvedValue([mockParty] as Party[]);
+      partyRepository.save.mockResolvedValue(mockParty as Party);
       conditionRepository.create.mockReturnValue({} as Condition);
-      conditionRepository.save.mockResolvedValue([] as Condition[]);
+      conditionRepository.save.mockResolvedValue({} as Condition);
       eventRepository.create.mockReturnValue({} as EscrowEvent);
       eventRepository.save.mockResolvedValue({} as EscrowEvent);
 

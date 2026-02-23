@@ -4,6 +4,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthController } from './controllers/auth.controller';
 import { AuthService } from './services/auth.service';
 import { AuthGuard } from './middleware/auth.guard';
+import { AdminGuard } from './middleware/admin.guard';
 import { UserModule } from '../user/user.module';
 
 @Module({
@@ -23,7 +24,7 @@ import { UserModule } from '../user/user.module';
     ]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthGuard],
-  exports: [AuthService, AuthGuard],
+  providers: [AuthService, AuthGuard, AdminGuard],
+  exports: [AuthService, AuthGuard, AdminGuard],
 })
 export class AuthModule {}

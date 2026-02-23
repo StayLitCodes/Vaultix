@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import supertest from 'supertest';
+import request from 'supertest';
 import type { Server } from 'http';
 import { AppModule } from '../src/app.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -67,14 +67,14 @@ describe('Escrow (e2e)', () => {
     httpServer = app.getHttpServer() as Server;
 
     // Authenticate first user
-    const challengeResponse = await supertest(httpServer)
+    const challengeResponse = await request(httpServer)
       .post('/auth/challenge')
       .send({ walletAddress: testWalletAddress });
 
     const message = (challengeResponse.body as { message: string }).message;
     const signature = testKeypair.sign(message).toString('hex');
 
-    const verifyResponse = await supertest(httpServer)
+    const verifyResponse = await request(httpServer)
       .post('/auth/verify')
       .send({
         walletAddress: testWalletAddress,
@@ -84,20 +84,20 @@ describe('Escrow (e2e)', () => {
 
     accessToken = (verifyResponse.body as { accessToken: string }).accessToken;
 
-    const meResponse = await supertest(httpServer)
+    const meResponse = await request(httpServer)
       .get('/auth/me')
       .set('Authorization', `Bearer ${accessToken}`);
     userId = (meResponse.body as { id: string }).id;
 
     // Authenticate second user
-    const challenge2 = await supertest(httpServer)
+    const challenge2 = await request(httpServer)
       .post('/auth/challenge')
       .send({ walletAddress: secondWalletAddress });
 
     const message2 = (challenge2.body as { message: string }).message;
     const signature2 = secondKeypair.sign(message2).toString('hex');
 
-    const verify2 = await supertest(httpServer).post('/auth/verify').send({
+    const verify2 = await request(httpServer).post('/auth/verify').send({
       walletAddress: secondWalletAddress,
       signature: signature2,
       publicKey: secondWalletAddress,
@@ -105,7 +105,7 @@ describe('Escrow (e2e)', () => {
 
     secondAccessToken = (verify2.body as { accessToken: string }).accessToken;
 
-    const me2 = await supertest(httpServer)
+    const me2 = await request(httpServer)
       .get('/auth/me')
       .set('Authorization', `Bearer ${secondAccessToken}`);
     secondUserId = (me2.body as { id: string }).id;
@@ -133,7 +133,7 @@ describe('Escrow (e2e)', () => {
 
   describe('POST /escrows', () => {
     it('should create an escrow', async () => {
-      const response = await supertest(httpServer)
+      const response = await request(httpServer)
         .post('/escrows')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({
@@ -154,7 +154,7 @@ describe('Escrow (e2e)', () => {
     });
 
     it('should create an escrow with conditions', async () => {
-      const response = await supertest(httpServer)
+      const response = await request(httpServer)
         .post('/escrows')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({
@@ -173,7 +173,7 @@ describe('Escrow (e2e)', () => {
     });
 
     it('should return 400 for invalid data', async () => {
-      await supertest(httpServer)
+      await request(httpServer)
         .post('/escrows')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({
@@ -184,7 +184,7 @@ describe('Escrow (e2e)', () => {
     });
 
     it('should return 401 without auth token', async () => {
-      await supertest(httpServer)
+      await request(httpServer)
         .post('/escrows')
         .send({
           title: 'Test Escrow',
@@ -197,7 +197,7 @@ describe('Escrow (e2e)', () => {
 
   describe('GET /escrows', () => {
     it('should return user escrows', async () => {
-      const response = await supertest(httpServer)
+      const response = await request(httpServer)
         .get('/escrows')
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
@@ -211,7 +211,7 @@ describe('Escrow (e2e)', () => {
     });
 
     it('should support pagination', async () => {
-      const response = await supertest(httpServer)
+      const response = await request(httpServer)
         .get('/escrows?page=1&limit=5')
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
@@ -222,7 +222,7 @@ describe('Escrow (e2e)', () => {
     });
 
     it('should filter by status', async () => {
-      const response = await supertest(httpServer)
+      const response = await request(httpServer)
         .get('/escrows?status=pending')
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
@@ -234,7 +234,7 @@ describe('Escrow (e2e)', () => {
     });
 
     it('should return 401 without auth token', async () => {
-      await supertest(httpServer).get('/escrows').expect(401);
+      await request(httpServer).get('/escrows').expect(401);
     });
   });
 
@@ -242,7 +242,7 @@ describe('Escrow (e2e)', () => {
     let escrowId: string;
 
     beforeAll(async () => {
-      const response = await supertest(httpServer)
+      const response = await request(httpServer)
         .post('/escrows')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({
@@ -254,7 +254,7 @@ describe('Escrow (e2e)', () => {
     });
 
     it('should return escrow details for creator', async () => {
-      const response = await supertest(httpServer)
+      const response = await request(httpServer)
         .get(`/escrows/${escrowId}`)
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
@@ -265,7 +265,7 @@ describe('Escrow (e2e)', () => {
     });
 
     it('should return escrow details for party', async () => {
-      const response = await supertest(httpServer)
+      const response = await request(httpServer)
         .get(`/escrows/${escrowId}`)
         .set('Authorization', `Bearer ${secondAccessToken}`)
         .expect(200);
@@ -275,7 +275,7 @@ describe('Escrow (e2e)', () => {
     });
 
     it('should return 404 for non-existent escrow', async () => {
-      await supertest(httpServer)
+      await request(httpServer)
         .get('/escrows/non-existent-id')
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(404);
@@ -286,7 +286,7 @@ describe('Escrow (e2e)', () => {
     let escrowId: string;
 
     beforeEach(async () => {
-      const response = await supertest(httpServer)
+      const response = await request(httpServer)
         .post('/escrows')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({
@@ -298,7 +298,7 @@ describe('Escrow (e2e)', () => {
     });
 
     it('should update escrow by creator', async () => {
-      const response = await supertest(httpServer)
+      const response = await request(httpServer)
         .patch(`/escrows/${escrowId}`)
         .set('Authorization', `Bearer ${accessToken}`)
         .send({ title: 'Updated Title' })
@@ -309,7 +309,7 @@ describe('Escrow (e2e)', () => {
     });
 
     it('should return 403 when non-creator tries to update', async () => {
-      await supertest(httpServer)
+      await request(httpServer)
         .patch(`/escrows/${escrowId}`)
         .set('Authorization', `Bearer ${secondAccessToken}`)
         .send({ title: 'Unauthorized Update' })
@@ -321,7 +321,7 @@ describe('Escrow (e2e)', () => {
     let escrowId: string;
 
     beforeEach(async () => {
-      const response = await supertest(httpServer)
+      const response = await request(httpServer)
         .post('/escrows')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({
@@ -333,7 +333,7 @@ describe('Escrow (e2e)', () => {
     });
 
     it('should cancel escrow by creator', async () => {
-      const response = await supertest(httpServer)
+      const response = await request(httpServer)
         .post(`/escrows/${escrowId}/cancel`)
         .set('Authorization', `Bearer ${accessToken}`)
         .send({ reason: 'Changed my mind' })
@@ -344,7 +344,7 @@ describe('Escrow (e2e)', () => {
     });
 
     it('should return 403 when non-creator tries to cancel pending escrow', async () => {
-      await supertest(httpServer)
+      await request(httpServer)
         .post(`/escrows/${escrowId}/cancel`)
         .set('Authorization', `Bearer ${secondAccessToken}`)
         .send({ reason: 'Unauthorized cancel' })
@@ -353,13 +353,13 @@ describe('Escrow (e2e)', () => {
 
     it('should return 400 when trying to cancel already cancelled escrow', async () => {
       // First cancel
-      await supertest(httpServer)
+      await request(httpServer)
         .post(`/escrows/${escrowId}/cancel`)
         .set('Authorization', `Bearer ${accessToken}`)
         .send({});
 
       // Try to cancel again
-      await supertest(httpServer)
+      await request(httpServer)
         .post(`/escrows/${escrowId}/cancel`)
         .set('Authorization', `Bearer ${accessToken}`)
         .send({})
