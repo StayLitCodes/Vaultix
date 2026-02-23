@@ -15,6 +15,9 @@ import { Escrow } from './modules/escrow/entities/escrow.entity';
 import { Party } from './modules/escrow/entities/party.entity';
 import { Condition } from './modules/escrow/entities/condition.entity';
 import { EscrowEvent } from './modules/escrow/entities/escrow-event.entity';
+import { NotificationsModule } from './notifications/notifications.module';
+import { EscrowModule } from './escrow/escrow.module';
+import { ApiKeyModule } from './api-key/api-key.module';
 
 @Module({
   imports: [
@@ -40,6 +43,8 @@ import { EscrowEvent } from './modules/escrow/entities/escrow-event.entity';
     StellarModule,
     AdminModule,
     WebhookModule,
+    NotificationsModule,
+    ApiKeyModule,
   ],
   controllers: [AppController],
   providers: [AppService],
