@@ -1,10 +1,42 @@
-import React from 'react';
-import { IEscrowExtended } from '@/types/escrow';
+'use client';
+
+import React, { useState } from 'react';
+import { IEscrowExtended, IParty } from '@/types/escrow';
+import { PartyAcceptanceModal } from '../modals/PartyAcceptanceModal';
 
 interface PartiesSectionProps {
   escrow: IEscrowExtended;
   userRole: 'creator' | 'counterparty' | null;
 }
+
+// API functions for party acceptance/rejection
+const acceptPartyInvitation = async (escrowId: string, partyId: string): Promise<void> => {
+  const response = await fetch(`/api/escrows/${escrowId}/parties/${partyId}/accept`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: 'Failed to accept invitation' }));
+    throw new Error(error.message || 'Failed to accept invitation');
+  }
+};
+
+const rejectPartyInvitation = async (escrowId: string, partyId: string): Promise<void> => {
+  const response = await fetch(`/api/escrows/${escrowId}/parties/${partyId}/reject`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ message: 'Failed to reject invitation' }));
+    throw new Error(error.message || 'Failed to reject invitation');
+  }
+};
 
 const getRoleColor = (role: string) => {
   switch (role.toUpperCase()) {
@@ -33,6 +65,31 @@ const getStatusColor = (status: string) => {
 };
 
 const PartiesSection: React.FC<PartiesSectionProps> = ({ escrow, userRole }: PartiesSectionProps) => {
+  const [selectedParty, setSelectedParty] = useState<IParty | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const handleOpenModal = (party: IParty) => {
+    setSelectedParty(party);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedParty(null);
+  };
+
+  const handleAccept = async (escrowId: string, partyId: string) => {
+    await acceptPartyInvitation(escrowId, partyId);
+    // Refresh the page or update local state to reflect the change
+    window.location.reload();
+  };
+
+  const handleReject = async (escrowId: string, partyId: string) => {
+    await rejectPartyInvitation(escrowId, partyId);
+    // Refresh the page or update local state to reflect the change
+    window.location.reload();
+  };
+
   return (
     <div className="bg-white rounded-lg shadow p-6">
       <h2 className="text-xl font-semibold text-gray-900 mb-4">Parties</h2>
@@ -57,10 +114,16 @@ const PartiesSection: React.FC<PartiesSectionProps> = ({ escrow, userRole }: Par
               
               {userRole === 'creator' && party.status === 'PENDING' && (
                 <div className="flex space-x-2">
-                  <button className="px-3 py-1 bg-green-500 text-white text-sm rounded hover:bg-green-600">
+                  <button 
+                    onClick={() => handleOpenModal(party)}
+                    className="px-3 py-1 bg-green-500 text-white text-sm rounded hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors"
+                  >
                     Accept
                   </button>
-                  <button className="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600">
+                  <button 
+                    onClick={() => handleOpenModal(party)}
+                    className="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors"
+                  >
                     Reject
                   </button>
                 </div>
@@ -86,6 +149,18 @@ const PartiesSection: React.FC<PartiesSectionProps> = ({ escrow, userRole }: Par
             ))}
           </ul>
         </div>
+      )}
+
+      {/* Party Acceptance Modal */}
+      {selectedParty && (
+        <PartyAcceptanceModal
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+          escrow={escrow}
+          party={selectedParty}
+          onAccept={handleAccept}
+          onReject={handleReject}
+        />
       )}
     </div>
   );
