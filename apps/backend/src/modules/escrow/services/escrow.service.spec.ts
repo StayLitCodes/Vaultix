@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository, UpdateResult } from 'typeorm';
@@ -14,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
 import { WebhookService } from '../../../services/webhook/webhook.service';
+import { CreateEscrowDto } from '../dto/create-escrow.dto';
 
 describe('EscrowService', () => {
   let service: EscrowService;
@@ -369,8 +371,12 @@ describe('EscrowService', () => {
       );
 
       expect(result.isFulfilled).toBe(true);
-      expect(conditionRepository.save).toHaveBeenCalled();
-      expect(eventRepository.save).toHaveBeenCalled();
+      expect(conditionRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ isFulfilled: true }),
+      );
+      expect(eventRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({}),
+      );
     });
 
     it('should throw ForbiddenException if non-seller tries to fulfill', async () => {
@@ -460,8 +466,12 @@ describe('EscrowService', () => {
       );
 
       expect(result.isMet).toBe(true);
-      expect(conditionRepository.save).toHaveBeenCalled();
-      expect(eventRepository.save).toHaveBeenCalled();
+      expect(conditionRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ isMet: true }),
+      );
+      expect(eventRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({}),
+      );
     });
 
     it('should throw ForbiddenException if non-buyer tries to confirm', async () => {
