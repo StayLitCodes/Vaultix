@@ -13,6 +13,8 @@ import { EscrowEvent, EscrowEventType } from '../entities/escrow-event.entity';
 import { CreateEscrowDto } from '../dto/create-escrow.dto';
 import { UpdateEscrowDto } from '../dto/update-escrow.dto';
 import { ListEscrowsDto, SortOrder } from '../dto/list-escrows.dto';
+import { ListEventsDto, EventSortOrder } from '../dto/list-events.dto';
+import { EventResponseDto } from '../dto/event-response.dto';
 import { CancelEscrowDto } from '../dto/cancel-escrow.dto';
 import { validateTransition, isTerminalStatus } from '../escrow-state-machine';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
@@ -355,6 +357,92 @@ export class EscrowService {
     }
 
     return condition;
+  }
+
+  async findEvents(
+    userId: string,
+    query: ListEventsDto,
+    escrowId?: string,
+  ): Promise<{
+    data: EventResponseDto[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const page = query.page || 1;
+    const limit = query.limit || 10;
+    const skip = (page - 1) * limit;
+
+    const qb: SelectQueryBuilder<EscrowEvent> = this.eventRepository
+      .createQueryBuilder('event')
+      .leftJoinAndSelect('event.escrow', 'escrow')
+      .leftJoinAndSelect('escrow.parties', 'party')
+      .leftJoinAndSelect('escrow.creator', 'creator')
+      .where('(escrow.creatorId = :userId OR party.userId = :userId)', {
+        userId,
+      });
+
+    // Apply escrowId filter if provided (either from parameter or query)
+    const effectiveEscrowId = escrowId || query.escrowId;
+    if (effectiveEscrowId) {
+      qb.andWhere('event.escrowId = :escrowId', {
+        escrowId: effectiveEscrowId,
+      });
+    }
+
+    if (query.eventType) {
+      qb.andWhere('event.eventType = :eventType', {
+        eventType: query.eventType,
+      });
+    }
+
+    if (query.actorId) {
+      qb.andWhere('event.actorId = :actorId', { actorId: query.actorId });
+    }
+
+    if (query.dateFrom) {
+      qb.andWhere('event.createdAt >= :dateFrom', {
+        dateFrom: new Date(query.dateFrom),
+      });
+    }
+
+    if (query.dateTo) {
+      qb.andWhere('event.createdAt <= :dateTo', {
+        dateTo: new Date(query.dateTo),
+      });
+    }
+
+    const sortOrder = query.sortOrder === EventSortOrder.ASC ? 'ASC' : 'DESC';
+    qb.orderBy(`event.${query.sortBy || 'createdAt'}`, sortOrder);
+
+    const [events, total] = await qb.skip(skip).take(limit).getManyAndCount();
+
+    // Transform to response DTO
+    const data: EventResponseDto[] = events.map((event) => ({
+      id: event.id,
+      escrowId: event.escrowId,
+      eventType: event.eventType,
+      actorId: event.actorId,
+      data: event.data,
+      ipAddress: event.ipAddress,
+      createdAt: event.createdAt,
+      escrow: event.escrow
+        ? {
+            id: event.escrow.id,
+            title: event.escrow.title,
+            amount: event.escrow.amount,
+            asset: event.escrow.asset,
+            status: event.escrow.status,
+          }
+        : undefined,
+      actor: event.actorId
+        ? {
+            walletAddress: event.actorId, // In real implementation, this would come from user lookup
+          }
+        : undefined,
+    }));
+
+    return { data, total, page, limit };
   }
 
   private async logEvent(

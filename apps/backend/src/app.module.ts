@@ -15,7 +15,7 @@ import { Party } from './modules/escrow/entities/party.entity';
 import { Condition } from './modules/escrow/entities/condition.entity';
 import { EscrowEvent } from './modules/escrow/entities/escrow-event.entity';
 import { NotificationsModule } from './notifications/notifications.module';
-import { EscrowModule } from './escrow/escrow.module';
+import { EscrowModule } from './modules/escrow/escrow.module';
 import { ApiKeyModule } from './api-key/api-key.module';
 import { StellarEventModule } from './modules/stellar/stellar-event.module';
 

@@ -18,6 +18,7 @@ import { EscrowService } from '../services/escrow.service';
 import { CreateEscrowDto } from '../dto/create-escrow.dto';
 import { UpdateEscrowDto } from '../dto/update-escrow.dto';
 import { ListEscrowsDto } from '../dto/list-escrows.dto';
+import { ListEventsDto } from '../dto/list-events.dto';
 import { CancelEscrowDto } from '../dto/cancel-escrow.dto';
 
 interface AuthenticatedRequest extends ExpressRequest {
@@ -76,6 +77,17 @@ export class EscrowController {
     const userId = req.user.sub;
     const ipAddress = req.ip || req.socket?.remoteAddress;
     return this.escrowService.cancel(id, dto, userId, ipAddress);
+  }
+
+  @Get(':id/events')
+  @UseGuards(EscrowAccessGuard)
+  async findEscrowEvents(
+    @Param('id') id: string,
+    @Query() query: ListEventsDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.sub;
+    return this.escrowService.findEvents(userId, query, id);
   }
 
   @Post(':id/release')
