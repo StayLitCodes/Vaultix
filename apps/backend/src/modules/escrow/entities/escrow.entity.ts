@@ -63,17 +63,8 @@ export class Escrow {
   @JoinColumn({ name: 'creatorId' })
   creator: User;
 
-  @Column({ nullable: true })
-  releaseTransactionHash?: string;
-
-  @Column({ default: false })
-  isReleased: boolean;
-
   @Column({ type: 'datetime', nullable: true })
   expiresAt?: Date;
-
-  @Column({ type: 'datetime', nullable: true })
-  expirationNotifiedAt?: Date;
 
   @Column({ default: true })
   isActive: boolean;
@@ -88,9 +79,6 @@ export class Escrow {
 
   @OneToMany(() => EscrowEvent, (event) => event.escrow, { cascade: true })
   events: EscrowEvent[];
-
-  // @OneToMany(() => Milestone, (m) => m.escrow)
-  // milestones: Milestone[];
 
   @CreateDateColumn()
   createdAt: Date;

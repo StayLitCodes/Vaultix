@@ -15,7 +15,6 @@ import { UpdateEscrowDto } from '../dto/update-escrow.dto';
 import { ListEscrowsDto, SortOrder } from '../dto/list-escrows.dto';
 import { CancelEscrowDto } from '../dto/cancel-escrow.dto';
 import { validateTransition, isTerminalStatus } from '../escrow-state-machine';
-import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
 
 @Injectable()
 export class EscrowService {
@@ -28,8 +27,6 @@ export class EscrowService {
     private conditionRepository: Repository<Condition>,
     @InjectRepository(EscrowEvent)
     private eventRepository: Repository<EscrowEvent>,
-
-    private readonly stellarIntegrationService: EscrowStellarIntegrationService,
   ) {}
 
   async create(
@@ -238,108 +235,6 @@ export class EscrowService {
     }
 
     return escrow.parties?.some((party) => party.userId === userId) ?? false;
-  }
-
-  async releaseEscrow(
-    escrowId: string,
-    currentUserId: string,
-    manual = false,
-  ): Promise<Escrow> {
-    const escrow = await this.escrowRepository.findOne({
-      where: { id: escrowId },
-      relations: ['conditions', 'milestones'],
-    });
-
-    if (!escrow) {
-      throw new NotFoundException('Escrow not found');
-    }
-
-    // Idempotency protection
-    if (escrow.status === EscrowStatus.COMPLETED || escrow.isReleased) {
-      return escrow; // Safe no-op
-    }
-
-    if (escrow.status !== EscrowStatus.ACTIVE) {
-      throw new BadRequestException('Escrow not active');
-    }
-
-    // Manual release must be buyer
-    if (manual && escrow.creatorId !== currentUserId) {
-      throw new ForbiddenException('Only buyer can release escrow');
-    }
-
-    // Auto release validation
-    if (!manual) {
-      const allConditionsConfirmed = escrow.conditions.every(
-        (c) => c.isMet === true,
-      );
-
-      if (!allConditionsConfirmed) {
-        throw new BadRequestException(
-          'All conditions must be confirmed for auto-release',
-        );
-      }
-    }
-
-    // 🔹 Execute on-chain transfer
-    const txHash = await this.stellarIntegrationService.completeOnChainEscrow(
-      escrow.id,
-      escrow.creatorId,
-    );
-
-    escrow.status = EscrowStatus.COMPLETED;
-    escrow.isReleased = true;
-    escrow.releaseTransactionHash = txHash;
-
-    await this.escrowRepository.save(escrow);
-
-    await this.logEvent(escrow.id, EscrowEventType.COMPLETED, currentUserId, {
-      txHash,
-    });
-
-    return escrow;
-  }
-
-  async confirmCondition(
-    conditionId: string,
-    userId: string,
-  ): Promise<Condition> {
-    const condition = await this.conditionRepository.findOne({
-      where: { id: conditionId },
-      relations: ['escrow', 'escrow.conditions'],
-    });
-
-    if (!condition) {
-      throw new NotFoundException('Condition not found');
-    }
-
-    if (condition.isMet) {
-      return condition; // idempotent
-    }
-
-    // Mark condition as met
-    condition.isMet = true;
-    condition.metAt = new Date();
-    condition.metByUserId = userId;
-
-    await this.conditionRepository.save(condition);
-
-    const escrow = condition.escrow;
-
-    // 🔥 AUTO RELEASE CHECK
-    const allConditionsMet = escrow.conditions.every((c) =>
-      c.id === condition.id ? true : c.isMet,
-    );
-
-    if (allConditionsMet) {
-      await this.releaseEscrow(
-        escrow.id,
-        escrow.creatorId,
-        false, // auto release
-      );
-    }
-
-    return condition;
   }
 
   private async logEvent(

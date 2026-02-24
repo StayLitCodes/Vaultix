@@ -1,9 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import request from 'supertest';
+import supertest from 'supertest';
 import type { Server } from 'http';
 import { AppModule } from './../src/app.module';
-import supertest from 'supertest';
 
 // Mock Stellar keypair for testing
 interface MockKeypair {
@@ -74,7 +73,7 @@ describe('AuthController (e2e)', () => {
 
   describe('/auth/challenge (POST)', () => {
     it('should return a unique nonce for a wallet address', async () => {
-      const response = await request(httpServer)
+      const response = await supertest(httpServer)
         .post('/auth/challenge')
         .send({ walletAddress: testWalletAddress })
         .expect(200);
@@ -87,7 +86,7 @@ describe('AuthController (e2e)', () => {
     });
 
     it('should return 400 for invalid wallet address', async () => {
-      await request(httpServer)
+      await supertest(httpServer)
         .post('/auth/challenge')
         .send({ walletAddress: 'invalid-address' })
         .expect(400);
@@ -97,7 +96,7 @@ describe('AuthController (e2e)', () => {
   describe('/auth/verify (POST)', () => {
     it('should verify a valid signature and return tokens', async () => {
       // First get a challenge
-      const challengeResponse = await request(httpServer)
+      const challengeResponse = await supertest(httpServer)
         .post('/auth/challenge')
         .send({ walletAddress: testWalletAddress })
         .expect(200);
@@ -105,7 +104,7 @@ describe('AuthController (e2e)', () => {
       const message = (challengeResponse.body as ChallengeResponse).message;
       const signature = testKeypair.sign(Buffer.from(message)).toString('hex');
 
-      const response = await request(httpServer)
+      const response = await supertest(httpServer)
         .post('/auth/verify')
         .send({
           walletAddress: testWalletAddress,
@@ -122,7 +121,7 @@ describe('AuthController (e2e)', () => {
     });
 
     it('should return 401 for invalid signature', async () => {
-      await request(httpServer)
+      await supertest(httpServer)
         .post('/auth/verify')
         .send({
           walletAddress: testWalletAddress,
@@ -136,7 +135,7 @@ describe('AuthController (e2e)', () => {
   describe('/auth/me (GET)', () => {
     beforeEach(async () => {
       // Get a valid access token
-      const challengeResponse = await request(httpServer)
+      const challengeResponse = await supertest(httpServer)
         .post('/auth/challenge')
         .send({ walletAddress: testWalletAddress })
         .expect(200);
@@ -144,7 +143,7 @@ describe('AuthController (e2e)', () => {
       const message = (challengeResponse.body as ChallengeResponse).message;
       const signature = testKeypair.sign(Buffer.from(message)).toString('hex');
 
-      const verifyResponse = await request(httpServer)
+      const verifyResponse = await supertest(httpServer)
         .post('/auth/verify')
         .send({
           walletAddress: testWalletAddress,
@@ -157,7 +156,7 @@ describe('AuthController (e2e)', () => {
     });
 
     it('should return current user with valid token', async () => {
-      const response = await request(httpServer)
+      const response = await supertest(httpServer)
         .get('/auth/me')
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
@@ -176,7 +175,7 @@ describe('AuthController (e2e)', () => {
     });
 
     it('should return 401 with invalid token', async () => {
-      await request(httpServer)
+      await supertest(httpServer)
         .get('/auth/me')
         .set('Authorization', 'Bearer invalid-token')
         .expect(401);

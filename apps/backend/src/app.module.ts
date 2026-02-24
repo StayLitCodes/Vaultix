@@ -6,8 +6,6 @@ import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
 import { EscrowModule } from './modules/escrow/escrow.module';
-import { StellarModule } from './modules/stellar/stellar.module';
-import { AdminModule } from './modules/admin/admin.module';
 import { User } from './modules/user/entities/user.entity';
 import { RefreshToken } from './modules/user/entities/refresh-token.entity';
 import { Escrow } from './modules/escrow/entities/escrow.entity';
@@ -36,8 +34,6 @@ import { EscrowEvent } from './modules/escrow/entities/escrow-event.entity';
     AuthModule,
     UserModule,
     EscrowModule,
-    StellarModule,
-    AdminModule,
   ],
   controllers: [AppController],
   providers: [AppService],
