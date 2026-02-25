@@ -42,7 +42,7 @@ fn test_create_escrow_fails_when_paused() {
 
     // 1. Initialize roles FIRST
     client.init(&admin, &operator, &arbitrator);
-    
+
     // 2. NOW pause the contract (using the operator we just initialized)
     client.set_paused(&true);
 
@@ -1179,7 +1179,7 @@ fn test_pause_fails_without_operator_initialized() {
     env.mock_all_auths();
     let contract_id = env.register_contract(None, VaultixEscrow);
     let client = VaultixEscrowClient::new(&env, &contract_id);
-    
+
     // set_paused requires operator. Operator not set -> OperatorNotInitialized (24)
     client.set_paused(&true);
 }
@@ -1191,9 +1191,9 @@ fn test_resolve_dispute_fails_without_arbitrator_initialized() {
     env.mock_all_auths();
     let contract_id = env.register_contract(None, VaultixEscrow);
     let client = VaultixEscrowClient::new(&env, &contract_id);
-    
+
     let winner = Address::generate(&env);
-    
+
     // resolve_dispute requires arbitrator. Arbitrator not set -> ArbitratorNotInitialized (25)
     client.resolve_dispute(&1u64, &winner);
-    }
+}

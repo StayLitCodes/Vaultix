@@ -178,12 +178,22 @@ impl VaultixEscrow {
             .instance()
             .get(&symbol_short!("fee_bps"))
             .unwrap_or(DEFAULT_FEE_BPS);
-            
-        env.storage().instance().set(&symbol_short!("fee_bps"), &new_fee_bps);
+
+        env.storage()
+            .instance()
+            .set(&symbol_short!("fee_bps"), &new_fee_bps);
 
         env.events().publish(
-            (Symbol::new(&env, "Vaultix"), Symbol::new(&env, "FeeUpdated")),
-            (Symbol::new(&env, "Global"), Symbol::new(&env, "PlatformFee"), old_fee, new_fee_bps),
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "FeeUpdated"),
+            ),
+            (
+                Symbol::new(&env, "Global"),
+                Symbol::new(&env, "PlatformFee"),
+                old_fee,
+                new_fee_bps,
+            ),
         );
 
         Ok(())
@@ -193,11 +203,20 @@ impl VaultixEscrow {
         let operator = get_operator(&env)?;
         operator.require_auth();
 
-        let state = if paused { ContractState::Paused } else { ContractState::Active };
-        env.storage().instance().set(&symbol_short!("state"), &state);
+        let state = if paused {
+            ContractState::Paused
+        } else {
+            ContractState::Active
+        };
+        env.storage()
+            .instance()
+            .set(&symbol_short!("state"), &state);
 
         env.events().publish(
-            (Symbol::new(&env, "Vaultix"), Symbol::new(&env, "PausedStateChanged")),
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "PausedStateChanged"),
+            ),
             (paused, operator),
         );
 
@@ -218,29 +237,50 @@ impl VaultixEscrow {
         Ok((treasury, fee_bps))
     }
 
-    pub fn init(env: Env, admin: Address, operator: Address, arbitrator: Address) -> Result<(), Error> {
+    pub fn init(
+        env: Env,
+        admin: Address,
+        operator: Address,
+        arbitrator: Address,
+    ) -> Result<(), Error> {
         if env.storage().persistent().has(&admin_storage_key()) {
             return Err(Error::AlreadyInitialized);
         }
 
         admin.require_auth();
-        
+
         env.storage().persistent().set(&admin_storage_key(), &admin);
-        env.storage().persistent().set(&Symbol::new(&env, "operator"), &operator);
-        env.storage().persistent().set(&Symbol::new(&env, "arbitrator"), &arbitrator);
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, "operator"), &operator);
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, "arbitrator"), &arbitrator);
 
         let vaultix_topic = Symbol::new(&env, "Vaultix");
 
         env.events().publish(
-            (vaultix_topic.clone(), Symbol::new(&env, "RoleUpdated"), Symbol::new(&env, "Admin")),
+            (
+                vaultix_topic.clone(),
+                Symbol::new(&env, "RoleUpdated"),
+                Symbol::new(&env, "Admin"),
+            ),
             (Option::<Address>::None, admin),
         );
         env.events().publish(
-            (vaultix_topic.clone(), Symbol::new(&env, "RoleUpdated"), Symbol::new(&env, "Operator")),
+            (
+                vaultix_topic.clone(),
+                Symbol::new(&env, "RoleUpdated"),
+                Symbol::new(&env, "Operator"),
+            ),
             (Option::<Address>::None, operator),
         );
         env.events().publish(
-            (vaultix_topic, Symbol::new(&env, "RoleUpdated"), Symbol::new(&env, "Arbitrator")),
+            (
+                vaultix_topic,
+                Symbol::new(&env, "RoleUpdated"),
+                Symbol::new(&env, "Arbitrator"),
+            ),
             (Option::<Address>::None, arbitrator),
         );
 
