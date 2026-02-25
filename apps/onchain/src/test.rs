@@ -32,16 +32,22 @@ fn test_create_escrow_fails_when_paused() {
 
     let treasury = Address::generate(&env);
     client.initialize(&treasury, &None);
-    client.set_paused(&true);
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let escrow_id = 1_000u64;
+
+    // 1. Initialize roles FIRST
+    client.init(&admin, &operator, &arbitrator);
+    
+    // 2. NOW pause the contract (using the operator we just initialized)
+    client.set_paused(&true);
 
     let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
-
     let milestones = vec![
         &env,
         Milestone {
@@ -79,10 +85,14 @@ fn test_deposit_funds_fails_when_paused() {
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let escrow_id = 1_001u64;
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
+
+    client.init(&admin, &operator, &arbitrator);
 
     let milestones = vec![
         &env,
@@ -540,6 +550,8 @@ fn test_admin_resolves_dispute_to_recipient() {
     let client = VaultixEscrowClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let escrow_id = 10u64;
@@ -547,7 +559,7 @@ fn test_admin_resolves_dispute_to_recipient() {
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10000);
 
-    client.init(&admin);
+    client.init(&admin, &operator, &arbitrator);
 
     let milestones = vec![
         &env,
@@ -602,6 +614,8 @@ fn test_admin_resolves_dispute_to_depositor() {
     let client = VaultixEscrowClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let escrow_id = 11u64;
@@ -609,7 +623,7 @@ fn test_admin_resolves_dispute_to_depositor() {
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &5000);
 
-    client.init(&admin);
+    client.init(&admin, &operator, &arbitrator);
 
     let milestones = vec![
         &env,
@@ -1139,3 +1153,47 @@ fn test_release_milestone_before_deposit() {
     // This should panic with Error #9 (EscrowNotActive)
     client.release_milestone(&escrow_id, &0);
 }
+
+#[test]
+fn test_initialization_and_roles() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+
+    client.init(&admin, &operator, &arbitrator);
+
+    // Attempt to re-initialize should fail (AlreadyInitialized = 19)
+    let result = client.try_init(&admin, &operator, &arbitrator);
+    assert_eq!(result, Err(Ok(Error::AlreadyInitialized)));
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #24)")]
+fn test_pause_fails_without_operator_initialized() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+    
+    // set_paused requires operator. Operator not set -> OperatorNotInitialized (24)
+    client.set_paused(&true);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #25)")]
+fn test_resolve_dispute_fails_without_arbitrator_initialized() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+    
+    let winner = Address::generate(&env);
+    
+    // resolve_dispute requires arbitrator. Arbitrator not set -> ArbitratorNotInitialized (25)
+    client.resolve_dispute(&1u64, &winner);
+    }
