@@ -66,6 +66,12 @@ export class Escrow {
   @Column({ nullable: true })
   releaseTransactionHash?: string;
 
+  @Column({ nullable: true })
+  stellarTxHash?: string;
+
+  @Column({ type: 'datetime', nullable: true })
+  fundedAt?: Date;
+
   @Column({ default: false })
   isReleased: boolean;
 
