@@ -1,17 +1,11 @@
-import axios, { AxiosError } from 'axios';
-import { getAccessToken, getRefreshToken, setTokens, } from '../utils/token';
+import axios, { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
+import { getAccessToken, getRefreshToken, setTokens } from '../utils/token';
 import { clearTokens } from '../utils/token';
 
-declare global {
-  namespace NodeJS {
-    interface ProcessEnv {
-      VITE_API_URL?: string;
-    }
-  }
-}
+const API_URL = process.env.VITE_API_URL || 'http://localhost:3001';
 
 const api = axios.create({
-  baseURL: process.env.VITE_API_URL || 'http://localhost:3001',
+  baseURL: API_URL,
   withCredentials: true,
 });
 
@@ -31,11 +25,16 @@ api.interceptors.request.use(
 );
 
 
+interface FailedQueueItem {
+  resolve: (value: unknown) => void;
+  reject: (reason?: unknown) => void;
+}
+
 // 🔄 RESPONSE INTERCEPTOR (Refresh Flow)
 let isRefreshing = false;
-let failedQueue: any[] = [];
+let failedQueue: FailedQueueItem[] = [];
 
-const processQueue = (error: any, token: string | null = null) => {
+const processQueue = (error: Error | null, token: string | null = null): void => {
   failedQueue.forEach((prom) => {
     if (error) prom.reject(error);
     else prom.resolve(token);
@@ -45,13 +44,13 @@ const processQueue = (error: any, token: string | null = null) => {
 };
 
 api.interceptors.response.use(
-  (response) => response,
+  (response: AxiosResponse) => response,
   async (error: AxiosError) => {
-    const originalRequest: any = error.config;
+    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
     if (error.response?.status === 401 && !originalRequest._retry) {
       if (isRefreshing) {
-        return new Promise((resolve, reject) => {
+        return new Promise<AxiosResponse>((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         }).then((token) => {
           originalRequest.headers['Authorization'] = 'Bearer ' + token;
@@ -66,7 +65,7 @@ api.interceptors.response.use(
         const refreshToken = getRefreshToken();
 
         const response = await axios.post(
-          `${process.env.VITE_API_URL}/auth/refresh`,
+          `${API_URL}/auth/refresh`,
           { refreshToken },
         );
 
@@ -80,7 +79,7 @@ api.interceptors.response.use(
 
         return api(originalRequest);
       } catch (err) {
-        processQueue(err, null);
+        processQueue(err instanceof Error ? err : new Error(String(err)), null);
         clearTokens();
         if (typeof globalThis.window !== 'undefined') {
           globalThis.window.location.href = '/login';
