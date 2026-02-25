@@ -521,4 +521,164 @@ describe('EscrowService', () => {
       expect(conditionRepository.save).not.toHaveBeenCalled();
     });
   });
+
+  describe('expire', () => {
+    it('should expire an escrow past deadline by depositor', async () => {
+      const pastDate = new Date(Date.now() - 86400000); // 1 day ago
+      const expiredEscrow = {
+        ...mockEscrow,
+        status: EscrowStatus.ACTIVE,
+        expiresAt: pastDate,
+        parties: [{ userId: 'user-456', role: PartyRole.SELLER }],
+      };
+
+      escrowRepository.findOne.mockResolvedValue(expiredEscrow as Escrow);
+      escrowRepository.update.mockResolvedValue({
+        affected: 1,
+      } as UpdateResult);
+      eventRepository.create.mockReturnValue({} as EscrowEvent);
+      eventRepository.save.mockResolvedValue({} as EscrowEvent);
+
+      await service.expire(
+        'escrow-123',
+        { reason: 'Deadline exceeded' },
+        'user-123',
+      );
+
+      expect(escrowRepository.update.mock.calls[0]).toEqual([
+        'escrow-123',
+        { status: EscrowStatus.EXPIRED },
+      ]);
+    });
+
+    it('should expire an escrow past deadline by arbitrator', async () => {
+      const pastDate = new Date(Date.now() - 86400000);
+      const expiredEscrow = {
+        ...mockEscrow,
+        status: EscrowStatus.ACTIVE,
+        expiresAt: pastDate,
+        parties: [
+          { userId: 'user-456', role: PartyRole.SELLER },
+          { userId: 'arbitrator-123', role: PartyRole.ARBITRATOR },
+        ],
+      };
+
+      escrowRepository.findOne.mockResolvedValue(expiredEscrow as Escrow);
+      escrowRepository.update.mockResolvedValue({
+        affected: 1,
+      } as UpdateResult);
+      eventRepository.create.mockReturnValue({} as EscrowEvent);
+      eventRepository.save.mockResolvedValue({} as EscrowEvent);
+
+      await service.expire('escrow-123', {}, 'arbitrator-123');
+
+      expect(escrowRepository.update.mock.calls[0]).toEqual([
+        'escrow-123',
+        { status: EscrowStatus.EXPIRED },
+      ]);
+    });
+
+    it('should throw BadRequestException if escrow already completed', async () => {
+      const expiredEscrow = {
+        ...mockEscrow,
+        status: EscrowStatus.COMPLETED,
+        expiresAt: new Date(Date.now() - 86400000),
+      };
+
+      escrowRepository.findOne.mockResolvedValue(expiredEscrow as Escrow);
+
+      await expect(
+        service.expire('escrow-123', {}, 'user-123'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException if escrow has no deadline', async () => {
+      const noDeadlineEscrow = {
+        ...mockEscrow,
+        status: EscrowStatus.ACTIVE,
+        expiresAt: undefined,
+      };
+
+      escrowRepository.findOne.mockResolvedValue(noDeadlineEscrow as Escrow);
+
+      await expect(
+        service.expire('escrow-123', {}, 'user-123'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException if deadline not yet passed', async () => {
+      const futureDate = new Date(Date.now() + 86400000); // 1 day from now
+      const notExpiredEscrow = {
+        ...mockEscrow,
+        status: EscrowStatus.ACTIVE,
+        expiresAt: futureDate,
+        parties: [],
+      };
+
+      escrowRepository.findOne.mockResolvedValue(notExpiredEscrow as Escrow);
+
+      await expect(
+        service.expire('escrow-123', {}, 'user-123'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw ForbiddenException if non-depositor/non-arbitrator tries to expire', async () => {
+      const pastDate = new Date(Date.now() - 86400000);
+      const expiredEscrow = {
+        ...mockEscrow,
+        status: EscrowStatus.ACTIVE,
+        expiresAt: pastDate,
+        creatorId: 'creator-123',
+        parties: [{ userId: 'seller-456', role: PartyRole.SELLER }],
+      };
+
+      escrowRepository.findOne.mockResolvedValue(expiredEscrow as Escrow);
+
+      await expect(
+        service.expire('escrow-123', {}, 'unauthorized-user'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should expire pending escrow past deadline', async () => {
+      const pastDate = new Date(Date.now() - 86400000);
+      const expiredPendingEscrow = {
+        ...mockEscrow,
+        status: EscrowStatus.PENDING,
+        expiresAt: pastDate,
+        parties: [],
+      };
+
+      escrowRepository.findOne.mockResolvedValue(
+        expiredPendingEscrow as Escrow,
+      );
+      escrowRepository.update.mockResolvedValue({
+        affected: 1,
+      } as UpdateResult);
+      eventRepository.create.mockReturnValue({} as EscrowEvent);
+      eventRepository.save.mockResolvedValue({} as EscrowEvent);
+
+      await service.expire('escrow-123', {}, 'user-123');
+
+      expect(escrowRepository.update.mock.calls[0]).toEqual([
+        'escrow-123',
+        { status: EscrowStatus.EXPIRED },
+      ]);
+    });
+
+    it('should throw BadRequestException if escrow already expired', async () => {
+      const alreadyExpiredEscrow = {
+        ...mockEscrow,
+        status: EscrowStatus.EXPIRED,
+        expiresAt: new Date(Date.now() - 86400000),
+      };
+
+      escrowRepository.findOne.mockResolvedValue(
+        alreadyExpiredEscrow as Escrow,
+      );
+
+      await expect(
+        service.expire('escrow-123', {}, 'user-123'),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
 });

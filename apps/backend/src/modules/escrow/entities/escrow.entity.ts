@@ -19,6 +19,7 @@ export enum EscrowStatus {
   COMPLETED = 'completed',
   CANCELLED = 'cancelled',
   DISPUTED = 'disputed',
+  EXPIRED = 'expired',
 }
 
 export enum EscrowType {

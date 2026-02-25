@@ -16,6 +16,7 @@ import { ListEscrowsDto, SortOrder } from '../dto/list-escrows.dto';
 import { ListEventsDto, EventSortOrder } from '../dto/list-events.dto';
 import { EventResponseDto } from '../dto/event-response.dto';
 import { CancelEscrowDto } from '../dto/cancel-escrow.dto';
+import { ExpireEscrowDto } from '../dto/expire-escrow.dto';
 import { FulfillConditionDto } from '../dto/fulfill-condition.dto';
 import { validateTransition, isTerminalStatus } from '../escrow-state-machine';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
@@ -234,6 +235,75 @@ export class EscrowService {
     return this.findOne(id);
   }
 
+  async expire(
+    id: string,
+    dto: ExpireEscrowDto,
+    userId: string,
+    ipAddress?: string,
+  ): Promise<Escrow> {
+    const escrow = await this.findOne(id);
+
+    // Cannot expire terminal states
+    if (isTerminalStatus(escrow.status)) {
+      throw new BadRequestException(
+        `Cannot expire an escrow that is already ${escrow.status}`,
+      );
+    }
+
+    // Check if deadline exists
+    if (!escrow.expiresAt) {
+      throw new BadRequestException('Escrow has no expiration deadline');
+    }
+
+    // Check if deadline has passed
+    const now = new Date();
+    if (escrow.expiresAt > now) {
+      throw new BadRequestException(
+        `Escrow has not expired yet. Expires at: ${escrow.expiresAt.toISOString()}`,
+      );
+    }
+
+    // Authorization: depositor (creator) or arbitrator can trigger expiration
+    const isCreator = escrow.creatorId === userId;
+    const isArbitrator = escrow.parties?.some(
+      (p) => p.role === PartyRole.ARBITRATOR && p.userId === userId,
+    );
+
+    if (!isCreator && !isArbitrator) {
+      throw new ForbiddenException(
+        'Only the depositor or arbitrator can expire an escrow',
+      );
+    }
+
+    // Validate state transition
+    validateTransition(escrow.status, EscrowStatus.EXPIRED);
+
+    // Update status to EXPIRED
+    await this.escrowRepository.update(id, { status: EscrowStatus.EXPIRED });
+
+    // Log expiration event
+    await this.logEvent(
+      id,
+      EscrowEventType.EXPIRED,
+      userId,
+      {
+        reason: dto.reason || 'Deadline exceeded',
+        previousStatus: escrow.status,
+        expiresAt: escrow.expiresAt,
+        expiredAt: now,
+      },
+      ipAddress,
+    );
+
+    // Dispatch webhook
+    await this.webhookService.dispatchEvent('escrow.expired', {
+      escrowId: id,
+      triggeredBy: userId,
+    });
+
+    return this.findOne(id);
+  }
+
   async isUserPartyToEscrow(
     escrowId: string,
     userId: string,
@@ -275,6 +345,13 @@ export class EscrowService {
 
     if (escrow.status !== EscrowStatus.ACTIVE) {
       throw new BadRequestException('Escrow not active');
+    }
+
+    // Prevent operations on expired escrows
+    if (escrow.expiresAt && escrow.expiresAt < new Date()) {
+      throw new BadRequestException(
+        'Cannot release an expired escrow. Use expire endpoint instead.',
+      );
     }
 
     // Manual release must be buyer
@@ -337,6 +414,13 @@ export class EscrowService {
     if (escrow.status !== EscrowStatus.ACTIVE) {
       throw new BadRequestException(
         'Escrow must be active to fulfill conditions',
+      );
+    }
+
+    // Prevent operations on expired escrows
+    if (escrow.expiresAt && escrow.expiresAt < new Date()) {
+      throw new BadRequestException(
+        'Cannot fulfill conditions on an expired escrow',
       );
     }
 
@@ -411,6 +495,13 @@ export class EscrowService {
     if (escrow.status !== EscrowStatus.ACTIVE) {
       throw new BadRequestException(
         'Escrow must be active to confirm conditions',
+      );
+    }
+
+    // Prevent operations on expired escrows
+    if (escrow.expiresAt && escrow.expiresAt < new Date()) {
+      throw new BadRequestException(
+        'Cannot confirm conditions on an expired escrow',
       );
     }
 
