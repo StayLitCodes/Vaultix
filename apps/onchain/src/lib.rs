@@ -659,11 +659,27 @@ impl VaultixEscrow {
 
         if escrow.status == EscrowStatus::Active {
             let token_client = token::Client::new(&env, &escrow.token_address);
-            token_client.transfer(
-                &env.current_contract_address(),
-                &escrow.depositor,
-                &escrow.total_amount,
-            );
+
+            let refund_amount = if let Ok((treasury, fee_bps)) = Self::get_config(env.clone()) {
+                let fee = calculate_fee(escrow.total_amount, fee_bps)?;
+                if fee > 0 {
+                    token_client.transfer(&env.current_contract_address(), &treasury, &fee);
+                }
+                escrow
+                    .total_amount
+                    .checked_sub(fee)
+                    .ok_or(Error::InvalidMilestoneAmount)?
+            } else {
+                escrow.total_amount
+            };
+
+            if refund_amount > 0 {
+                token_client.transfer(
+                    &env.current_contract_address(),
+                    &escrow.depositor,
+                    &refund_amount,
+                );
+            }
         }
 
         escrow.status = EscrowStatus::Cancelled;
@@ -679,7 +695,7 @@ impl VaultixEscrow {
                 Symbol::new(&env, "EscrowCancelled"),
                 escrow_id,
             ),
-            escrow.depositor.clone(), // cancelled_by
+            escrow.depositor.clone(),
         );
 
         Ok(())
