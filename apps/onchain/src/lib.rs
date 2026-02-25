@@ -5,6 +5,30 @@ use soroban_sdk::{
     Vec,
 };
 
+impl VaultixEscrow {
+    /// Secure contract upgrade function (Admin Proxy).
+    /// WARNING: Future upgrades MUST preserve storage layout (structs, enums, keys) to avoid corrupting state.
+    /// Only admin can call. Emits ContractUpgraded event before upgrade.
+    pub fn upgrade(env: Env, new_wasm_hash: [u8; 32]) -> Result<(), Error> {
+        let admin = get_admin(&env)?;
+        admin.require_auth();
+
+        let hash_bytes = soroban_sdk::BytesN::<32>::from_array(&env, &new_wasm_hash);
+
+        // Emit ContractUpgraded event
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "ContractUpgraded"),
+            ),
+            hash_bytes.clone(),
+        );
+
+        env.deployer().update_current_contract_wasm(hash_bytes);
+        Ok(())
+    }
+}
+
 #[contracttype]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MilestoneStatus {
@@ -635,11 +659,27 @@ impl VaultixEscrow {
 
         if escrow.status == EscrowStatus::Active {
             let token_client = token::Client::new(&env, &escrow.token_address);
-            token_client.transfer(
-                &env.current_contract_address(),
-                &escrow.depositor,
-                &escrow.total_amount,
-            );
+
+            let refund_amount = if let Ok((treasury, fee_bps)) = Self::get_config(env.clone()) {
+                let fee = calculate_fee(escrow.total_amount, fee_bps)?;
+                if fee > 0 {
+                    token_client.transfer(&env.current_contract_address(), &treasury, &fee);
+                }
+                escrow
+                    .total_amount
+                    .checked_sub(fee)
+                    .ok_or(Error::InvalidMilestoneAmount)?
+            } else {
+                escrow.total_amount
+            };
+
+            if refund_amount > 0 {
+                token_client.transfer(
+                    &env.current_contract_address(),
+                    &escrow.depositor,
+                    &refund_amount,
+                );
+            }
         }
 
         escrow.status = EscrowStatus::Cancelled;
@@ -655,7 +695,7 @@ impl VaultixEscrow {
                 Symbol::new(&env, "EscrowCancelled"),
                 escrow_id,
             ),
-            escrow.depositor.clone(), // cancelled_by
+            escrow.depositor.clone(),
         );
 
         Ok(())

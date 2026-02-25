@@ -26,6 +26,7 @@ import { CancelEscrowDto } from '../dto/cancel-escrow.dto';
 import { ExpireEscrowDto } from '../dto/expire-escrow.dto';
 import { FulfillConditionDto } from '../dto/fulfill-condition.dto';
 import { FileDisputeDto, ResolveDisputeDto } from '../dto/dispute.dto';
+import { FundEscrowDto } from '../dto/fund-escrow.dto';
 import { validateTransition, isTerminalStatus } from '../escrow-state-machine';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
 import { WebhookService } from '../../../services/webhook/webhook.service';
@@ -245,72 +246,53 @@ export class EscrowService {
     return this.findOne(id);
   }
 
-  async expire(
+  async fund(
     id: string,
-    dto: ExpireEscrowDto,
+    dto: FundEscrowDto,
     userId: string,
+    walletAddress: string,
     ipAddress?: string,
   ): Promise<Escrow> {
     const escrow = await this.findOne(id);
 
-    // Cannot expire terminal states
-    if (isTerminalStatus(escrow.status)) {
-      throw new BadRequestException(
-        `Cannot expire an escrow that is already ${escrow.status}`,
-      );
+    if (escrow.creatorId !== userId) {throw new ForbiddenException('Only the buyer can fund this escrow');}
+
+    if (escrow.status !== EscrowStatus.PENDING) {
+      throw new BadRequestException('Escrow can only be funded while in pending status',);
     }
 
-    // Check if deadline exists
-    if (!escrow.expiresAt) {
-      throw new BadRequestException('Escrow has no expiration deadline');
+    if (escrow.stellarTxHash) {throw new BadRequestException('Escrow is already funded');}
+
+    const escrowAmount = Number(escrow.amount);
+    if (Number(dto.amount) !== escrowAmount) {
+      throw new BadRequestException('Amount must match the escrow amount',);
     }
 
-    // Check if deadline has passed
-    const now = new Date();
-    if (escrow.expiresAt > now) {
-      throw new BadRequestException(
-        `Escrow has not expired yet. Expires at: ${escrow.expiresAt.toISOString()}`,
-      );
-    }
+    validateTransition(escrow.status, EscrowStatus.ACTIVE);
 
-    // Authorization: depositor (creator) or arbitrator can trigger expiration
-    const isCreator = escrow.creatorId === userId;
-    const isArbitrator = escrow.parties?.some(
-      (p) => p.role === PartyRole.ARBITRATOR && p.userId === userId,
+    const stellarTxHash = await this.stellarIntegrationService.fundOnChainEscrow(
+      id,
+      walletAddress,
+      String(dto.amount),
+      escrow.asset ?? 'XLM',
     );
 
-    if (!isCreator && !isArbitrator) {
-      throw new ForbiddenException(
-        'Only the depositor or arbitrator can expire an escrow',
-      );
-    }
+    const fundedAt = new Date();
+    await this.escrowRepository.update(id, {stellarTxHash, fundedAt, status: EscrowStatus.ACTIVE});
 
-    // Validate state transition
-    validateTransition(escrow.status, EscrowStatus.EXPIRED);
-
-    // Update status to EXPIRED
-    await this.escrowRepository.update(id, { status: EscrowStatus.EXPIRED });
-
-    // Log expiration event
     await this.logEvent(
       id,
-      EscrowEventType.EXPIRED,
+      EscrowEventType.FUNDED,
       userId,
-      {
-        reason: dto.reason || 'Deadline exceeded',
-        previousStatus: escrow.status,
-        expiresAt: escrow.expiresAt,
-        expiredAt: now,
-      },
+      { stellarTxHash },
       ipAddress,
     );
-
-    // Dispatch webhook
-    await this.webhookService.dispatchEvent('escrow.expired', {
+    await this.webhookService.dispatchEvent('escrow.funded', {
       escrowId: id,
-      triggeredBy: userId,
+      stellarTxHash,
     });
 
+    
     return this.findOne(id);
   }
 
