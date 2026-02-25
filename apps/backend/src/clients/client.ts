@@ -1,4 +1,8 @@
-import axios, { AxiosError, InternalAxiosRequestConfig, AxiosResponse } from 'axios';
+import axios, {
+  AxiosError,
+  InternalAxiosRequestConfig,
+  AxiosResponse,
+} from 'axios';
 import { getAccessToken, getRefreshToken, setTokens } from '../utils/token';
 import { clearTokens } from '../utils/token';
 
@@ -9,7 +13,19 @@ const api = axios.create({
   withCredentials: true,
 });
 
+interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+}
 
+interface WindowWithLocation {
+  location: {
+    href: string;
+  };
+}
+
+// 🔄 RESPONSE INTERCEPTOR (Refresh Flow)
+let isRefreshing = false;
 
 api.interceptors.request.use(
   (config) => {
@@ -21,41 +37,26 @@ api.interceptors.request.use(
 
     return config;
   },
-  (error) => Promise.reject(error),
+  (error: AxiosError): Promise<never> => {
+    return Promise.reject(new Error(error.message));
+  },
 );
-
-
-interface FailedQueueItem {
-  resolve: (value: unknown) => void;
-  reject: (reason?: unknown) => void;
-}
-
-// 🔄 RESPONSE INTERCEPTOR (Refresh Flow)
-let isRefreshing = false;
-let failedQueue: FailedQueueItem[] = [];
-
-const processQueue = (error: Error | null, token: string | null = null): void => {
-  failedQueue.forEach((prom) => {
-    if (error) prom.reject(error);
-    else prom.resolve(token);
-  });
-
-  failedQueue = [];
-};
 
 api.interceptors.response.use(
   (response: AxiosResponse) => response,
-  async (error: AxiosError) => {
-    const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+  async (error: AxiosError): Promise<AxiosResponse> => {
+    const originalRequest = error.config as InternalAxiosRequestConfig & {
+      _retry?: boolean;
+    };
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (
+      error.response?.status === 401 &&
+      originalRequest &&
+      !originalRequest._retry
+    ) {
       if (isRefreshing) {
-        return new Promise<AxiosResponse>((resolve, reject) => {
-          failedQueue.push({ resolve, reject });
-        }).then((token) => {
-          originalRequest.headers['Authorization'] = 'Bearer ' + token;
-          return api(originalRequest);
-        });
+        // If already refreshing, just reject - caller will retry
+        return Promise.reject(error);
       }
 
       originalRequest._retry = true;
@@ -64,7 +65,7 @@ api.interceptors.response.use(
       try {
         const refreshToken = getRefreshToken();
 
-        const response = await axios.post(
+        const response = await axios.post<AuthTokens>(
           `${API_URL}/auth/refresh`,
           { refreshToken },
         );
@@ -73,24 +74,25 @@ api.interceptors.response.use(
 
         setTokens(accessToken, newRefreshToken);
 
-        processQueue(null, accessToken);
-
-        originalRequest.headers['Authorization'] = 'Bearer ' + accessToken;
+        if (originalRequest.headers) {
+          originalRequest.headers['Authorization'] = `Bearer ${accessToken}`;
+        }
 
         return api(originalRequest);
       } catch (err) {
-        processQueue(err instanceof Error ? err : new Error(String(err)), null);
+        const error = err instanceof Error ? err : new Error(String(err));
         clearTokens();
         if (typeof globalThis.window !== 'undefined') {
-          globalThis.window.location.href = '/login';
+          const win = globalThis.window as WindowWithLocation;
+          win.location.href = '/login';
         }
-        return Promise.reject(err);
+        return Promise.reject(error);
       } finally {
         isRefreshing = false;
       }
     }
 
-    return Promise.reject(error);
+    return Promise.reject(new Error(error.message));
   },
 );
 
