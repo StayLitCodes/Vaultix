@@ -1,4 +1,3 @@
-
 #![no_std]
 #![allow(unexpected_cfgs)]
 use soroban_sdk::{
