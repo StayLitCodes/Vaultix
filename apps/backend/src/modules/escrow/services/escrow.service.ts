@@ -3,6 +3,8 @@ import {
   NotFoundException,
   BadRequestException,
   ForbiddenException,
+  ConflictException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
@@ -10,6 +12,11 @@ import { Escrow, EscrowStatus } from '../entities/escrow.entity';
 import { Party, PartyRole } from '../entities/party.entity';
 import { Condition } from '../entities/condition.entity';
 import { EscrowEvent, EscrowEventType } from '../entities/escrow-event.entity';
+import {
+  Dispute,
+  DisputeStatus,
+  DisputeOutcome,
+} from '../entities/dispute.entity';
 import { CreateEscrowDto } from '../dto/create-escrow.dto';
 import { UpdateEscrowDto } from '../dto/update-escrow.dto';
 import { ListEscrowsDto, SortOrder } from '../dto/list-escrows.dto';
@@ -17,6 +24,7 @@ import { ListEventsDto, EventSortOrder } from '../dto/list-events.dto';
 import { EventResponseDto } from '../dto/event-response.dto';
 import { CancelEscrowDto } from '../dto/cancel-escrow.dto';
 import { FulfillConditionDto } from '../dto/fulfill-condition.dto';
+import { FileDisputeDto, ResolveDisputeDto } from '../dto/dispute.dto';
 import { validateTransition, isTerminalStatus } from '../escrow-state-machine';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
 import { WebhookService } from '../../../services/webhook/webhook.service';
@@ -32,6 +40,8 @@ export class EscrowService {
     private conditionRepository: Repository<Condition>,
     @InjectRepository(EscrowEvent)
     private eventRepository: Repository<EscrowEvent>,
+    @InjectRepository(Dispute)
+    private disputeRepository: Repository<Dispute>,
 
     private readonly stellarIntegrationService: EscrowStellarIntegrationService,
     private readonly webhookService: WebhookService,
@@ -568,6 +578,173 @@ export class EscrowService {
     }));
 
     return { data, total, page, limit };
+  }
+
+  async fileDispute(
+    escrowId: string,
+    userId: string,
+    dto: FileDisputeDto,
+    ipAddress?: string,
+  ): Promise<Dispute> {
+    const escrow = await this.findOne(escrowId);
+
+    if (escrow.status !== EscrowStatus.ACTIVE) {
+      throw new BadRequestException(
+        'Disputes can only be filed against active escrows',
+      );
+    }
+
+    // Only a buyer or seller party may file — arbitrators mediate, they don't file
+    const filingParty = escrow.parties?.find(
+      (p) => p.userId === userId && p.role !== PartyRole.ARBITRATOR,
+    );
+    if (!filingParty) {
+      throw new ForbiddenException(
+        'Only a buyer or seller party can file a dispute',
+      );
+    }
+
+    const existing = await this.disputeRepository.findOne({
+      where: { escrowId },
+    });
+    if (existing) {
+      throw new ConflictException(
+        'A dispute has already been filed for this escrow',
+      );
+    }
+
+    validateTransition(escrow.status, EscrowStatus.DISPUTED);
+    await this.escrowRepository.update(escrowId, {
+      status: EscrowStatus.DISPUTED,
+    });
+
+    const dispute = this.disputeRepository.create({
+      escrowId,
+      filedByUserId: userId,
+      reason: dto.reason,
+      evidence: dto.evidence ?? null,
+      status: DisputeStatus.OPEN,
+    });
+    const savedDispute = await this.disputeRepository.save(dispute);
+
+    await this.logEvent(
+      escrowId,
+      EscrowEventType.DISPUTE_FILED,
+      userId,
+      { disputeId: savedDispute.id, reason: dto.reason },
+      ipAddress,
+    );
+
+    await this.webhookService.dispatchEvent('escrow.disputed', {
+      escrowId,
+      disputeId: savedDispute.id,
+    });
+
+    return this.disputeRepository.findOne({
+      where: { id: savedDispute.id },
+      relations: ['filedBy'],
+    }) as Promise<Dispute>;
+  }
+
+  async getDispute(escrowId: string): Promise<Dispute> {
+    // Caller access is already enforced by EscrowAccessGuard at the controller layer
+    const dispute = await this.disputeRepository.findOne({
+      where: { escrowId },
+      relations: ['filedBy', 'resolvedBy'],
+    });
+
+    if (!dispute) {
+      throw new NotFoundException('No dispute found for this escrow');
+    }
+
+    return dispute;
+  }
+
+  async resolveDispute(
+    escrowId: string,
+    arbitratorUserId: string,
+    dto: ResolveDisputeDto,
+    ipAddress?: string,
+  ): Promise<Dispute> {
+    const escrow = await this.findOne(escrowId);
+
+    if (escrow.status !== EscrowStatus.DISPUTED) {
+      throw new BadRequestException('This escrow is not currently disputed');
+    }
+
+    // Caller must be an arbitrator party on this escrow
+    const isArbitrator = escrow.parties?.some(
+      (p) => p.userId === arbitratorUserId && p.role === PartyRole.ARBITRATOR,
+    );
+    if (!isArbitrator) {
+      throw new ForbiddenException(
+        'Only an assigned arbitrator can resolve a dispute',
+      );
+    }
+
+    const dispute = await this.getDispute(escrowId);
+
+    if (dispute.status === DisputeStatus.RESOLVED) {
+      throw new ConflictException('This dispute has already been resolved');
+    }
+
+    // For a split outcome both percentages are required and must sum to 100
+    if (dto.outcome === DisputeOutcome.SPLIT) {
+      if (dto.sellerPercent === undefined || dto.buyerPercent === undefined) {
+        throw new UnprocessableEntityException(
+          'sellerPercent and buyerPercent are required for a split outcome',
+        );
+      }
+      if (dto.sellerPercent + dto.buyerPercent !== 100) {
+        throw new UnprocessableEntityException(
+          'sellerPercent and buyerPercent must sum to 100',
+        );
+      }
+    }
+
+    // Determine the new escrow status based on the resolution outcome
+    const nextEscrowStatus =
+      dto.outcome === DisputeOutcome.REFUNDED_TO_BUYER
+        ? EscrowStatus.CANCELLED
+        : EscrowStatus.COMPLETED;
+
+    validateTransition(escrow.status, nextEscrowStatus);
+    await this.escrowRepository.update(escrowId, { status: nextEscrowStatus });
+
+    dispute.status = DisputeStatus.RESOLVED;
+    dispute.resolvedByUserId = arbitratorUserId;
+    dispute.resolutionNotes = dto.resolutionNotes;
+    dispute.outcome = dto.outcome;
+    dispute.sellerPercent = dto.sellerPercent ?? null;
+    dispute.buyerPercent = dto.buyerPercent ?? null;
+    dispute.resolvedAt = new Date();
+
+    const resolved = await this.disputeRepository.save(dispute);
+
+    await this.logEvent(
+      escrowId,
+      EscrowEventType.DISPUTE_RESOLVED,
+      arbitratorUserId,
+      {
+        disputeId: resolved.id,
+        outcome: dto.outcome,
+        sellerPercent: dto.sellerPercent,
+        buyerPercent: dto.buyerPercent,
+        nextEscrowStatus,
+      },
+      ipAddress,
+    );
+
+    await this.webhookService.dispatchEvent('escrow.resolved', {
+      escrowId,
+      disputeId: resolved.id,
+      outcome: dto.outcome,
+    });
+
+    return this.disputeRepository.findOne({
+      where: { id: resolved.id },
+      relations: ['filedBy', 'resolvedBy'],
+    }) as Promise<Dispute>;
   }
 
   private async logEvent(

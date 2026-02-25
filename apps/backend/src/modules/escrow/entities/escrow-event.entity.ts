@@ -21,6 +21,8 @@ export enum EscrowEventType {
   CANCELLED = 'cancelled',
   COMPLETED = 'completed',
   DISPUTED = 'disputed',
+  DISPUTE_FILED = 'dispute_filed',
+  DISPUTE_RESOLVED = 'dispute_resolved',
 }
 
 @Entity('escrow_events')
