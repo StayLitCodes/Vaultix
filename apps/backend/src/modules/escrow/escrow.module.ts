@@ -5,6 +5,7 @@ import { Escrow } from './entities/escrow.entity';
 import { Party } from './entities/party.entity';
 import { Condition } from './entities/condition.entity';
 import { EscrowEvent } from './entities/escrow-event.entity';
+import { Dispute } from './entities/dispute.entity';
 import { EscrowService } from './services/escrow.service';
 import { EscrowSchedulerService } from './services/escrow-scheduler.service';
 import { EscrowController } from './controllers/escrow.controller';
@@ -19,7 +20,7 @@ import { WebhookModule } from '../webhook/webhook.module';
 @Module({
   imports: [
     ScheduleModule.forRoot(),
-    TypeOrmModule.forFeature([Escrow, Party, Condition, EscrowEvent]),
+    TypeOrmModule.forFeature([Escrow, Party, Condition, EscrowEvent, Dispute]),
     AuthModule,
     StellarModule,
     WebhookModule,

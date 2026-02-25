@@ -14,6 +14,7 @@ import { Escrow } from './modules/escrow/entities/escrow.entity';
 import { Party } from './modules/escrow/entities/party.entity';
 import { Condition } from './modules/escrow/entities/condition.entity';
 import { EscrowEvent } from './modules/escrow/entities/escrow-event.entity';
+import { Dispute } from './modules/escrow/entities/dispute.entity';
 import { NotificationsModule } from './notifications/notifications.module';
 import { EscrowModule } from './modules/escrow/escrow.module';
 import { ApiKeyModule } from './api-key/api-key.module';
@@ -32,7 +33,7 @@ import { StellarEventModule } from './modules/stellar/stellar-event.module';
           'DATABASE_PATH',
           './data/vaultix.db',
         ),
-        entities: [User, RefreshToken, Escrow, Party, Condition, EscrowEvent],
+        entities: [User, RefreshToken, Escrow, Party, Condition, EscrowEvent, Dispute],
         synchronize: configService.get<string>('NODE_ENV') !== 'production',
       }),
       inject: [ConfigService],
