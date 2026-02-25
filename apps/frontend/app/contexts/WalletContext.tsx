@@ -26,13 +26,13 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
 
   // Load wallet from localStorage on mount
   useEffect(() => {
-    const savedWallet = localStorage.getItem('vaultix_wallet');
+    const savedWallet = window.localStorage.getItem('vaultix_wallet');
     if (savedWallet) {
       try {
-        const parsedWallet = JSON.parse(savedWallet);
+        const parsedWallet = JSON.parse(savedWallet) as WalletConnection;
         setWallet(parsedWallet);
       } catch {
-        localStorage.removeItem('vaultix_wallet');
+        window.localStorage.removeItem('vaultix_wallet');
       }
     }
   }, []);
@@ -59,7 +59,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       };
 
       setWallet(walletConnection);
-      localStorage.setItem('vaultix_wallet', JSON.stringify(walletConnection));
+      window.localStorage.setItem('vaultix_wallet', JSON.stringify(walletConnection));
     } catch (err: any) {
       setError(err.message || 'Failed to connect wallet');
       throw err;
@@ -70,7 +70,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
 
   const disconnect = () => {
     setWallet(null);
-    localStorage.removeItem('vaultix_wallet');
+    window.localStorage.removeItem('vaultix_wallet');
     setError(null);
   };
 

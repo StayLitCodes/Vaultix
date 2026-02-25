@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, MoreThan, LessThan } from 'typeorm';
 import { User, UserRole } from '../user/entities/user.entity';
+import { AdminAuditLogService } from './services/admin-audit-log.service';
 import { Escrow, EscrowStatus } from '../escrow/entities/escrow.entity';
 import { Party } from '../escrow/entities/party.entity';
 import { EscrowEvent } from '../escrow/entities/escrow-event.entity';
@@ -17,6 +18,7 @@ export class AdminService {
     private partyRepository: Repository<Party>,
     @InjectRepository(EscrowEvent)
     private escrowEventRepository: Repository<EscrowEvent>,
+    private readonly adminAuditLogService: AdminAuditLogService,
   ) {}
 
   async getAllUsers(page: number = 1, limit: number = 50) {
@@ -144,7 +146,7 @@ export class AdminService {
     };
   }
 
-  async suspendUser(userId: string) {
+  async suspendUser(userId: string, actorId?: string) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
 
     if (!user) {
@@ -155,8 +157,22 @@ export class AdminService {
       throw new Error('Cannot suspend super admin');
     }
 
+    const oldStatus = user.isActive;
     user.isActive = false;
     await this.userRepository.save(user);
+
+    // Audit log
+    await this.adminAuditLogService.create({
+      actorId: actorId || 'system',
+      actionType: 'SUSPEND_USER',
+      resourceType: 'USER',
+      resourceId: user.id,
+      metadata: {
+        oldStatus,
+        newStatus: user.isActive,
+        userRole: user.role,
+      },
+    });
 
     return { message: 'User suspended successfully', user };
   }

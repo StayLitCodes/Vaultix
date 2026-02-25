@@ -4,6 +4,7 @@ import { Filter, Loader2, RefreshCw, Zap } from 'lucide-react';
 import { useEvents } from '@/hooks/useEvents';
 import ActivityItem from './ActivityItem';
 import { IEscrowEvent } from '@/types/escrow';
+import { ActivityFeedSkeleton } from '../ui/ActivityFeedSkeleton';
 
 interface ActivityFeedProps {
     escrowId?: string;
@@ -115,12 +116,11 @@ const ActivityFeed: React.FC<ActivityFeedProps> = ({
             </div>
 
             {/* Content */}
-            <div className="flex-grow overflow-y-auto custom-scrollbar p-2">
+            <div className="grow overflow-y-auto custom-scrollbar p-2">
                 {status === 'pending' ? (
-                    <div className="flex flex-col items-center justify-center h-64 gap-3">
-                        <Loader2 className="w-8 h-8 text-blue-500 animate-spin opacity-20" />
-                        <p className="text-xs text-gray-400 font-medium">Loading events...</p>
-                    </div>
+                  
+
+                    <ActivityFeedSkeleton />
                 ) : allEvents.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-64 text-center p-6">
                         <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mb-3">

@@ -6,33 +6,36 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { UserRole } from './user-role.enum';
-
 export { UserRole } from './user-role.enum';
 
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ unique: true })
-  walletAddress: string;
+  walletAddress!: string;
 
   @Column({ nullable: true })
   nonce?: string;
 
   @Column({ default: true })
-  isActive: boolean;
+  isActive!: boolean;
 
   @Column({
     type: 'text',
     enum: UserRole,
     default: UserRole.USER,
   })
-  role: UserRole;
+  role!: UserRole;
+
+  // @ManyToOne(() => Organization, (org: Organization) => org.users, { nullable: false })
+  // @JoinColumn({ name: 'org_id' })
+  // organization!: Organization;
 
   @CreateDateColumn()
-  createdAt: Date;
+  createdAt!: Date;
 
   @UpdateDateColumn()
-  updatedAt: Date;
+  updatedAt!: Date;
 }

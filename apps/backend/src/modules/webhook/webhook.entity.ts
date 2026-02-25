@@ -14,7 +14,9 @@ export type WebhookEvent =
   | 'escrow.released'
   | 'escrow.cancelled'
   | 'escrow.disputed'
-  | 'escrow.resolved';
+  | 'escrow.resolved'
+  | 'condition.fulfilled'
+  | 'condition.confirmed';
 
 @Entity('webhooks')
 export class Webhook {

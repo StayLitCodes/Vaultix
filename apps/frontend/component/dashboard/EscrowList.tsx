@@ -1,6 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import EscrowCard from './EscrowCard';
+import { EscrowCardSkeleton } from '@/components/ui/EscrowCardSkeleton';
 
 // Define the interface here since we can't import from types yet
 interface IEscrow {
@@ -47,7 +48,8 @@ const EscrowList: React.FC<EscrowListProps> = ({
     return (
       <div className="space-y-4">
         {[...Array(3)].map((_, index) => (
-          <div key={index} className="bg-gray-200 animate-pulse rounded-lg p-6 h-32" />
+          // <div key={index} className="bg-gray-200 animate-pulse rounded-lg p-6 h-32" />
+          <EscrowCardSkeleton key={index} />
         ))}
       </div>
     );

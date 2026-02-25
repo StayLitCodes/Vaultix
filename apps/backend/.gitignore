@@ -2,6 +2,8 @@
 /dist
 /node_modules
 /build
+node_modules
+dist
 
 # Logs
 logs
@@ -11,7 +13,7 @@ pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
-
+node_modules
 # OS
 .DS_Store
 
@@ -27,7 +29,12 @@ lerna-debug.log*
 *.launch
 .settings/
 *.sublime-workspace
-
+node_modules/
+node_modules
+node_modules/*
+/node_modules/**/*
+../node_modules
+../../node_modules/*
 # IDE - VSCode
 .vscode/*
 !.vscode/settings.json

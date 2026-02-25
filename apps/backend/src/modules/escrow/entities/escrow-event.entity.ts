@@ -14,12 +14,15 @@ export enum EscrowEventType {
   PARTY_ACCEPTED = 'party_accepted',
   PARTY_REJECTED = 'party_rejected',
   FUNDED = 'funded',
+  CONDITION_FULFILLED = 'condition_fulfilled',
   CONDITION_MET = 'condition_met',
   STATUS_CHANGED = 'status_changed',
   UPDATED = 'updated',
   CANCELLED = 'cancelled',
   COMPLETED = 'completed',
   DISPUTED = 'disputed',
+  DISPUTE_FILED = 'dispute_filed',
+  DISPUTE_RESOLVED = 'dispute_resolved',
 }
 
 @Entity('escrow_events')

@@ -4,7 +4,9 @@ export type WebhookEvent =
   | 'escrow.released'
   | 'escrow.cancelled'
   | 'escrow.disputed'
-  | 'escrow.resolved';
+  | 'escrow.resolved'
+  | 'condition.fulfilled'
+  | 'condition.confirmed';
 
 export interface WebhookPayload {
   event: WebhookEvent;
