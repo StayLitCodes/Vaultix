@@ -42,8 +42,6 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
   publicKey,
   network = "testnet",
 }) => {
-  if (!isOpen || !escrow) return null;
-
   const existingTxHash =
     (escrow as any).releaseTransactionHash ??
     (escrow as any).onChainReleaseHash ??
@@ -165,6 +163,10 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
   const primaryDisabled = isSubmitting || (!connected && step !== "success");
 
   const showTracker = step === "success" && txHash;
+
+  if (!isOpen) {
+    return null;
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
