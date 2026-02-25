@@ -390,7 +390,7 @@ describe('EscrowService', () => {
     it('should allow a buyer to file a dispute and transition escrow to DISPUTED', async () => {
       escrowRepository.findOne.mockResolvedValue(activeEscrowWithParties());
       disputeRepository.findOne.mockResolvedValue(null);
-      escrowRepository.update.mockResolvedValue({ affected: 1 } as any);
+      escrowRepository.update.mockResolvedValue({ affected: 1 } as UpdateResult);
       disputeRepository.create.mockReturnValue(mockDispute() as Dispute);
       disputeRepository.save.mockResolvedValue(mockDispute() as Dispute);
       // Final findOne to return with relations
@@ -416,7 +416,7 @@ describe('EscrowService', () => {
       disputeRepository.findOne
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(mockDispute({ filedByUserId: 'seller-id' }) as Dispute);
-      escrowRepository.update.mockResolvedValue({ affected: 1 } as any);
+      escrowRepository.update.mockResolvedValue({ affected: 1 } as UpdateResult);
       disputeRepository.create.mockReturnValue(mockDispute() as Dispute);
       disputeRepository.save.mockResolvedValue(mockDispute() as Dispute);
 
@@ -502,7 +502,7 @@ describe('EscrowService', () => {
           resolvedByUserId: 'arbitrator-id',
         }) as Dispute);
       disputeRepository.save.mockResolvedValue(mockDispute() as Dispute);
-      escrowRepository.update.mockResolvedValue({ affected: 1 } as any);
+      escrowRepository.update.mockResolvedValue({ affected: 1 } as UpdateResult);
 
       const result = await service.resolveDispute(
         'escrow-123',
@@ -527,7 +527,7 @@ describe('EscrowService', () => {
           outcome: DisputeOutcome.REFUNDED_TO_BUYER,
         }) as Dispute);
       disputeRepository.save.mockResolvedValue(mockDispute() as Dispute);
-      escrowRepository.update.mockResolvedValue({ affected: 1 } as any);
+      escrowRepository.update.mockResolvedValue({ affected: 1 } as UpdateResult);
 
       await service.resolveDispute(
         'escrow-123',
@@ -553,7 +553,7 @@ describe('EscrowService', () => {
           buyerPercent: 40,
         }) as Dispute);
       disputeRepository.save.mockResolvedValue(mockDispute() as Dispute);
-      escrowRepository.update.mockResolvedValue({ affected: 1 } as any);
+      escrowRepository.update.mockResolvedValue({ affected: 1 } as UpdateResult);
 
       const result = await service.resolveDispute(
         'escrow-123',
