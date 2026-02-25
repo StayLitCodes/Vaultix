@@ -39,6 +39,21 @@ export class Condition {
   type: ConditionType;
 
   @Column({ default: false })
+  isFulfilled: boolean;
+
+  @Column({ type: 'datetime', nullable: true })
+  fulfilledAt?: Date;
+
+  @Column({ nullable: true })
+  fulfilledByUserId?: string;
+
+  @Column({ type: 'text', nullable: true })
+  fulfillmentNotes?: string;
+
+  @Column({ type: 'text', nullable: true })
+  fulfillmentEvidence?: string;
+
+  @Column({ default: false })
   isMet: boolean;
 
   @Column({ type: 'datetime', nullable: true })

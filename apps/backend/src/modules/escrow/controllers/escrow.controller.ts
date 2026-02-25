@@ -18,7 +18,9 @@ import { EscrowService } from '../services/escrow.service';
 import { CreateEscrowDto } from '../dto/create-escrow.dto';
 import { UpdateEscrowDto } from '../dto/update-escrow.dto';
 import { ListEscrowsDto } from '../dto/list-escrows.dto';
+import { ListEventsDto } from '../dto/list-events.dto';
 import { CancelEscrowDto } from '../dto/cancel-escrow.dto';
+import { FulfillConditionDto } from '../dto/fulfill-condition.dto';
 
 interface AuthenticatedRequest extends ExpressRequest {
   user: { sub: string; walletAddress: string };
@@ -78,6 +80,17 @@ export class EscrowController {
     return this.escrowService.cancel(id, dto, userId, ipAddress);
   }
 
+  @Get(':id/events')
+  @UseGuards(EscrowAccessGuard)
+  async findEscrowEvents(
+    @Param('id') id: string,
+    @Query() query: ListEventsDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.sub;
+    return this.escrowService.findEvents(userId, query, id);
+  }
+
   @Post(':id/release')
   @UseGuards(AuthGuard)
   async releaseEscrow(
@@ -95,5 +108,41 @@ export class EscrowController {
       status: escrow.status,
       transactionHash: escrow.releaseTransactionHash,
     };
+  }
+
+  @Post(':id/conditions/:conditionId/fulfill')
+  @UseGuards(EscrowAccessGuard)
+  async fulfillCondition(
+    @Param('id') escrowId: string,
+    @Param('conditionId') conditionId: string,
+    @Body() dto: FulfillConditionDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.sub;
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.fulfillCondition(
+      escrowId,
+      conditionId,
+      dto,
+      userId,
+      ipAddress,
+    );
+  }
+
+  @Post(':id/conditions/:conditionId/confirm')
+  @UseGuards(EscrowAccessGuard)
+  async confirmCondition(
+    @Param('id') escrowId: string,
+    @Param('conditionId') conditionId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.sub;
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.confirmCondition(
+      escrowId,
+      conditionId,
+      userId,
+      ipAddress,
+    );
   }
 }

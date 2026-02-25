@@ -4,8 +4,8 @@ import request from 'supertest';
 import type { Server } from 'http';
 import { AppModule } from '../src/app.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { User } from '../src/modules/user/entities/user.entity';
 import { RefreshToken } from '../src/modules/user/entities/refresh-token.entity';
+import { User } from '../src/modules/user/entities/user.entity';
 import { Escrow } from '../src/modules/escrow/entities/escrow.entity';
 import { Party, PartyRole } from '../src/modules/escrow/entities/party.entity';
 import { Condition } from '../src/modules/escrow/entities/condition.entity';
@@ -74,13 +74,11 @@ describe('Escrow (e2e)', () => {
     const message = (challengeResponse.body as { message: string }).message;
     const signature = testKeypair.sign(message).toString('hex');
 
-    const verifyResponse = await request(httpServer)
-      .post('/auth/verify')
-      .send({
-        walletAddress: testWalletAddress,
-        signature: signature,
-        publicKey: testWalletAddress,
-      });
+    const verifyResponse = await request(httpServer).post('/auth/verify').send({
+      walletAddress: testWalletAddress,
+      signature: signature,
+      publicKey: testWalletAddress,
+    });
 
     accessToken = (verifyResponse.body as { accessToken: string }).accessToken;
 

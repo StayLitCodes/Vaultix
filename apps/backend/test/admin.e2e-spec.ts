@@ -46,14 +46,16 @@ describe('Admin API (e2e)', () => {
 
   describe('/admin/escrows (GET)', () => {
     it('should return all escrows for admin', () => {
-      return request(app.getHttpServer())
+      const server = app.getHttpServer() as unknown as import('http').Server;
+      return request(server)
         .get('/admin/escrows')
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
     });
 
     it('should forbid access for regular users', () => {
-      return request(app.getHttpServer())
+      const server = app.getHttpServer() as unknown as import('http').Server;
+      return request(server)
         .get('/admin/escrows')
         .set('Authorization', `Bearer ${userToken}`)
         .expect(403);
@@ -62,14 +64,16 @@ describe('Admin API (e2e)', () => {
 
   describe('/admin/users (GET)', () => {
     it('should return all users for admin', () => {
-      return request(app.getHttpServer())
+      const server = app.getHttpServer() as unknown as import('http').Server;
+      return request(server)
         .get('/admin/users')
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
     });
 
     it('should forbid access for regular users', () => {
-      return request(app.getHttpServer())
+      const server = app.getHttpServer() as unknown as import('http').Server;
+      return request(server)
         .get('/admin/users')
         .set('Authorization', `Bearer ${userToken}`)
         .expect(403);
@@ -78,14 +82,16 @@ describe('Admin API (e2e)', () => {
 
   describe('/admin/stats (GET)', () => {
     it('should return platform statistics for admin', () => {
-      return request(app.getHttpServer())
+      const server = app.getHttpServer() as unknown as import('http').Server;
+      return request(server)
         .get('/admin/stats')
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
     });
 
     it('should forbid access for regular users', () => {
-      return request(app.getHttpServer())
+      const server = app.getHttpServer() as unknown as import('http').Server;
+      return request(server)
         .get('/admin/stats')
         .set('Authorization', `Bearer ${userToken}`)
         .expect(403);
@@ -94,14 +100,16 @@ describe('Admin API (e2e)', () => {
 
   describe('/admin/users/:id/suspend (POST)', () => {
     it('should suspend user for admin', () => {
-      return request(app.getHttpServer())
+      const server = app.getHttpServer() as unknown as import('http').Server;
+      return request(server)
         .post('/admin/users/test-user-id/suspend')
         .set('Authorization', `Bearer ${adminToken}`)
         .expect(200);
     });
 
     it('should forbid access for regular users', () => {
-      return request(app.getHttpServer())
+      const server = app.getHttpServer() as unknown as import('http').Server;
+      return request(server)
         .post('/admin/users/test-user-id/suspend')
         .set('Authorization', `Bearer ${userToken}`)
         .expect(403);

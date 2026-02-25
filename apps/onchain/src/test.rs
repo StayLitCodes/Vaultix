@@ -166,22 +166,31 @@ fn test_create_and_get_escrow() {
     assert_eq!(escrow.status, EscrowStatus::Created);
     assert_eq!(escrow.milestones.len(), 3);
 
-    // Verify Create Event
+    // Verify Create Event (Refactored Schema)
     let events = env.events().all();
     let event = events.last().unwrap();
     assert_eq!(event.0, contract_id);
-    assert_eq!(
-        event.1,
-        (
-            symbol_short!("create"),
-            escrow_id,
-            depositor.clone(),
-            recipient.clone()
-        )
-            .into_val(&env)
-    );
-    let total_amount: i128 = event.2.into_val(&env);
-    assert_eq!(total_amount, 10000);
+
+    // Topics assertion: Convert tuple to Vec<Val>
+    let expected_topics: soroban_sdk::Vec<soroban_sdk::Val> = (
+        Symbol::new(&env, "Vaultix"),
+        Symbol::new(&env, "EscrowCreated"),
+        escrow_id,
+    )
+        .into_val(&env);
+    assert_eq!(event.1, expected_topics);
+
+    // Payload assertion: Convert event.2 into a Vec<Val> and compare with expected Vec<Val>
+    let actual_payload: soroban_sdk::Vec<soroban_sdk::Val> = event.2.into_val(&env);
+    let expected_payload: soroban_sdk::Vec<soroban_sdk::Val> = vec![
+        &env,
+        depositor.clone().into_val(&env),
+        recipient.clone().into_val(&env),
+        token_address.clone().into_val(&env),
+        10000i128.into_val(&env),
+        deadline.into_val(&env),
+    ];
+    assert_eq!(actual_payload, expected_payload);
 
     assert_eq!(escrow.deadline, deadline);
 

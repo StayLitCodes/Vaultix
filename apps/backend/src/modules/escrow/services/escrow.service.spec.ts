@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository, UpdateResult } from 'typeorm';
@@ -6,13 +7,15 @@ import { Escrow, EscrowStatus, EscrowType } from '../entities/escrow.entity';
 import { Party, PartyRole, PartyStatus } from '../entities/party.entity';
 import { Condition, ConditionType } from '../entities/condition.entity';
 import { EscrowEvent } from '../entities/escrow-event.entity';
-import { CreateEscrowDto } from '../dto/create-escrow.dto';
+import { FulfillConditionDto } from '../dto/fulfill-condition.dto';
 import {
   BadRequestException,
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
+import { WebhookService } from '../../../services/webhook/webhook.service';
+import { CreateEscrowDto } from '../dto/create-escrow.dto';
 
 describe('EscrowService', () => {
   let service: EscrowService;
@@ -47,6 +50,17 @@ describe('EscrowService', () => {
     createdAt: new Date(),
   };
 
+  const mockCondition: Partial<Condition> = {
+    id: 'condition-123',
+    escrowId: 'escrow-123',
+    description: 'Delivery confirmed',
+    type: ConditionType.MANUAL,
+    isFulfilled: false,
+    isMet: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
   beforeEach(async () => {
     const mockEscrowRepo = {
       create: jest.fn(),
@@ -64,6 +78,7 @@ describe('EscrowService', () => {
     const mockConditionRepo = {
       create: jest.fn(),
       save: jest.fn(),
+      findOne: jest.fn(),
     };
 
     const mockEventRepo = {
@@ -82,6 +97,12 @@ describe('EscrowService', () => {
           provide: EscrowStellarIntegrationService,
           useValue: {
             completeOnChainEscrow: jest.fn().mockResolvedValue('mock-tx-hash'),
+          },
+        },
+        {
+          provide: WebhookService,
+          useValue: {
+            dispatchEvent: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],
@@ -310,6 +331,194 @@ describe('EscrowService', () => {
       );
 
       expect(result).toBe(false);
+    });
+  });
+
+  describe('fulfillCondition', () => {
+    const mockActiveEscrow = {
+      ...mockEscrow,
+      status: EscrowStatus.ACTIVE,
+      parties: [
+        { userId: 'seller-123', role: PartyRole.SELLER },
+        { userId: 'buyer-123', role: PartyRole.BUYER },
+      ],
+    };
+
+    it('should allow seller to fulfill condition', async () => {
+      const fulfillDto: FulfillConditionDto = {
+        notes: 'Package delivered',
+        evidence: 'Tracking number: ABC123',
+      };
+
+      escrowRepository.findOne.mockResolvedValue(mockActiveEscrow as Escrow);
+      conditionRepository.findOne.mockResolvedValue(mockCondition as Condition);
+      conditionRepository.save.mockResolvedValue({
+        ...mockCondition,
+        isFulfilled: true,
+        fulfilledAt: new Date(),
+        fulfilledByUserId: 'seller-123',
+        fulfillmentNotes: fulfillDto.notes,
+        fulfillmentEvidence: fulfillDto.evidence,
+      } as Condition);
+      eventRepository.create.mockReturnValue({} as EscrowEvent);
+      eventRepository.save.mockResolvedValue({} as EscrowEvent);
+
+      const result = await service.fulfillCondition(
+        'escrow-123',
+        'condition-123',
+        fulfillDto,
+        'seller-123',
+      );
+
+      expect(result.isFulfilled).toBe(true);
+      expect(conditionRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ isFulfilled: true }),
+      );
+      expect(eventRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({}),
+      );
+    });
+
+    it('should throw ForbiddenException if non-seller tries to fulfill', async () => {
+      escrowRepository.findOne.mockResolvedValue(mockActiveEscrow as Escrow);
+
+      await expect(
+        service.fulfillCondition(
+          'escrow-123',
+          'condition-123',
+          {},
+          'buyer-123',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should throw BadRequestException if escrow is not active', async () => {
+      escrowRepository.findOne.mockResolvedValue(mockEscrow as Escrow);
+
+      await expect(
+        service.fulfillCondition(
+          'escrow-123',
+          'condition-123',
+          {},
+          'seller-123',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should be idempotent if condition already fulfilled', async () => {
+      const fulfilledCondition = { ...mockCondition, isFulfilled: true };
+      escrowRepository.findOne.mockResolvedValue(mockActiveEscrow as Escrow);
+      conditionRepository.findOne.mockResolvedValue(
+        fulfilledCondition as Condition,
+      );
+
+      const result = await service.fulfillCondition(
+        'escrow-123',
+        'condition-123',
+        {},
+        'seller-123',
+      );
+
+      expect(result.isFulfilled).toBe(true);
+      expect(conditionRepository.save).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('confirmCondition', () => {
+    const mockActiveEscrowWithMultipleConditions = {
+      ...mockEscrow,
+      status: EscrowStatus.ACTIVE,
+      parties: [
+        { userId: 'seller-123', role: PartyRole.SELLER },
+        { userId: 'buyer-123', role: PartyRole.BUYER },
+      ],
+      conditions: [
+        { ...mockCondition, isFulfilled: true, isMet: false },
+        { id: 'condition-456', isFulfilled: false, isMet: false }, // Another condition not met
+      ],
+    };
+
+    it('should allow buyer to confirm fulfilled condition', async () => {
+      const fulfilledCondition = {
+        ...mockCondition,
+        isFulfilled: true,
+        escrow: mockActiveEscrowWithMultipleConditions,
+      };
+      escrowRepository.findOne.mockResolvedValue(
+        mockActiveEscrowWithMultipleConditions as Escrow,
+      );
+      conditionRepository.findOne.mockResolvedValue(
+        fulfilledCondition as Condition,
+      );
+      conditionRepository.save.mockResolvedValue({
+        ...fulfilledCondition,
+        isMet: true,
+        metAt: new Date(),
+        metByUserId: 'buyer-123',
+      } as Condition);
+      eventRepository.create.mockReturnValue({} as EscrowEvent);
+      eventRepository.save.mockResolvedValue({} as EscrowEvent);
+
+      const result = await service.confirmCondition(
+        'escrow-123',
+        'condition-123',
+        'buyer-123',
+      );
+
+      expect(result.isMet).toBe(true);
+      expect(conditionRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ isMet: true }),
+      );
+      expect(eventRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({}),
+      );
+    });
+
+    it('should throw ForbiddenException if non-buyer tries to confirm', async () => {
+      escrowRepository.findOne.mockResolvedValue(
+        mockActiveEscrowWithMultipleConditions as Escrow,
+      );
+
+      await expect(
+        service.confirmCondition('escrow-123', 'condition-123', 'seller-123'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should throw BadRequestException if condition not fulfilled', async () => {
+      const unfulfilledCondition = { ...mockCondition, isFulfilled: false };
+      escrowRepository.findOne.mockResolvedValue(
+        mockActiveEscrowWithMultipleConditions as Escrow,
+      );
+      conditionRepository.findOne.mockResolvedValue(
+        unfulfilledCondition as Condition,
+      );
+
+      await expect(
+        service.confirmCondition('escrow-123', 'condition-123', 'buyer-123'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should be idempotent if condition already confirmed', async () => {
+      const confirmedCondition = {
+        ...mockCondition,
+        isFulfilled: true,
+        isMet: true,
+      };
+      escrowRepository.findOne.mockResolvedValue(
+        mockActiveEscrowWithMultipleConditions as Escrow,
+      );
+      conditionRepository.findOne.mockResolvedValue(
+        confirmedCondition as Condition,
+      );
+
+      const result = await service.confirmCondition(
+        'escrow-123',
+        'condition-123',
+        'buyer-123',
+      );
+
+      expect(result.isMet).toBe(true);
+      expect(conditionRepository.save).not.toHaveBeenCalled();
     });
   });
 });

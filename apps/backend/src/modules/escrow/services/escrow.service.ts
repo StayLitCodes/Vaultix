@@ -13,9 +13,13 @@ import { EscrowEvent, EscrowEventType } from '../entities/escrow-event.entity';
 import { CreateEscrowDto } from '../dto/create-escrow.dto';
 import { UpdateEscrowDto } from '../dto/update-escrow.dto';
 import { ListEscrowsDto, SortOrder } from '../dto/list-escrows.dto';
+import { ListEventsDto, EventSortOrder } from '../dto/list-events.dto';
+import { EventResponseDto } from '../dto/event-response.dto';
 import { CancelEscrowDto } from '../dto/cancel-escrow.dto';
+import { FulfillConditionDto } from '../dto/fulfill-condition.dto';
 import { validateTransition, isTerminalStatus } from '../escrow-state-machine';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
+import { WebhookService } from '../../../services/webhook/webhook.service';
 
 @Injectable()
 export class EscrowService {
@@ -30,6 +34,7 @@ export class EscrowService {
     private eventRepository: Repository<EscrowEvent>,
 
     private readonly stellarIntegrationService: EscrowStellarIntegrationService,
+    private readonly webhookService: WebhookService,
   ) {}
 
   async create(
@@ -77,6 +82,11 @@ export class EscrowService {
       { dto },
       ipAddress,
     );
+
+    // Dispatch webhook for escrow.created
+    await this.webhookService.dispatchEvent('escrow.created', {
+      escrowId: savedEscrow.id,
+    });
 
     return this.findOne(savedEscrow.id);
   }
@@ -170,6 +180,7 @@ export class EscrowService {
       { changes: dto },
       ipAddress,
     );
+    // Optionally dispatch webhook for escrow update
 
     return this.findOne(id);
   }
@@ -216,6 +227,9 @@ export class EscrowService {
       { reason: dto.reason, previousStatus: escrow.status },
       ipAddress,
     );
+    await this.webhookService.dispatchEvent('escrow.cancelled', {
+      escrowId: id,
+    });
 
     return this.findOne(id);
   }
@@ -296,16 +310,121 @@ export class EscrowService {
     await this.logEvent(escrow.id, EscrowEventType.COMPLETED, currentUserId, {
       txHash,
     });
+    await this.webhookService.dispatchEvent('escrow.released', {
+      escrowId: escrow.id,
+      txHash,
+    });
 
     return escrow;
   }
 
+  async fulfillCondition(
+    escrowId: string,
+    conditionId: string,
+    dto: FulfillConditionDto,
+    userId: string,
+    ipAddress?: string,
+  ): Promise<Condition> {
+    const escrow = await this.escrowRepository.findOne({
+      where: { id: escrowId },
+      relations: ['parties', 'conditions'],
+    });
+
+    if (!escrow) {
+      throw new NotFoundException('Escrow not found');
+    }
+
+    if (escrow.status !== EscrowStatus.ACTIVE) {
+      throw new BadRequestException(
+        'Escrow must be active to fulfill conditions',
+      );
+    }
+
+    // Check if user is a seller
+    const sellerParty = escrow.parties?.find(
+      (p) => p.role === PartyRole.SELLER && p.userId === userId,
+    );
+
+    if (!sellerParty) {
+      throw new ForbiddenException('Only sellers can fulfill conditions');
+    }
+
+    const condition = await this.conditionRepository.findOne({
+      where: { id: conditionId, escrowId },
+      relations: ['escrow'],
+    });
+
+    if (!condition) {
+      throw new NotFoundException('Condition not found');
+    }
+
+    if (condition.isFulfilled) {
+      return condition; // idempotent
+    }
+
+    // Mark condition as fulfilled by seller
+    condition.isFulfilled = true;
+    condition.fulfilledAt = new Date();
+    condition.fulfilledByUserId = userId;
+    condition.fulfillmentNotes = dto.notes;
+    condition.fulfillmentEvidence = dto.evidence;
+
+    await this.conditionRepository.save(condition);
+
+    await this.logEvent(
+      escrowId,
+      EscrowEventType.CONDITION_FULFILLED,
+      userId,
+      {
+        conditionId,
+        notes: dto.notes,
+        evidence: dto.evidence,
+      },
+      ipAddress,
+    );
+
+    // Dispatch webhook for condition fulfillment
+    await this.webhookService.dispatchEvent('condition.fulfilled', {
+      escrowId,
+      conditionId,
+      fulfilledBy: userId,
+    });
+
+    return condition;
+  }
+
   async confirmCondition(
+    escrowId: string,
     conditionId: string,
     userId: string,
+    ipAddress?: string,
   ): Promise<Condition> {
+    const escrow = await this.escrowRepository.findOne({
+      where: { id: escrowId },
+      relations: ['parties', 'conditions'],
+    });
+
+    if (!escrow) {
+      throw new NotFoundException('Escrow not found');
+    }
+
+    if (escrow.status !== EscrowStatus.ACTIVE) {
+      throw new BadRequestException(
+        'Escrow must be active to confirm conditions',
+      );
+    }
+
+    // Check if user is a buyer
+    const buyerParty = escrow.parties?.find(
+      (p) => p.role === PartyRole.BUYER && p.userId === userId,
+    );
+
+    if (!buyerParty) {
+      throw new ForbiddenException('Only buyers can confirm conditions');
+    }
+
     const condition = await this.conditionRepository.findOne({
-      where: { id: conditionId },
+      where: { id: conditionId, escrowId },
       relations: ['escrow', 'escrow.conditions'],
     });
 
@@ -313,20 +432,35 @@ export class EscrowService {
       throw new NotFoundException('Condition not found');
     }
 
+    if (!condition.isFulfilled) {
+      throw new BadRequestException(
+        'Condition must be fulfilled before it can be confirmed',
+      );
+    }
+
     if (condition.isMet) {
       return condition; // idempotent
     }
 
-    // Mark condition as met
+    // Mark condition as confirmed by buyer
     condition.isMet = true;
     condition.metAt = new Date();
     condition.metByUserId = userId;
 
     await this.conditionRepository.save(condition);
 
-    const escrow = condition.escrow;
+    await this.logEvent(
+      escrowId,
+      EscrowEventType.CONDITION_MET,
+      userId,
+      {
+        conditionId,
+        confirmedBy: userId,
+      },
+      ipAddress,
+    );
 
-    // 🔥 AUTO RELEASE CHECK
+    // Check if all conditions are now met for auto-release
     const allConditionsMet = escrow.conditions.every((c) =>
       c.id === condition.id ? true : c.isMet,
     );
@@ -339,7 +473,101 @@ export class EscrowService {
       );
     }
 
+    // Dispatch webhook for condition confirmation
+    await this.webhookService.dispatchEvent('condition.confirmed', {
+      escrowId,
+      conditionId,
+      confirmedBy: userId,
+      allConditionsMet,
+    });
+
     return condition;
+  }
+
+  async findEvents(
+    userId: string,
+    query: ListEventsDto,
+    escrowId?: string,
+  ): Promise<{
+    data: EventResponseDto[];
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const page = query.page || 1;
+    const limit = query.limit || 10;
+    const skip = (page - 1) * limit;
+
+    const qb: SelectQueryBuilder<EscrowEvent> = this.eventRepository
+      .createQueryBuilder('event')
+      .leftJoinAndSelect('event.escrow', 'escrow')
+      .leftJoinAndSelect('escrow.parties', 'party')
+      .leftJoinAndSelect('escrow.creator', 'creator')
+      .where('(escrow.creatorId = :userId OR party.userId = :userId)', {
+        userId,
+      });
+
+    // Apply escrowId filter if provided (either from parameter or query)
+    const effectiveEscrowId = escrowId || query.escrowId;
+    if (effectiveEscrowId) {
+      qb.andWhere('event.escrowId = :escrowId', {
+        escrowId: effectiveEscrowId,
+      });
+    }
+
+    if (query.eventType) {
+      qb.andWhere('event.eventType = :eventType', {
+        eventType: query.eventType,
+      });
+    }
+
+    if (query.actorId) {
+      qb.andWhere('event.actorId = :actorId', { actorId: query.actorId });
+    }
+
+    if (query.dateFrom) {
+      qb.andWhere('event.createdAt >= :dateFrom', {
+        dateFrom: new Date(query.dateFrom),
+      });
+    }
+
+    if (query.dateTo) {
+      qb.andWhere('event.createdAt <= :dateTo', {
+        dateTo: new Date(query.dateTo),
+      });
+    }
+
+    const sortOrder = query.sortOrder === EventSortOrder.ASC ? 'ASC' : 'DESC';
+    qb.orderBy(`event.${query.sortBy || 'createdAt'}`, sortOrder);
+
+    const [events, total] = await qb.skip(skip).take(limit).getManyAndCount();
+
+    // Transform to response DTO
+    const data: EventResponseDto[] = events.map((event) => ({
+      id: event.id,
+      escrowId: event.escrowId,
+      eventType: event.eventType,
+      actorId: event.actorId,
+      data: event.data,
+      ipAddress: event.ipAddress,
+      createdAt: event.createdAt,
+      escrow: event.escrow
+        ? {
+            id: event.escrow.id,
+            title: event.escrow.title,
+            amount: event.escrow.amount,
+            asset: event.escrow.asset,
+            status: event.escrow.status,
+          }
+        : undefined,
+      actor: event.actorId
+        ? {
+            walletAddress: event.actorId, // In real implementation, this would come from user lookup
+          }
+        : undefined,
+    }));
+
+    return { data, total, page, limit };
   }
 
   private async logEvent(
