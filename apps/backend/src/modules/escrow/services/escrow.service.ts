@@ -304,7 +304,6 @@ export class EscrowService {
       },
       ipAddress,
     );
-    );
 
     // Dispatch webhook
     await this.webhookService.dispatchEvent('escrow.expired', {
