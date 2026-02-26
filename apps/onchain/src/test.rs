@@ -1553,33 +1553,28 @@ fn test_refund_expired_authorization_check() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #28)")] // ⬅️ Change from #24 to #28
-fn test_pause_fails_without_operator_initialized() {
-    let env = Env::default();
-    env.mock_all_auths();
+    #[should_panic(expected = "Error(Contract, #28)")]
+    fn test_pause_fails_without_operator_initialized() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, VaultixEscrow);
+        let client = VaultixEscrowClient::new(&env, &contract_id);
 
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+        // set_paused requires operator. Operator not set -> OperatorNotInitialized (28)
+        client.set_paused(&true);
+    }
 
-<<<<<<< HEAD
-    let depositor = Address::generate(&env);
-    let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
-#[test]
-#[should_panic(expected = "Error(Contract, #29)")] // ⬅️ Change from #25 to #29
-fn test_resolve_dispute_fails_without_arbitrator_initialized() {
->>>>>>> 1ff030a (fix: correct winner argument in recipient dispute resolution test (Closes #91))
-    let env = Env::default();
-    env.mock_all_auths();
+    #[test]
+    #[should_panic(expected = "Error(Contract, #29)")]
+    fn test_resolve_dispute_fails_without_arbitrator_initialized() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, VaultixEscrow);
+        let client = VaultixEscrowClient::new(&env, &contract_id);
 
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+        let winner = Address::generate(&env);
 
-    let depositor = Address::generate(&env);
-    let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
-    let treasury = Address::generate(&env);
-    let escrow_id = 102u64;
-
-    // resolve_dispute requires arbitrator. Arbitrator not set -> ArbitratorNotInitialized (29)
-    client.resolve_dispute(&1u64, &winner);
+        // resolve_dispute requires arbitrator. Arbitrator not set -> ArbitratorNotInitialized (29)
+        client.resolve_dispute(&1u64, &winner);
+    }
 }
