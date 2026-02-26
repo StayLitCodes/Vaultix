@@ -25,6 +25,7 @@ import { EventResponseDto } from '../dto/event-response.dto';
 import { CancelEscrowDto } from '../dto/cancel-escrow.dto';
 import { FulfillConditionDto } from '../dto/fulfill-condition.dto';
 import { FileDisputeDto, ResolveDisputeDto } from '../dto/dispute.dto';
+import { FundEscrowDto } from '../dto/fund-escrow.dto';
 import { validateTransition, isTerminalStatus } from '../escrow-state-machine';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
 import { WebhookService } from '../../../services/webhook/webhook.service';
@@ -241,6 +242,56 @@ export class EscrowService {
       escrowId: id,
     });
 
+    return this.findOne(id);
+  }
+
+  async fund(
+    id: string,
+    dto: FundEscrowDto,
+    userId: string,
+    walletAddress: string,
+    ipAddress?: string,
+  ): Promise<Escrow> {
+    const escrow = await this.findOne(id);
+
+    if (escrow.creatorId !== userId) {throw new ForbiddenException('Only the buyer can fund this escrow');}
+
+    if (escrow.status !== EscrowStatus.PENDING) {
+      throw new BadRequestException('Escrow can only be funded while in pending status',);
+    }
+
+    if (escrow.stellarTxHash) {throw new BadRequestException('Escrow is already funded');}
+
+    const escrowAmount = Number(escrow.amount);
+    if (Number(dto.amount) !== escrowAmount) {
+      throw new BadRequestException('Amount must match the escrow amount',);
+    }
+
+    validateTransition(escrow.status, EscrowStatus.ACTIVE);
+
+    const stellarTxHash = await this.stellarIntegrationService.fundOnChainEscrow(
+      id,
+      walletAddress,
+      String(dto.amount),
+      escrow.asset ?? 'XLM',
+    );
+
+    const fundedAt = new Date();
+    await this.escrowRepository.update(id, {stellarTxHash, fundedAt, status: EscrowStatus.ACTIVE});
+
+    await this.logEvent(
+      id,
+      EscrowEventType.FUNDED,
+      userId,
+      { stellarTxHash },
+      ipAddress,
+    );
+    await this.webhookService.dispatchEvent('escrow.funded', {
+      escrowId: id,
+      stellarTxHash,
+    });
+
+    
     return this.findOne(id);
   }
 
