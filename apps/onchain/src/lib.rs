@@ -206,6 +206,98 @@ impl VaultixEscrow {
         Ok(())
     }
 
+    /// Set fee override for a specific token.
+    /// Only treasury (admin) can call this function.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment reference
+    /// * `token_address` - Address of the token to set fee for
+    /// * `fee_bps` - Fee in basis points (must be in range [0, BPS_DENOMINATOR])
+    ///
+    /// # Returns
+    /// Ok(()) on success, or Error if validation fails
+    pub fn set_token_fee(env: Env, token_address: Address, fee_bps: i128) -> Result<(), Error> {
+        let treasury: Address = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("treasury"))
+            .ok_or(Error::TreasuryNotInitialized)?;
+        treasury.require_auth();
+
+        if !(0..=BPS_DENOMINATOR).contains(&fee_bps) {
+            return Err(Error::InvalidFeeConfiguration);
+        }
+
+        let token_fee_key = get_token_fee_key(&token_address);
+        let old_fee: Option<i128> = env.storage().persistent().get(&token_fee_key);
+
+        env.storage()
+            .persistent()
+            .set(&token_fee_key, &fee_bps);
+
+        // Emit FeeUpdated event for token-level override
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "FeeUpdated"),
+            ),
+            (
+                Symbol::new(&env, "Token"),
+                token_address.clone(),
+                old_fee.unwrap_or(DEFAULT_FEE_BPS),
+                fee_bps,
+            ),
+        );
+
+        Ok(())
+    }
+
+    /// Set fee override for a specific escrow.
+    /// Only treasury (admin) can call this function.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment reference
+    /// * `escrow_id` - ID of the escrow to set fee for
+    /// * `fee_bps` - Fee in basis points (must be in range [0, BPS_DENOMINATOR])
+    ///
+    /// # Returns
+    /// Ok(()) on success, or Error if validation fails
+    pub fn set_escrow_fee(env: Env, escrow_id: u64, fee_bps: i128) -> Result<(), Error> {
+        let treasury: Address = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("treasury"))
+            .ok_or(Error::TreasuryNotInitialized)?;
+        treasury.require_auth();
+
+        if !(0..=BPS_DENOMINATOR).contains(&fee_bps) {
+            return Err(Error::InvalidFeeConfiguration);
+        }
+
+        let escrow_fee_key = get_escrow_fee_key(escrow_id);
+        let old_fee: Option<i128> = env.storage().persistent().get(&escrow_fee_key);
+
+        env.storage()
+            .persistent()
+            .set(&escrow_fee_key, &fee_bps);
+
+        // Emit FeeUpdated event for escrow-level override
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "FeeUpdated"),
+            ),
+            (
+                Symbol::new(&env, "Escrow"),
+                escrow_id,
+                old_fee.unwrap_or(DEFAULT_FEE_BPS),
+                fee_bps,
+            ),
+        );
+
+        Ok(())
+    }
+
     pub fn get_config(env: Env) -> Result<(Address, i128), Error> {
         let treasury: Address = env
             .storage()
@@ -409,7 +501,8 @@ impl VaultixEscrow {
             return Err(Error::MilestoneAlreadyReleased);
         }
 
-        let (treasury, fee_bps) = Self::get_config(env.clone())?;
+        let (treasury, _) = Self::get_config(env.clone())?;
+        let fee_bps = resolve_fee(&env, escrow_id, &escrow.token_address)?;
         let fee = calculate_fee(milestone.amount, fee_bps)?;
         let payout = milestone
             .amount
@@ -417,10 +510,10 @@ impl VaultixEscrow {
             .ok_or(Error::InvalidMilestoneAmount)?;
 
         let token_client = token::Client::new(&env, &escrow.token_address);
-        token_client.transfer(&env.current_contract_address(), &escrow.recipient, &payout);
+        safe_transfer(&env, &token_client, &env.current_contract_address(), &escrow.recipient, payout)?;
 
         if fee > 0 {
-            token_client.transfer(&env.current_contract_address(), &treasury, &fee);
+            safe_transfer(&env, &token_client, &env.current_contract_address(), &treasury, fee)?;
         }
 
         milestone.status = MilestoneStatus::Released;
@@ -493,11 +586,7 @@ impl VaultixEscrow {
             .ok_or(Error::InvalidMilestoneAmount)?;
 
         let token_client = token::Client::new(&env, &escrow.token_address);
-        token_client.transfer(
-            &env.current_contract_address(),
-            &escrow.recipient,
-            &milestone.amount,
-        );
+        safe_transfer(&env, &token_client, &env.current_contract_address(), &escrow.recipient, milestone.amount)?;
 
         env.storage().persistent().set(&storage_key, &escrow);
 
@@ -618,11 +707,11 @@ impl VaultixEscrow {
         let token_client = token::Client::new(&env, &escrow.token_address);
 
         if amount_to_winner > 0 {
-            token_client.transfer(&env.current_contract_address(), &winner, &amount_to_winner);
+            safe_transfer(&env, &token_client, &env.current_contract_address(), &winner, amount_to_winner)?;
         }
 
         if amount_to_other > 0 {
-            token_client.transfer(&env.current_contract_address(), &other, &amount_to_other);
+            safe_transfer(&env, &token_client, &env.current_contract_address(), &other, amount_to_other)?;
         }
 
         // Update accounting and milestone statuses
@@ -712,6 +801,16 @@ impl VaultixEscrow {
             .ok_or(Error::EscrowNotFound)?;
         escrow.depositor.require_auth();
 
+        // Debug: emit start of cancel operation
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "CancelStart"),
+                escrow_id,
+            ),
+            (escrow.total_amount, escrow.total_released, escrow.status.clone()),
+        );
+
         if escrow.status != EscrowStatus::Active && escrow.status != EscrowStatus::Created {
             return Err(Error::InvalidEscrowStatus);
         }
@@ -721,26 +820,49 @@ impl VaultixEscrow {
 
         if escrow.status == EscrowStatus::Active {
             let token_client = token::Client::new(&env, &escrow.token_address);
-
-            let refund_amount = if let Ok((treasury, fee_bps)) = Self::get_config(env.clone()) {
+            let refund_amount = if let Ok((treasury, _)) = Self::get_config(env.clone()) {
+                let fee_bps = resolve_fee(&env, escrow_id, &escrow.token_address)?;
                 let fee = calculate_fee(escrow.total_amount, fee_bps)?;
+                // Debug: fee resolved
+                env.events().publish(
+                    (
+                        Symbol::new(&env, "Vaultix"),
+                        Symbol::new(&env, "FeeResolved"),
+                        escrow_id,
+                    ),
+                    (fee_bps, fee),
+                );
+                // Emit debug events to help trace panics in tests
+                env.events().publish(
+                    (
+                        Symbol::new(&env, "Vaultix"),
+                        Symbol::new(&env, "FeeTransferAttempt"),
+                        escrow_id,
+                    ),
+                    (fee,),
+                );
                 if fee > 0 {
-                    token_client.transfer(&env.current_contract_address(), &treasury, &fee);
+                    safe_transfer(&env, &token_client, &env.current_contract_address(), &treasury, fee)?;
                 }
-                escrow
+                let refund = escrow
                     .total_amount
                     .checked_sub(fee)
-                    .ok_or(Error::InvalidMilestoneAmount)?
+                    .ok_or(Error::InvalidMilestoneAmount)?;
+                env.events().publish(
+                    (
+                        Symbol::new(&env, "Vaultix"),
+                        Symbol::new(&env, "RefundAmountComputed"),
+                        escrow_id,
+                    ),
+                    (refund,),
+                );
+                refund
             } else {
                 escrow.total_amount
             };
 
             if refund_amount > 0 {
-                token_client.transfer(
-                    &env.current_contract_address(),
-                    &escrow.depositor,
-                    &refund_amount,
-                );
+                safe_transfer(&env, &token_client, &env.current_contract_address(), &escrow.depositor, refund_amount)?;
             }
         }
 
@@ -839,7 +961,10 @@ impl VaultixEscrow {
         }
 
         // Retrieve platform fee BPS from contract configuration
-        let (treasury, fee_bps) = Self::get_config(env.clone())?;
+        let (treasury, _) = Self::get_config(env.clone())?;
+
+        // Resolve fee with precedence: escrow > token > global
+        let fee_bps = resolve_fee(&env, escrow_id, &escrow.token_address)?;
 
         // Calculate platform fee using checked arithmetic
         let platform_fee = calculate_fee(remaining_balance, fee_bps)?;
@@ -853,15 +978,11 @@ impl VaultixEscrow {
         let token_client = token::Client::new(&env, &escrow.token_address);
 
         // Transfer refund amount to buyer
-        token_client.transfer(
-            &env.current_contract_address(),
-            &escrow.depositor,
-            &refund_amount,
-        );
+        safe_transfer(&env, &token_client, &env.current_contract_address(), &escrow.depositor, refund_amount)?;
 
         // If platform fee > 0, transfer fee to fee recipient
         if platform_fee > 0 {
-            token_client.transfer(&env.current_contract_address(), &treasury, &platform_fee);
+            safe_transfer(&env, &token_client, &env.current_contract_address(), &treasury, platform_fee)?;
         }
 
         // Update escrow state
@@ -888,6 +1009,66 @@ impl VaultixEscrow {
 
 fn get_storage_key(escrow_id: u64) -> (Symbol, u64) {
     (symbol_short!("escrow"), escrow_id)
+}
+
+/// Generates storage key for token-specific fee override
+/// Returns a tuple of (Symbol, Address) for scoped storage access
+fn get_token_fee_key(token_address: &Address) -> (Symbol, Address) {
+    (symbol_short!("tokfee"), token_address.clone())
+}
+
+/// Generates storage key for escrow-specific fee override
+/// Returns a tuple of (Symbol, u64) for scoped storage access
+fn get_escrow_fee_key(escrow_id: u64) -> (Symbol, u64) {
+    (symbol_short!("escfee"), escrow_id)
+}
+
+/// Resolves the applicable fee for a transaction using the following precedence:
+/// 1. Per-escrow fee override (highest priority)
+/// 2. Per-token fee override
+/// 3. Global default fee (fallback)
+///
+/// # Arguments
+/// * `env` - Soroban environment reference
+/// * `escrow_id` - ID of the escrow transaction
+/// * `token_address` - Token being transferred
+///
+/// # Returns
+/// The fee in basis points to apply for the transaction
+fn resolve_fee(env: &Env, escrow_id: u64, token_address: &Address) -> Result<i128, Error> {
+    // Check escrow-specific override first (highest priority)
+    let escrow_fee_key = get_escrow_fee_key(escrow_id);
+    if let Some(escrow_fee) = env.storage().persistent().get::<(Symbol, u64), i128>(&escrow_fee_key) {
+        return Ok(escrow_fee);
+    }
+
+    // Check token-specific override second
+    let token_fee_key = get_token_fee_key(token_address);
+    if let Some(token_fee) = env.storage().persistent().get::<(Symbol, Address), i128>(&token_fee_key) {
+        return Ok(token_fee);
+    }
+
+    // Fall back to global default fee
+    let global_fee: i128 = env
+        .storage()
+        .instance()
+        .get(&symbol_short!("fee_bps"))
+        .unwrap_or(DEFAULT_FEE_BPS);
+    
+    Ok(global_fee)
+}
+
+/// Safely transfer tokens from `from` to `to`, returning an error if balance is insufficient.
+fn safe_transfer(env: &Env, token_client: &token::Client, from: &Address, to: &Address, amount: i128) -> Result<(), Error> {
+    if amount <= 0 {
+        return Ok(());
+    }
+    let balance = token_client.balance(from);
+    if balance < amount {
+        return Err(Error::InsufficientBalance);
+    }
+    token_client.transfer(from, to, &amount);
+    Ok(())
 }
 
 fn ensure_not_paused(env: &Env) -> Result<(), Error> {
@@ -957,3 +1138,5 @@ fn calculate_fee(amount: i128, fee_bps: i128) -> Result<i128, Error> {
 
 #[cfg(test)]
 mod test;
+#[cfg(test)]
+mod fee_tests;
