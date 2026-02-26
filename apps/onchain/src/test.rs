@@ -1488,7 +1488,7 @@ fn test_refund_expired_deadline_not_reached() {
     // Verify no state changes
     assert_eq!(token_client.balance(&depositor), 0);
     assert_eq!(token_client.balance(&contract_id), 10_000);
-    
+
     let escrow = client.get_escrow(&escrow_id);
     assert_eq!(escrow.status, EscrowStatus::Active);
 }
@@ -1624,7 +1624,7 @@ fn test_refund_expired_fee_calculation_edge_cases() {
         let escrow_id = 301u64;
         let depositor2 = Address::generate(&env);
         let recipient2 = Address::generate(&env);
-        
+
         client.update_fee(&1000); // 1000 bps = 10% fee
 
         let (token_client2, token_admin2, token_address2) = create_token_contract(&env, &admin);
@@ -1669,7 +1669,7 @@ fn test_refund_expired_fee_calculation_edge_cases() {
         let escrow_id = 302u64;
         let depositor3 = Address::generate(&env);
         let recipient3 = Address::generate(&env);
-        
+
         client.update_fee(&50); // 50 bps = 0.5% fee
 
         let (token_client3, token_admin3, token_address3) = create_token_contract(&env, &admin);

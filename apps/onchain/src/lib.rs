@@ -54,7 +54,7 @@ pub enum EscrowStatus {
     Cancelled, // Escrow cancelled, funds refunded
     Disputed,
     Resolved,
-    Expired,   // Escrow expired and refunded to depositor
+    Expired, // Escrow expired and refunded to depositor
 }
 
 #[contracttype]
@@ -889,12 +889,12 @@ fn calculate_fee(amount: i128, fee_bps: i128) -> Result<i128, Error> {
     let fee_numerator = amount
         .checked_mul(fee_bps)
         .ok_or(Error::InvalidMilestoneAmount)?;
-    
+
     // Divide by BPS denominator (10000) to get final fee
     let fee = fee_numerator
         .checked_div(BPS_DENOMINATOR)
         .ok_or(Error::InvalidMilestoneAmount)?;
-    
+
     Ok(fee)
 }
 
