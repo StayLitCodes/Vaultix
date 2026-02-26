@@ -54,6 +54,7 @@ pub enum EscrowStatus {
     Cancelled, // Escrow cancelled, funds refunded
     Disputed,
     Resolved,
+    Expired, // Escrow expired and refunded to depositor
 }
 
 #[contracttype]
@@ -112,6 +113,10 @@ pub enum Error {
     AlreadyInDispute = 21,
     InvalidWinner = 22,
     ContractPaused = 23,
+    DeadlineNotReached = 24,
+    InvalidStatusForRefund = 25,
+    NoFundsToRefund = 26,
+    Unauthorized = 27,
 }
 
 const DEFAULT_FEE_BPS: i128 = 50;
@@ -794,6 +799,91 @@ impl VaultixEscrow {
 
         Ok(())
     }
+
+    pub fn refund_expired(env: Env, escrow_id: u64, caller: Address) -> Result<(), Error> {
+        let storage_key = get_storage_key(escrow_id);
+
+        // Load escrow from storage
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&storage_key)
+            .ok_or(Error::EscrowNotFound)?;
+
+        // Validate deadline has passed
+        let current_time = env.ledger().timestamp();
+        if current_time <= escrow.deadline {
+            return Err(Error::DeadlineNotReached);
+        }
+
+        // Validate escrow status is Active
+        if escrow.status != EscrowStatus::Active {
+            return Err(Error::InvalidStatusForRefund);
+        }
+
+        // Authorization validation - only buyer can refund
+        caller.require_auth();
+        if caller != escrow.depositor {
+            return Err(Error::Unauthorized);
+        }
+
+        // Calculate remaining balance
+        let remaining_balance = escrow
+            .total_amount
+            .checked_sub(escrow.total_released)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+
+        // Check if there are funds to refund
+        if remaining_balance <= 0 {
+            return Err(Error::NoFundsToRefund);
+        }
+
+        // Retrieve platform fee BPS from contract configuration
+        let (treasury, fee_bps) = Self::get_config(env.clone())?;
+
+        // Calculate platform fee using checked arithmetic
+        let platform_fee = calculate_fee(remaining_balance, fee_bps)?;
+
+        // Calculate refund amount
+        let refund_amount = remaining_balance
+            .checked_sub(platform_fee)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+
+        // Get token client for escrow's token address
+        let token_client = token::Client::new(&env, &escrow.token_address);
+
+        // Transfer refund amount to buyer
+        token_client.transfer(
+            &env.current_contract_address(),
+            &escrow.depositor,
+            &refund_amount,
+        );
+
+        // If platform fee > 0, transfer fee to fee recipient
+        if platform_fee > 0 {
+            token_client.transfer(&env.current_contract_address(), &treasury, &platform_fee);
+        }
+
+        // Update escrow state
+        escrow.status = EscrowStatus::Expired;
+        escrow.total_released = escrow.total_amount;
+        env.storage().persistent().set(&storage_key, &escrow);
+        env.storage()
+            .persistent()
+            .extend_ttl(&storage_key, 100, 2_000_000);
+
+        // Emit RefundEvent
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "RefundExpired"),
+                escrow_id,
+            ),
+            (escrow.depositor.clone(), refund_amount, current_time),
+        );
+
+        Ok(())
+    }
 }
 
 fn get_storage_key(escrow_id: u64) -> (Symbol, u64) {
@@ -848,13 +938,20 @@ fn verify_all_released(milestones: &Vec<Milestone>) -> bool {
     true
 }
 
+/// Calculate platform fee using basis points (BPS)
+/// Formula: fee = (amount * fee_bps) / 10000
+/// Uses checked arithmetic to prevent overflow
 fn calculate_fee(amount: i128, fee_bps: i128) -> Result<i128, Error> {
+    // Multiply amount by fee basis points with overflow protection
     let fee_numerator = amount
         .checked_mul(fee_bps)
         .ok_or(Error::InvalidMilestoneAmount)?;
+
+    // Divide by BPS denominator (10000) to get final fee
     let fee = fee_numerator
         .checked_div(BPS_DENOMINATOR)
         .ok_or(Error::InvalidMilestoneAmount)?;
+
     Ok(fee)
 }
 
