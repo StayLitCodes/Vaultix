@@ -62,6 +62,7 @@ pub enum Resolution {
     None,
     Depositor,
     Recipient,
+    Split,
 }
 
 #[contracttype]
@@ -558,7 +559,12 @@ impl VaultixEscrow {
         Ok(())
     }
 
-    pub fn resolve_dispute(env: Env, escrow_id: u64, winner: Address) -> Result<(), Error> {
+    pub fn resolve_dispute(
+        env: Env,
+        escrow_id: u64,
+        winner: Address,
+        split_winner_amount: Option<i128>,
+    ) -> Result<(), Error> {
         let admin = get_admin(&env)?;
         admin.require_auth();
 
@@ -580,49 +586,100 @@ impl VaultixEscrow {
             .total_amount
             .checked_sub(escrow.total_released)
             .ok_or(Error::InvalidMilestoneAmount)?;
+
+        if outstanding < 0 {
+            return Err(Error::InvalidMilestoneAmount);
+        }
+
+        let other = if winner == escrow.depositor {
+            escrow.recipient.clone()
+        } else {
+            escrow.depositor.clone()
+        };
+
+        let (amount_to_winner, amount_to_other) = match split_winner_amount {
+            None => (outstanding, 0i128),
+            Some(winner_amount) => {
+                if winner_amount < 0 || winner_amount > outstanding {
+                    return Err(Error::InvalidMilestoneAmount);
+                }
+                let other_amount = outstanding
+                    .checked_sub(winner_amount)
+                    .ok_or(Error::InvalidMilestoneAmount)?;
+                (winner_amount, other_amount)
+            }
+        };
+
         let token_client = token::Client::new(&env, &escrow.token_address);
 
-        if winner == escrow.recipient {
+        if amount_to_winner > 0 {
+            token_client.transfer(&env.current_contract_address(), &winner, &amount_to_winner);
+        }
+
+        if amount_to_other > 0 {
+            token_client.transfer(&env.current_contract_address(), &other, &amount_to_other);
+        }
+
+        // Update accounting and milestone statuses
+        let (amount_to_recipient, resolution) = if amount_to_winner == outstanding
+            && amount_to_other == 0
+        {
+            if winner == escrow.recipient {
+                // Full payout to recipient
+                let mut updated_milestones = Vec::new(&env);
+                for milestone in escrow.milestones.iter() {
+                    let mut m = milestone.clone();
+                    if m.status != MilestoneStatus::Released {
+                        m.status = MilestoneStatus::Released;
+                    }
+                    updated_milestones.push_back(m);
+                }
+                escrow.milestones = updated_milestones;
+                (outstanding, Resolution::Recipient)
+            } else {
+                // Full refund to depositor
+                let mut updated_milestones = Vec::new(&env);
+                for milestone in escrow.milestones.iter() {
+                    let mut m = milestone.clone();
+                    if m.status == MilestoneStatus::Pending || m.status == MilestoneStatus::Disputed
+                    {
+                        m.status = MilestoneStatus::Disputed;
+                    }
+                    updated_milestones.push_back(m);
+                }
+                escrow.milestones = updated_milestones;
+                (0i128, Resolution::Depositor)
+            }
+        } else {
+            // Split resolution
             let mut updated_milestones = Vec::new(&env);
             for milestone in escrow.milestones.iter() {
                 let mut m = milestone.clone();
                 if m.status != MilestoneStatus::Released {
-                    m.status = MilestoneStatus::Released;
-                }
-                updated_milestones.push_back(m);
-            }
-            escrow.milestones = updated_milestones;
-            escrow.total_released = escrow.total_amount;
-            escrow.resolution = Resolution::Recipient;
-
-            if outstanding > 0 {
-                token_client.transfer(
-                    &env.current_contract_address(),
-                    &escrow.recipient,
-                    &outstanding,
-                );
-            }
-        } else {
-            let mut updated_milestones = Vec::new(&env);
-            for milestone in escrow.milestones.iter() {
-                let mut m = milestone.clone();
-                if m.status == MilestoneStatus::Pending || m.status == MilestoneStatus::Disputed {
                     m.status = MilestoneStatus::Disputed;
                 }
                 updated_milestones.push_back(m);
             }
             escrow.milestones = updated_milestones;
-            escrow.resolution = Resolution::Depositor;
 
-            if outstanding > 0 {
-                token_client.transfer(
-                    &env.current_contract_address(),
-                    &escrow.depositor,
-                    &outstanding,
-                );
-            }
+            let recipient_amount = if winner == escrow.recipient {
+                amount_to_winner
+            } else {
+                amount_to_other
+            };
+            (recipient_amount, Resolution::Split)
+        };
+
+        escrow.total_released = escrow
+            .total_released
+            .checked_add(amount_to_recipient)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+
+        if escrow.total_released > escrow.total_amount {
+            return Err(Error::InvalidMilestoneAmount);
         }
 
+        escrow.resolution = resolution;
         escrow.status = EscrowStatus::Resolved;
         env.storage().persistent().set(&storage_key, &escrow);
 
@@ -633,7 +690,7 @@ impl VaultixEscrow {
                 Symbol::new(&env, "DisputeResolved"),
                 escrow_id,
             ),
-            winner,
+            (winner, amount_to_winner, amount_to_other),
         );
 
         Ok(())
