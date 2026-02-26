@@ -123,3 +123,35 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer utilities {
+  @keyframes toast-enter {
+    from {
+      opacity: 0;
+      transform: translateX(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @keyframes toast-exit {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(100%);
+    }
+  }
+
+  .animate-toast-enter {
+    animation: toast-enter 0.3s ease-out;
+  }
+
+  .animate-toast-exit {
+    animation: toast-exit 0.3s ease-in;
+  }
+}
