@@ -490,6 +490,13 @@ export class EscrowService {
       throw new BadRequestException('Escrow not active');
     }
 
+    // Prevent operations on expired escrows
+    if (escrow.expiresAt && escrow.expiresAt < new Date()) {
+      throw new BadRequestException(
+        'Cannot release an expired escrow. Use expire endpoint instead.',
+      );
+    }
+
     // Manual release must be buyer
     if (manual && escrow.creatorId !== currentUserId) {
       throw new ForbiddenException('Only buyer can release escrow');
@@ -550,6 +557,13 @@ export class EscrowService {
     if (escrow.status !== EscrowStatus.ACTIVE) {
       throw new BadRequestException(
         'Escrow must be active to fulfill conditions',
+      );
+    }
+
+    // Prevent operations on expired escrows
+    if (escrow.expiresAt && escrow.expiresAt < new Date()) {
+      throw new BadRequestException(
+        'Cannot fulfill conditions on an expired escrow',
       );
     }
 
@@ -624,6 +638,13 @@ export class EscrowService {
     if (escrow.status !== EscrowStatus.ACTIVE) {
       throw new BadRequestException(
         'Escrow must be active to confirm conditions',
+      );
+    }
+
+    // Prevent operations on expired escrows
+    if (escrow.expiresAt && escrow.expiresAt < new Date()) {
+      throw new BadRequestException(
+        'Cannot confirm conditions on an expired escrow',
       );
     }
 
