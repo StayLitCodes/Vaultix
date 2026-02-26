@@ -1,5 +1,6 @@
 import {
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
@@ -28,6 +29,12 @@ export enum EscrowType {
 }
 
 @Entity('escrows')
+@Index('idx_escrows_creator', ['creatorId'])
+@Index('idx_escrows_status', ['status'])
+@Index('idx_escrows_asset', ['asset'])
+@Index('idx_escrows_created_at', ['createdAt'])
+@Index('idx_escrows_expires_at', ['expiresAt'])
+@Index('idx_escrows_creator_status_created', ['creatorId', 'status', 'createdAt'])
 export class Escrow {
   @PrimaryGeneratedColumn('uuid')
   id: string;

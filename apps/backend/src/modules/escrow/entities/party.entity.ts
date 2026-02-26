@@ -1,5 +1,6 @@
 import {
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
@@ -22,6 +23,8 @@ export enum PartyStatus {
 }
 
 @Entity('escrow_parties')
+@Index('idx_escrow_parties_user_role', ['userId', 'role'])
+@Index('idx_escrow_parties_escrow_role', ['escrowId', 'role'])
 export class Party {
   @PrimaryGeneratedColumn('uuid')
   id: string;
