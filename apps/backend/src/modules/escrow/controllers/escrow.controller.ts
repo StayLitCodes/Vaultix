@@ -32,6 +32,7 @@ import {
 } from '../dto/escrow-overview.dto';
 import { FulfillConditionDto } from '../dto/fulfill-condition.dto';
 import { FileDisputeDto, ResolveDisputeDto } from '../dto/dispute.dto';
+import { FundEscrowDto } from '../dto/fund-escrow.dto';
 
 interface AuthenticatedRequest extends ExpressRequest {
   user: { sub: string; walletAddress: string };
@@ -115,6 +116,23 @@ export class EscrowController {
   ) {
     const userId = req.user.sub;
     return this.escrowService.findEvents(userId, query, id);
+  }
+
+  @Post(':id/fund')
+  @UseGuards(EscrowAccessGuard)
+  async fund(
+    @Param('id') id: string,
+    @Body() dto: FundEscrowDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.fund(
+      id,
+      dto,
+      req.user.sub,
+      req.user.walletAddress,
+      ipAddress,
+    );
   }
 
   @Post(':id/release')

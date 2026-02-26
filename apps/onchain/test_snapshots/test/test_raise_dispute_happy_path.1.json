@@ -38,7 +38,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 10000
+                    "lo": 1000
                   }
                 }
               ]
@@ -58,7 +58,7 @@
               "function_name": "create_escrow",
               "args": [
                 {
-                  "u64": 14
+                  "u64": 20
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
@@ -80,7 +80,7 @@
                           "val": {
                             "i128": {
                               "hi": 0,
-                              "lo": 3000
+                              "lo": 500
                             }
                           }
                         },
@@ -89,7 +89,7 @@
                             "symbol": "description"
                           },
                           "val": {
-                            "symbol": "Phase1"
+                            "symbol": "Task1"
                           }
                         },
                         {
@@ -115,7 +115,7 @@
                           "val": {
                             "i128": {
                               "hi": 0,
-                              "lo": 7000
+                              "lo": 500
                             }
                           }
                         },
@@ -124,7 +124,7 @@
                             "symbol": "description"
                           },
                           "val": {
-                            "symbol": "Phase2"
+                            "symbol": "Task2"
                           }
                         },
                         {
@@ -145,6 +145,28 @@
                 },
                 {
                   "u64": 1706400000
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "function_name": "raise_dispute",
+              "args": [
+                {
+                  "u64": 20
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
                 }
               ]
             }
@@ -236,7 +258,7 @@
                   "symbol": "escrow"
                 },
                 {
-                  "u64": 14
+                  "u64": 20
                 }
               ]
             },
@@ -256,7 +278,7 @@
                       "symbol": "escrow"
                     },
                     {
-                      "u64": 14
+                      "u64": 20
                     }
                   ]
                 },
@@ -294,7 +316,7 @@
                                 "val": {
                                   "i128": {
                                     "hi": 0,
-                                    "lo": 3000
+                                    "lo": 500
                                   }
                                 }
                               },
@@ -303,7 +325,7 @@
                                   "symbol": "description"
                                 },
                                 "val": {
-                                  "symbol": "Phase1"
+                                  "symbol": "Task1"
                                 }
                               },
                               {
@@ -313,7 +335,7 @@
                                 "val": {
                                   "vec": [
                                     {
-                                      "symbol": "Pending"
+                                      "symbol": "Disputed"
                                     }
                                   ]
                                 }
@@ -329,7 +351,7 @@
                                 "val": {
                                   "i128": {
                                     "hi": 0,
-                                    "lo": 7000
+                                    "lo": 500
                                   }
                                 }
                               },
@@ -338,7 +360,7 @@
                                   "symbol": "description"
                                 },
                                 "val": {
-                                  "symbol": "Phase2"
+                                  "symbol": "Task2"
                                 }
                               },
                               {
@@ -348,7 +370,7 @@
                                 "val": {
                                   "vec": [
                                     {
-                                      "symbol": "Pending"
+                                      "symbol": "Disputed"
                                     }
                                   ]
                                 }
@@ -385,7 +407,7 @@
                       "val": {
                         "vec": [
                           {
-                            "symbol": "Created"
+                            "symbol": "Disputed"
                           }
                         ]
                       }
@@ -405,7 +427,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 10000
+                          "lo": 1000
                         }
                       }
                     },
@@ -497,6 +519,39 @@
       [
         {
           "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "key": {
+              "ledger_key_nonce": {
+                "nonce": 4837995959683129791
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": 4837995959683129791
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          15
+        ]
+      ],
+      [
+        {
+          "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4",
             "key": {
               "ledger_key_nonce": {
@@ -571,7 +626,7 @@
                       "val": {
                         "i128": {
                           "hi": 0,
-                          "lo": 10000
+                          "lo": 1000
                         }
                       }
                     },
@@ -882,7 +937,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 10000
+                    "lo": 1000
                   }
                 }
               ]
@@ -916,7 +971,7 @@
             "data": {
               "i128": {
                 "hi": 0,
-                "lo": 10000
+                "lo": 1000
               }
             }
           }
@@ -966,7 +1021,7 @@
             "data": {
               "vec": [
                 {
-                  "u64": 14
+                  "u64": 20
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
@@ -988,7 +1043,7 @@
                           "val": {
                             "i128": {
                               "hi": 0,
-                              "lo": 3000
+                              "lo": 500
                             }
                           }
                         },
@@ -997,7 +1052,7 @@
                             "symbol": "description"
                           },
                           "val": {
-                            "symbol": "Phase1"
+                            "symbol": "Task1"
                           }
                         },
                         {
@@ -1023,7 +1078,7 @@
                           "val": {
                             "i128": {
                               "hi": 0,
-                              "lo": 7000
+                              "lo": 500
                             }
                           }
                         },
@@ -1032,7 +1087,7 @@
                             "symbol": "description"
                           },
                           "val": {
-                            "symbol": "Phase2"
+                            "symbol": "Task2"
                           }
                         },
                         {
@@ -1076,7 +1131,7 @@
                 "symbol": "EscrowCreated"
               },
               {
-                "u64": 14
+                "u64": 20
               }
             ],
             "data": {
@@ -1093,7 +1148,7 @@
                 {
                   "i128": {
                     "hi": 0,
-                    "lo": 10000
+                    "lo": 1000
                   }
                 },
                 {
@@ -1142,11 +1197,91 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
+                "symbol": "raise_dispute"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "u64": 20
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "Vaultix"
+              },
+              {
+                "symbol": "DisputeRaised"
+              },
+              {
+                "u64": 20
+              }
+            ],
+            "data": {
+              "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_return"
+              },
+              {
+                "symbol": "raise_dispute"
+              }
+            ],
+            "data": "void"
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": null,
+        "type_": "diagnostic",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "fn_call"
+              },
+              {
+                "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
+              },
+              {
                 "symbol": "get_escrow"
               }
             ],
             "data": {
-              "u64": 14
+              "u64": 20
             }
           }
         }
@@ -1201,7 +1336,7 @@
                             "val": {
                               "i128": {
                                 "hi": 0,
-                                "lo": 3000
+                                "lo": 500
                               }
                             }
                           },
@@ -1210,7 +1345,7 @@
                               "symbol": "description"
                             },
                             "val": {
-                              "symbol": "Phase1"
+                              "symbol": "Task1"
                             }
                           },
                           {
@@ -1220,7 +1355,7 @@
                             "val": {
                               "vec": [
                                 {
-                                  "symbol": "Pending"
+                                  "symbol": "Disputed"
                                 }
                               ]
                             }
@@ -1236,7 +1371,7 @@
                             "val": {
                               "i128": {
                                 "hi": 0,
-                                "lo": 7000
+                                "lo": 500
                               }
                             }
                           },
@@ -1245,7 +1380,7 @@
                               "symbol": "description"
                             },
                             "val": {
-                              "symbol": "Phase2"
+                              "symbol": "Task2"
                             }
                           },
                           {
@@ -1255,7 +1390,7 @@
                             "val": {
                               "vec": [
                                 {
-                                  "symbol": "Pending"
+                                  "symbol": "Disputed"
                                 }
                               ]
                             }
@@ -1292,7 +1427,7 @@
                   "val": {
                     "vec": [
                       {
-                        "symbol": "Created"
+                        "symbol": "Disputed"
                       }
                     ]
                   }
@@ -1312,7 +1447,7 @@
                   "val": {
                     "i128": {
                       "hi": 0,
-                      "lo": 10000
+                      "lo": 1000
                     }
                   }
                 },
