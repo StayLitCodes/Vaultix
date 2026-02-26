@@ -83,17 +83,23 @@ export class EscrowController {
     return this.escrowService.cancel(id, dto, userId, ipAddress);
   }
 
-  @Post(':id/expire')
-  @UseGuards(EscrowAccessGuard)
-  async expire(
-    @Param('id') id: string,
-    @Body() dto: ExpireEscrowDto,
-    @Request() req: AuthenticatedRequest,
-  ) {
-    const userId = req.user.sub;
-    const ipAddress = req.ip || req.socket?.remoteAddress;
-    return this.escrowService.expire(id, dto, userId, ipAddress);
-  }
+@Post(':id/expire')
+@UseGuards(EscrowAccessGuard)
+async expire(
+  @Param('id') id: string,
+  @Body() dto: ExpireEscrowDto,
+  @Request() req: AuthenticatedRequest,
+) {
+  const userId = req.user.sub;
+  const ipAddress = req.ip || req.socket?.remoteAddress;
+
+  return await this.escrowService.expire(
+    id,
+    dto,
+    userId,
+    ipAddress,
+  );
+}
 
   @Get(':id/events')
   @UseGuards(EscrowAccessGuard)

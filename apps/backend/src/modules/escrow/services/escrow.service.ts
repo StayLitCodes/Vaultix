@@ -23,7 +23,6 @@ import { ListEscrowsDto, SortOrder } from '../dto/list-escrows.dto';
 import { ListEventsDto, EventSortOrder } from '../dto/list-events.dto';
 import { EventResponseDto } from '../dto/event-response.dto';
 import { CancelEscrowDto } from '../dto/cancel-escrow.dto';
-import { ExpireEscrowDto } from '../dto/expire-escrow.dto';
 import { FulfillConditionDto } from '../dto/fulfill-condition.dto';
 import { FileDisputeDto, ResolveDisputeDto } from '../dto/dispute.dto';
 import { FundEscrowDto } from '../dto/fund-escrow.dto';
