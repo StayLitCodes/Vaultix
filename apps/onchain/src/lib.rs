@@ -117,6 +117,8 @@ pub enum Error {
     InvalidStatusForRefund = 25,
     NoFundsToRefund = 26,
     Unauthorized = 27,
+    OperatorNotInitialized = 28,
+    ArbitratorNotInitialized = 29,
 }
 
 const DEFAULT_FEE_BPS: i128 = 50;
@@ -593,8 +595,8 @@ impl VaultixEscrow {
         winner: Address,
         split_winner_amount: Option<i128>,
     ) -> Result<(), Error> {
-        let admin = get_admin(&env)?;
-        admin.require_auth();
+        let arbitrator = get_arbitrator(&env)?;
+        arbitrator.require_auth();
 
         let storage_key = get_storage_key(escrow_id);
         let mut escrow: Escrow = env
