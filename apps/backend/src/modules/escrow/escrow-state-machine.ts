@@ -2,15 +2,25 @@ import { BadRequestException } from '@nestjs/common';
 import { EscrowStatus } from './entities/escrow.entity';
 
 const validTransitions: Record<EscrowStatus, EscrowStatus[]> = {
-  [EscrowStatus.PENDING]: [EscrowStatus.ACTIVE, EscrowStatus.CANCELLED],
+  [EscrowStatus.PENDING]: [
+    EscrowStatus.ACTIVE,
+    EscrowStatus.CANCELLED,
+    EscrowStatus.EXPIRED,
+  ],
   [EscrowStatus.ACTIVE]: [
     EscrowStatus.COMPLETED,
     EscrowStatus.CANCELLED,
     EscrowStatus.DISPUTED,
+    EscrowStatus.EXPIRED,
   ],
-  [EscrowStatus.DISPUTED]: [EscrowStatus.COMPLETED, EscrowStatus.CANCELLED],
+  [EscrowStatus.DISPUTED]: [
+    EscrowStatus.COMPLETED,
+    EscrowStatus.CANCELLED,
+    EscrowStatus.EXPIRED,
+  ],
   [EscrowStatus.COMPLETED]: [],
   [EscrowStatus.CANCELLED]: [],
+  [EscrowStatus.EXPIRED]: [],
 };
 
 export function canTransition(
@@ -32,5 +42,9 @@ export function validateTransition(
 }
 
 export function isTerminalStatus(status: EscrowStatus): boolean {
-  return status === EscrowStatus.COMPLETED || status === EscrowStatus.CANCELLED;
+  return (
+    status === EscrowStatus.COMPLETED ||
+    status === EscrowStatus.CANCELLED ||
+    status === EscrowStatus.EXPIRED
+  );
 }

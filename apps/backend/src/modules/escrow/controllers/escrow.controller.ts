@@ -12,6 +12,12 @@ import {
 } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { Request as ExpressRequest } from 'express';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { AuthGuard } from '../../auth/middleware/auth.guard';
 import { EscrowAccessGuard } from '../guards/escrow-access.guard';
 import { EscrowService } from '../services/escrow.service';
@@ -20,6 +26,10 @@ import { UpdateEscrowDto } from '../dto/update-escrow.dto';
 import { ListEscrowsDto } from '../dto/list-escrows.dto';
 import { ListEventsDto } from '../dto/list-events.dto';
 import { CancelEscrowDto } from '../dto/cancel-escrow.dto';
+import {
+  EscrowOverviewQueryDto,
+  EscrowOverviewResponseDto,
+} from '../dto/escrow-overview.dto';
 import { FulfillConditionDto } from '../dto/fulfill-condition.dto';
 import { FileDisputeDto, ResolveDisputeDto } from '../dto/dispute.dto';
 import { FundEscrowDto } from '../dto/fund-escrow.dto';
@@ -29,6 +39,8 @@ interface AuthenticatedRequest extends ExpressRequest {
 }
 
 @Controller('escrows')
+@ApiTags('escrows')
+@ApiBearerAuth()
 @UseGuards(ThrottlerGuard, AuthGuard)
 export class EscrowController {
   constructor(private readonly escrowService: EscrowService) {}
@@ -50,6 +62,19 @@ export class EscrowController {
   ) {
     const userId = req.user.sub;
     return this.escrowService.findAll(userId, query);
+  }
+
+  @Get('overview')
+  @ApiOperation({
+    summary: 'Get paginated escrow overview for authenticated user dashboard',
+  })
+  @ApiOkResponse({ type: EscrowOverviewResponseDto })
+  async findOverview(
+    @Query() query: EscrowOverviewQueryDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.sub;
+    return this.escrowService.findOverview(userId, query);
   }
 
   @Get(':id')
@@ -81,6 +106,24 @@ export class EscrowController {
     const ipAddress = req.ip || req.socket?.remoteAddress;
     return this.escrowService.cancel(id, dto, userId, ipAddress);
   }
+
+@Post(':id/expire')
+@UseGuards(EscrowAccessGuard)
+async expire(
+  @Param('id') id: string,
+  @Body() dto: ExpireEscrowDto,
+  @Request() req: AuthenticatedRequest,
+) {
+  const userId = req.user.sub;
+  const ipAddress = req.ip || req.socket?.remoteAddress;
+
+  return await this.escrowService.expire(
+    id,
+    dto,
+    userId,
+    ipAddress,
+  );
+}
 
   @Get(':id/events')
   @UseGuards(EscrowAccessGuard)
