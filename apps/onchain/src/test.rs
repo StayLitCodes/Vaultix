@@ -837,7 +837,8 @@ fn test_resolve_dispute_invalid_winner_or_overflow() {
     client.raise_dispute(&escrow_id, &depositor);
 
     // Invalid winner
-   let result_invalid_winner = client.try_resolve_dispute(&escrow_id, &outsider, &None);
+    let result_invalid_winner = client.try_resolve_dispute(&escrow_id, &outsider, &None);
+    assert_eq!(result_invalid_winner, Err(Ok(Error::InvalidWinner)));
 }
 
 #[test]
@@ -889,7 +890,7 @@ fn test_resolve_dispute_while_paused() {
     client.set_paused(&true);
 
     // Resolution should still be allowed by admin while paused
-   client.resolve_dispute(&escrow_id, &depositor, &None);
+    client.resolve_dispute(&escrow_id, &depositor, &None);
 
     let escrow = client.get_escrow(&escrow_id);
     assert_eq!(escrow.status, EscrowStatus::Resolved);
