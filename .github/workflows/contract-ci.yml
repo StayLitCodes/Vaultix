@@ -23,8 +23,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Rust
-        env:
-          toolchain: stable
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
