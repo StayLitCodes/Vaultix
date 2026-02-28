@@ -1,3 +1,4 @@
+// lib.rs
 #![no_std]
 #![allow(unexpected_cfgs)]
 use soroban_sdk::{
@@ -117,6 +118,8 @@ pub enum Error {
     InvalidStatusForRefund = 25,
     NoFundsToRefund = 26,
     Unauthorized = 27,
+    OperatorNotInitialized = 28,
+    ArbitratorNotInitialized = 29,
 }
 
 const DEFAULT_FEE_BPS: i128 = 50;
@@ -170,12 +173,8 @@ impl VaultixEscrow {
     }
 
     pub fn update_fee(env: Env, new_fee_bps: i128) -> Result<(), Error> {
-        let treasury: Address = env
-            .storage()
-            .instance()
-            .get(&symbol_short!("treasury"))
-            .ok_or(Error::TreasuryNotInitialized)?;
-        treasury.require_auth();
+        let operator = get_operator(&env)?;
+        operator.require_auth();
 
         if !(0..=BPS_DENOMINATOR).contains(&new_fee_bps) {
             return Err(Error::InvalidFeeConfiguration);
@@ -186,6 +185,7 @@ impl VaultixEscrow {
             .instance()
             .get(&symbol_short!("fee_bps"))
             .unwrap_or(DEFAULT_FEE_BPS);
+
         env.storage()
             .instance()
             .set(&symbol_short!("fee_bps"), &new_fee_bps);
@@ -206,27 +206,9 @@ impl VaultixEscrow {
         Ok(())
     }
 
-    pub fn get_config(env: Env) -> Result<(Address, i128), Error> {
-        let treasury: Address = env
-            .storage()
-            .instance()
-            .get(&symbol_short!("treasury"))
-            .ok_or(Error::TreasuryNotInitialized)?;
-        let fee_bps: i128 = env
-            .storage()
-            .instance()
-            .get(&symbol_short!("fee_bps"))
-            .unwrap_or(DEFAULT_FEE_BPS);
-        Ok((treasury, fee_bps))
-    }
-
     pub fn set_paused(env: Env, paused: bool) -> Result<(), Error> {
-        let treasury: Address = env
-            .storage()
-            .instance()
-            .get(&symbol_short!("treasury"))
-            .ok_or(Error::TreasuryNotInitialized)?;
-        treasury.require_auth();
+        let operator = get_operator(&env)?;
+        operator.require_auth();
 
         let state = if paused {
             ContractState::Paused
@@ -242,27 +224,71 @@ impl VaultixEscrow {
                 Symbol::new(&env, "Vaultix"),
                 Symbol::new(&env, "PausedStateChanged"),
             ),
-            (paused, treasury),
+            (paused, operator),
         );
 
         Ok(())
     }
 
-    pub fn init(env: Env, admin: Address) -> Result<(), Error> {
+    pub fn get_config(env: Env) -> Result<(Address, i128), Error> {
+        let treasury: Address = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("treasury"))
+            .ok_or(Error::TreasuryNotInitialized)?;
+        let fee_bps: i128 = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("fee_bps"))
+            .unwrap_or(DEFAULT_FEE_BPS);
+        Ok((treasury, fee_bps))
+    }
+
+    pub fn init(
+        env: Env,
+        admin: Address,
+        operator: Address,
+        arbitrator: Address,
+    ) -> Result<(), Error> {
         if env.storage().persistent().has(&admin_storage_key()) {
             return Err(Error::AlreadyInitialized);
         }
 
         admin.require_auth();
+
         env.storage().persistent().set(&admin_storage_key(), &admin);
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, "operator"), &operator);
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, "arbitrator"), &arbitrator);
+
+        let vaultix_topic = Symbol::new(&env, "Vaultix");
 
         env.events().publish(
             (
-                Symbol::new(&env, "Vaultix"),
+                vaultix_topic.clone(),
                 Symbol::new(&env, "RoleUpdated"),
                 Symbol::new(&env, "Admin"),
             ),
             (Option::<Address>::None, admin),
+        );
+        env.events().publish(
+            (
+                vaultix_topic.clone(),
+                Symbol::new(&env, "RoleUpdated"),
+                Symbol::new(&env, "Operator"),
+            ),
+            (Option::<Address>::None, operator),
+        );
+        env.events().publish(
+            (
+                vaultix_topic,
+                Symbol::new(&env, "RoleUpdated"),
+                Symbol::new(&env, "Arbitrator"),
+            ),
+            (Option::<Address>::None, arbitrator),
         );
 
         Ok(())
@@ -570,8 +596,8 @@ impl VaultixEscrow {
         winner: Address,
         split_winner_amount: Option<i128>,
     ) -> Result<(), Error> {
-        let admin = get_admin(&env)?;
-        admin.require_auth();
+        let arbitrator = get_arbitrator(&env)?;
+        arbitrator.require_auth();
 
         let storage_key = get_storage_key(escrow_id);
         let mut escrow: Escrow = env
@@ -953,6 +979,20 @@ fn calculate_fee(amount: i128, fee_bps: i128) -> Result<i128, Error> {
         .ok_or(Error::InvalidMilestoneAmount)?;
 
     Ok(fee)
+}
+
+fn get_operator(env: &Env) -> Result<Address, Error> {
+    env.storage()
+        .persistent()
+        .get(&Symbol::new(env, "operator"))
+        .ok_or(Error::OperatorNotInitialized)
+}
+
+fn get_arbitrator(env: &Env) -> Result<Address, Error> {
+    env.storage()
+        .persistent()
+        .get(&Symbol::new(env, "arbitrator"))
+        .ok_or(Error::ArbitratorNotInitialized)
 }
 
 #[cfg(test)]
