@@ -1,3 +1,5 @@
+use crate::{Error, Milestone, MilestoneStatus, VaultixEscrow, VaultixEscrowClient};
+use soroban_sdk::symbol_short;
 /// Comprehensive tests for the Configurable Fee Model feature (#93)
 /// Tests cover:
 /// - Default global fee behavior (no overrides)
@@ -6,13 +8,10 @@
 /// - Combined scenarios ensuring precedence
 /// - Invalid fee (out of range) rejections
 /// - Fee precedence: escrow > token > global
-
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
     token, vec, Address, Env,
 };
-use crate::{VaultixEscrow, VaultixEscrowClient, Milestone, MilestoneStatus, Error};
-use soroban_sdk::symbol_short;
 
 /// Helper function to create and initialize a test token
 fn create_test_token<'a>(env: &Env, admin: &Address) -> (token::StellarAssetClient<'a>, Address) {

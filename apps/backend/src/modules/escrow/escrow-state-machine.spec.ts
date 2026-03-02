@@ -85,6 +85,36 @@ describe('EscrowStateMachine', () => {
         false,
       );
     });
+
+    it('should allow PENDING -> EXPIRED', () => {
+      expect(canTransition(EscrowStatus.PENDING, EscrowStatus.EXPIRED)).toBe(
+        true,
+      );
+    });
+
+    it('should allow ACTIVE -> EXPIRED', () => {
+      expect(canTransition(EscrowStatus.ACTIVE, EscrowStatus.EXPIRED)).toBe(
+        true,
+      );
+    });
+
+    it('should allow DISPUTED -> EXPIRED', () => {
+      expect(canTransition(EscrowStatus.DISPUTED, EscrowStatus.EXPIRED)).toBe(
+        true,
+      );
+    });
+
+    it('should not allow transitions from EXPIRED', () => {
+      expect(canTransition(EscrowStatus.EXPIRED, EscrowStatus.PENDING)).toBe(
+        false,
+      );
+      expect(canTransition(EscrowStatus.EXPIRED, EscrowStatus.ACTIVE)).toBe(
+        false,
+      );
+      expect(canTransition(EscrowStatus.EXPIRED, EscrowStatus.COMPLETED)).toBe(
+        false,
+      );
+    });
   });
 
   describe('validateTransition', () => {
@@ -114,6 +144,10 @@ describe('EscrowStateMachine', () => {
 
     it('should return true for CANCELLED', () => {
       expect(isTerminalStatus(EscrowStatus.CANCELLED)).toBe(true);
+    });
+
+    it('should return true for EXPIRED', () => {
+      expect(isTerminalStatus(EscrowStatus.EXPIRED)).toBe(true);
     });
 
     it('should return false for PENDING', () => {
