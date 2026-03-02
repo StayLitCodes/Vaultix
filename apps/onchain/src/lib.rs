@@ -332,20 +332,6 @@ impl VaultixEscrow {
         Ok(())
     }
 
-    pub fn get_config(env: Env) -> Result<(Address, i128), Error> {
-        let treasury: Address = env
-            .storage()
-            .instance()
-            .get(&symbol_short!("treasury"))
-            .ok_or(Error::TreasuryNotInitialized)?;
-        let fee_bps: i128 = env
-            .storage()
-            .instance()
-            .get(&symbol_short!("fee_bps"))
-            .unwrap_or(DEFAULT_FEE_BPS);
-        Ok((treasury, fee_bps))
-    }
-
     pub fn init(
         env: Env,
         admin: Address,
@@ -547,7 +533,6 @@ impl VaultixEscrow {
 
         let token_client = token::Client::new(&env, &escrow.token_address);
         safe_transfer(
-            &env,
             &token_client,
             &env.current_contract_address(),
             &escrow.recipient,
@@ -556,7 +541,6 @@ impl VaultixEscrow {
 
         if fee > 0 {
             safe_transfer(
-                &env,
                 &token_client,
                 &env.current_contract_address(),
                 &treasury,
@@ -635,7 +619,6 @@ impl VaultixEscrow {
 
         let token_client = token::Client::new(&env, &escrow.token_address);
         safe_transfer(
-            &env,
             &token_client,
             &env.current_contract_address(),
             &escrow.recipient,
@@ -762,7 +745,6 @@ impl VaultixEscrow {
 
         if amount_to_winner > 0 {
             safe_transfer(
-                &env,
                 &token_client,
                 &env.current_contract_address(),
                 &winner,
@@ -772,7 +754,6 @@ impl VaultixEscrow {
 
         if amount_to_other > 0 {
             safe_transfer(
-                &env,
                 &token_client,
                 &env.current_contract_address(),
                 &other,
@@ -874,11 +855,7 @@ impl VaultixEscrow {
                 Symbol::new(&env, "CancelStart"),
                 escrow_id,
             ),
-            (
-                escrow.total_amount,
-                escrow.total_released,
-                escrow.status.clone(),
-            ),
+            (escrow.total_amount, escrow.total_released, escrow.status),
         );
 
         if escrow.status != EscrowStatus::Active && escrow.status != EscrowStatus::Created {
@@ -913,7 +890,6 @@ impl VaultixEscrow {
                 );
                 if fee > 0 {
                     safe_transfer(
-                        &env,
                         &token_client,
                         &env.current_contract_address(),
                         &treasury,
@@ -939,7 +915,6 @@ impl VaultixEscrow {
 
             if refund_amount > 0 {
                 safe_transfer(
-                    &env,
                     &token_client,
                     &env.current_contract_address(),
                     &escrow.depositor,
@@ -1061,7 +1036,6 @@ impl VaultixEscrow {
 
         // Transfer refund amount to buyer
         safe_transfer(
-            &env,
             &token_client,
             &env.current_contract_address(),
             &escrow.depositor,
@@ -1071,7 +1045,6 @@ impl VaultixEscrow {
         // If platform fee > 0, transfer fee to fee recipient
         if platform_fee > 0 {
             safe_transfer(
-                &env,
                 &token_client,
                 &env.current_contract_address(),
                 &treasury,
@@ -1162,7 +1135,6 @@ fn resolve_fee(env: &Env, escrow_id: u64, token_address: &Address) -> Result<i12
 
 /// Safely transfer tokens from `from` to `to`, returning an error if balance is insufficient.
 fn safe_transfer(
-    env: &Env,
     token_client: &token::Client,
     from: &Address,
     to: &Address,
