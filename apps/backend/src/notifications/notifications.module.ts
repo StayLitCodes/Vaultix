@@ -9,9 +9,7 @@ import { WebhookSender } from './senders/webhook.sender';
 import { NotificationController } from './notifications.controller';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Notification, NotificationPreference]),
-  ],
+  imports: [TypeOrmModule.forFeature([Notification, NotificationPreference])],
   providers: [
     NotificationService,
     PreferenceService,

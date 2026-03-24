@@ -35,7 +35,11 @@ export enum EscrowType {
 @Index('idx_escrows_asset', ['asset'])
 @Index('idx_escrows_created_at', ['createdAt'])
 @Index('idx_escrows_expires_at', ['expiresAt'])
-@Index('idx_escrows_creator_status_created', ['creatorId', 'status', 'createdAt'])
+@Index('idx_escrows_creator_status_created', [
+  'creatorId',
+  'status',
+  'createdAt',
+])
 export class Escrow {
   @PrimaryGeneratedColumn('uuid')
   id: string;

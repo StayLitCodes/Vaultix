@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, In, IsNull } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Escrow, EscrowStatus } from '../entities/escrow.entity';
-import { EscrowEvent } from '../entities/escrow-event.entity';
+import { EscrowEvent, EscrowEventType } from '../entities/escrow-event.entity';
 import { EscrowService } from './escrow.service';
 
 @Injectable()
@@ -140,8 +140,8 @@ export class EscrowSchedulerService {
     await this.escrowRepository.save(escrow);
 
     await this.escrowEventRepository.save({
-      escrow: { id: escrow.id },
-      eventType: 'expired',
+      escrowId: escrow.id,
+      eventType: EscrowEventType.EXPIRED,
       data: {
         reason: 'EXPIRED_PENDING',
         expiredAt: escrow.expiresAt,
@@ -167,8 +167,8 @@ export class EscrowSchedulerService {
     await this.escrowRepository.save(escrow);
 
     await this.escrowEventRepository.save({
-      escrow: { id: escrow.id },
-      eventType: 'expired',
+      escrowId: escrow.id,
+      eventType: EscrowEventType.EXPIRED,
       data: {
         reason: 'EXPIRED_ACTIVE',
         expiredAt: escrow.expiresAt,
@@ -192,8 +192,8 @@ export class EscrowSchedulerService {
     await this.escrowRepository.save(escrow);
 
     await this.escrowEventRepository.save({
-      escrow: { id: escrow.id },
-      type: 'EXPIRATION_WARNING_SENT',
+      escrowId: escrow.id,
+      eventType: EscrowEventType.EXPIRATION_WARNING_SENT,
       data: {
         expiresAt: escrow.expiresAt,
         warnedAt: new Date(),

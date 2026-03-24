@@ -34,6 +34,7 @@ import {
 import { FulfillConditionDto } from '../dto/fulfill-condition.dto';
 import { FileDisputeDto, ResolveDisputeDto } from '../dto/dispute.dto';
 import { FundEscrowDto } from '../dto/fund-escrow.dto';
+import { ExpireEscrowDto } from '../dto/expire-escrow.dto';
 import { validateTransition, isTerminalStatus } from '../escrow-state-machine';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
 import { WebhookService } from '../../../services/webhook/webhook.service';
@@ -406,30 +407,41 @@ export class EscrowService {
   ): Promise<Escrow> {
     const escrow = await this.findOne(id);
 
-    if (escrow.creatorId !== userId) {throw new ForbiddenException('Only the buyer can fund this escrow');}
-
-    if (escrow.status !== EscrowStatus.PENDING) {
-      throw new BadRequestException('Escrow can only be funded while in pending status',);
+    if (escrow.creatorId !== userId) {
+      throw new ForbiddenException('Only the buyer can fund this escrow');
     }
 
-    if (escrow.stellarTxHash) {throw new BadRequestException('Escrow is already funded');}
+    if (escrow.status !== EscrowStatus.PENDING) {
+      throw new BadRequestException(
+        'Escrow can only be funded while in pending status',
+      );
+    }
+
+    if (escrow.stellarTxHash) {
+      throw new BadRequestException('Escrow is already funded');
+    }
 
     const escrowAmount = Number(escrow.amount);
     if (Number(dto.amount) !== escrowAmount) {
-      throw new BadRequestException('Amount must match the escrow amount',);
+      throw new BadRequestException('Amount must match the escrow amount');
     }
 
     validateTransition(escrow.status, EscrowStatus.ACTIVE);
 
-    const stellarTxHash = await this.stellarIntegrationService.fundOnChainEscrow(
-      id,
-      walletAddress,
-      String(dto.amount),
-      escrow.asset ?? 'XLM',
-    );
+    const stellarTxHash =
+      await this.stellarIntegrationService.fundOnChainEscrow(
+        id,
+        walletAddress,
+        String(dto.amount),
+        escrow.asset ?? 'XLM',
+      );
 
     const fundedAt = new Date();
-    await this.escrowRepository.update(id, {stellarTxHash, fundedAt, status: EscrowStatus.ACTIVE});
+    await this.escrowRepository.update(id, {
+      stellarTxHash,
+      fundedAt,
+      status: EscrowStatus.ACTIVE,
+    });
 
     await this.logEvent(
       id,
@@ -443,7 +455,6 @@ export class EscrowService {
       stellarTxHash,
     });
 
-    
     return this.findOne(id);
   }
 
@@ -824,7 +835,7 @@ export class EscrowService {
     );
     if (!filingParty) {
       throw new ForbiddenException(
-        'Only a buyer or seller party can file a dispute',
+        'Only a buyer or seller party to the escrow may file a dispute',
       );
     }
 
@@ -868,6 +879,49 @@ export class EscrowService {
       where: { id: savedDispute.id },
       relations: ['filedBy'],
     }) as Promise<Dispute>;
+  }
+
+  async expire(
+    id: string,
+    dto: ExpireEscrowDto,
+    userId: string,
+    ipAddress?: string,
+  ): Promise<Escrow> {
+    const escrow = await this.findOne(id);
+
+    if (
+      escrow.status !== EscrowStatus.ACTIVE &&
+      escrow.status !== EscrowStatus.PENDING
+    ) {
+      throw new BadRequestException(
+        'Only active or pending escrows can be expired',
+      );
+    }
+
+    if (!escrow.expiresAt || escrow.expiresAt > new Date()) {
+      throw new BadRequestException(
+        'Escrow has not reached its expiration deadline',
+      );
+    }
+
+    validateTransition(escrow.status, EscrowStatus.CANCELLED);
+
+    await this.escrowRepository.update(id, { status: EscrowStatus.CANCELLED });
+
+    await this.logEvent(
+      id,
+      EscrowEventType.CANCELLED,
+      userId,
+      { reason: dto.reason || 'Escrow expired', previousStatus: escrow.status },
+      ipAddress,
+    );
+
+    await this.webhookService.dispatchEvent('escrow.cancelled', {
+      escrowId: id,
+      reason: 'expired',
+    });
+
+    return this.findOne(id);
   }
 
   async getDispute(escrowId: string): Promise<Dispute> {

@@ -5,14 +5,17 @@ import { Notification } from './entities/notification.entity';
 import { PreferenceService } from './preference.service';
 import { EmailSender } from './senders/email.sender';
 import { WebhookSender } from './senders/webhook.sender';
-import { NotificationStatus, NotificationChannel } from './enums/notification-event.enum';
+import {
+  NotificationStatus,
+  NotificationChannel,
+} from './enums/notification-event.enum';
 
 describe('NotificationService', () => {
   let service: NotificationService;
-  let repoMock: any;
-  let preferenceServiceMock: any;
-  let emailSenderMock: any;
-  let webhookSenderMock: any;
+  let repoMock: Record<string, jest.Mock>;
+  let preferenceServiceMock: Record<string, jest.Mock>;
+  let emailSenderMock: Record<string, jest.Mock>;
+  let webhookSenderMock: Record<string, jest.Mock>;
 
   beforeEach(async () => {
     repoMock = {
@@ -66,21 +69,32 @@ describe('NotificationService', () => {
   describe('processPendingNotifications', () => {
     it('should process pending notifications and mark them as SENT', async () => {
       const mockNotifications = [
-        { id: '1', userId: 'user1', status: NotificationStatus.PENDING, eventType: 'test' },
+        {
+          id: '1',
+          userId: 'user1',
+          status: NotificationStatus.PENDING,
+          eventType: 'test',
+        },
       ];
       repoMock.find.mockResolvedValue(mockNotifications);
       preferenceServiceMock.getUserPreferences.mockResolvedValue([
-        { enabled: true, channel: NotificationChannel.EMAIL, eventTypes: ['test'] },
+        {
+          enabled: true,
+          channel: NotificationChannel.EMAIL,
+          eventTypes: ['test'],
+        },
       ]);
 
       await service.processPendingNotifications();
 
       expect(repoMock.find).toHaveBeenCalled();
       expect(emailSenderMock.send).toHaveBeenCalled();
-      expect(repoMock.save).toHaveBeenCalledWith(expect.objectContaining({
-        id: '1',
-        status: NotificationStatus.SENT,
-      }));
+      expect(repoMock.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: '1',
+          status: NotificationStatus.SENT,
+        }),
+      );
     });
 
     it('should handle retries and mark as FAILED after 3 retries', async () => {
@@ -93,17 +107,23 @@ describe('NotificationService', () => {
       };
       repoMock.find.mockResolvedValue([mockNotification]);
       preferenceServiceMock.getUserPreferences.mockResolvedValue([
-        { enabled: true, channel: NotificationChannel.EMAIL, eventTypes: ['test'] },
+        {
+          enabled: true,
+          channel: NotificationChannel.EMAIL,
+          eventTypes: ['test'],
+        },
       ]);
       emailSenderMock.send.mockRejectedValue(new Error('Send failed'));
 
       await service.processPendingNotifications();
 
-      expect(repoMock.save).toHaveBeenCalledWith(expect.objectContaining({
-        id: '1',
-        status: NotificationStatus.FAILED,
-        retryCount: 3,
-      }));
+      expect(repoMock.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: '1',
+          status: NotificationStatus.FAILED,
+          retryCount: 3,
+        }),
+      );
     });
 
     it('should increment retry count if failed but less than 3 retries', async () => {
@@ -116,17 +136,23 @@ describe('NotificationService', () => {
       };
       repoMock.find.mockResolvedValue([mockNotification]);
       preferenceServiceMock.getUserPreferences.mockResolvedValue([
-        { enabled: true, channel: NotificationChannel.EMAIL, eventTypes: ['test'] },
+        {
+          enabled: true,
+          channel: NotificationChannel.EMAIL,
+          eventTypes: ['test'],
+        },
       ]);
       emailSenderMock.send.mockRejectedValue(new Error('Send failed'));
 
       await service.processPendingNotifications();
 
-      expect(repoMock.save).toHaveBeenCalledWith(expect.objectContaining({
-        id: '1',
-        status: NotificationStatus.PENDING,
-        retryCount: 1,
-      }));
+      expect(repoMock.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: '1',
+          status: NotificationStatus.PENDING,
+          retryCount: 1,
+        }),
+      );
     });
   });
 

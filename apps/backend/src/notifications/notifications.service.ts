@@ -92,14 +92,15 @@ export class NotificationService {
           // If no preferences enabled for this event, we consider it sent/done
           notification.status = NotificationStatus.SENT;
         }
-      } catch (error) {
+      } catch (error: unknown) {
         notification.retryCount += 1;
         if (notification.retryCount >= 3) {
           notification.status = NotificationStatus.FAILED;
           failed++;
+          const errorStack = error instanceof Error ? error.stack : undefined;
           this.logger.error(
             `Notification ${notification.id} failed after 3 retries. Dead-letter log: ${JSON.stringify(notification)}`,
-            error.stack,
+            errorStack,
           );
         } else {
           notification.status = NotificationStatus.PENDING;

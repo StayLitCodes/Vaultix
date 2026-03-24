@@ -37,7 +37,10 @@ export enum EscrowOverviewSortOrder {
 }
 
 export class EscrowOverviewQueryDto {
-  @ApiPropertyOptional({ enum: EscrowOverviewRole, default: EscrowOverviewRole.ANY })
+  @ApiPropertyOptional({
+    enum: EscrowOverviewRole,
+    default: EscrowOverviewRole.ANY,
+  })
   @IsEnum(EscrowOverviewRole)
   @IsOptional()
   role?: EscrowOverviewRole = EscrowOverviewRole.ANY;
@@ -47,17 +50,26 @@ export class EscrowOverviewQueryDto {
   @IsOptional()
   status?: EscrowOverviewStatus;
 
-  @ApiPropertyOptional({ description: 'Asset/token identifier', example: 'XLM' })
+  @ApiPropertyOptional({
+    description: 'Asset/token identifier',
+    example: 'XLM',
+  })
   @IsString()
   @IsOptional()
   token?: string;
 
-  @ApiPropertyOptional({ description: 'Filter from created date (inclusive)', example: '2026-01-01T00:00:00.000Z' })
+  @ApiPropertyOptional({
+    description: 'Filter from created date (inclusive)',
+    example: '2026-01-01T00:00:00.000Z',
+  })
   @IsDateString()
   @IsOptional()
   from?: string;
 
-  @ApiPropertyOptional({ description: 'Filter to created date (inclusive)', example: '2026-12-31T23:59:59.999Z' })
+  @ApiPropertyOptional({
+    description: 'Filter to created date (inclusive)',
+    example: '2026-12-31T23:59:59.999Z',
+  })
   @IsDateString()
   @IsOptional()
   to?: string;
@@ -77,12 +89,18 @@ export class EscrowOverviewQueryDto {
   @IsOptional()
   pageSize?: number = 20;
 
-  @ApiPropertyOptional({ enum: EscrowOverviewSortBy, default: EscrowOverviewSortBy.CREATED_AT })
+  @ApiPropertyOptional({
+    enum: EscrowOverviewSortBy,
+    default: EscrowOverviewSortBy.CREATED_AT,
+  })
   @IsEnum(EscrowOverviewSortBy)
   @IsOptional()
   sortBy?: EscrowOverviewSortBy = EscrowOverviewSortBy.CREATED_AT;
 
-  @ApiPropertyOptional({ enum: EscrowOverviewSortOrder, default: EscrowOverviewSortOrder.DESC })
+  @ApiPropertyOptional({
+    enum: EscrowOverviewSortOrder,
+    default: EscrowOverviewSortOrder.DESC,
+  })
   @IsEnum(EscrowOverviewSortOrder)
   @IsOptional()
   sortOrder?: EscrowOverviewSortOrder = EscrowOverviewSortOrder.DESC;
