@@ -36,4 +36,9 @@ export class NotificationController {
   getNotifications(@Req() req: AuthenticatedRequest) {
     return this.notificationService.getUserNotifications(req.user.id);
   }
+
+  @Get('queue-depth')
+  getQueueDepth() {
+    return this.notificationService.getQueueDepth();
+  }
 }
