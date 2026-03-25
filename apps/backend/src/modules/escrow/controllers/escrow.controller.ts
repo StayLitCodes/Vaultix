@@ -78,6 +78,22 @@ export class EscrowController {
     return this.escrowService.findOverview(userId, query);
   }
 
+  @Get(':id/fund/prepare')
+  @UseGuards(EscrowAccessGuard)
+  @ApiOperation({
+    summary: 'Get unsigned funding transaction XDR for wallet signing',
+  })
+  async prepareFund(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.escrowService.prepareFund(
+      id,
+      req.user.sub,
+      req.user.walletAddress,
+    );
+  }
+
   @Get(':id')
   @UseGuards(EscrowAccessGuard)
   async findOne(@Param('id') id: string) {

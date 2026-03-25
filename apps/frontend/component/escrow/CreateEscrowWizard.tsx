@@ -1,18 +1,18 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useForm, FormProvider } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
 import { createEscrowSchema, CreateEscrowFormData } from '@/lib/escrow-schema';
 import BasicInfoStep from './create/BasicInfoStep';
 import PartiesStep from './create/PartiesStep';
 import TermsStep from './create/TermsStep';
 import ReviewStep from './create/ReviewStep';
 import { CheckCircle2, ChevronRight, ChevronLeft, Loader2, AlertCircle } from 'lucide-react';
-import { isConnected, signTransaction, getAddress } from '@stellar/freighter-api';
-import { Horizon, Networks, TransactionBuilder, Account, Asset, Operation } from 'stellar-sdk';
+import { getAddress, isConnected, signTransaction } from '@stellar/freighter-api';
+import { apiRequest, explorerTxUrl } from '@/lib/api-client';
+import { useWalletConnection } from '@/app/hooks/useWallet';
 
 const STEPS = [
   { id: 'basic', title: 'Basic Info', fields: ['title', 'description', 'category'] },
@@ -22,9 +22,14 @@ const STEPS = [
 ];
 
 export default function CreateEscrowWizard() {
+  const router = useRouter();
+  const { network: connectedNetwork } = useWalletConnection();
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [createdEscrowId, setCreatedEscrowId] = useState<string | null>(null);
+  const [explorerUrl, setExplorerUrl] = useState<string | null>(null);
+  const [isWalletSigning, setIsWalletSigning] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
   const methods = useForm<CreateEscrowFormData>({
@@ -35,7 +40,23 @@ export default function CreateEscrowWizard() {
     }
   });
 
-  const { trigger, handleSubmit, getValues } = methods;
+  const { trigger, handleSubmit } = methods;
+
+  const parseErrorMessage = (error: unknown): string => {
+    if (error && typeof error === 'object' && 'message' in error) {
+      const message = (error as { message?: string }).message;
+      if (message) return message;
+    }
+    return 'Failed to create escrow. Please try again.';
+  };
+
+  useEffect(() => {
+    if (!txHash || !createdEscrowId) return;
+    const timer = window.setTimeout(() => {
+      router.push(`/escrow/${createdEscrowId}`);
+    }, 1800);
+    return () => window.clearTimeout(timer);
+  }, [txHash, createdEscrowId, router]);
 
   const nextStep = async () => {
     const fields = STEPS[currentStep].fields as any[];
@@ -54,10 +75,11 @@ export default function CreateEscrowWizard() {
 
   const onSubmit = async (data: CreateEscrowFormData) => {
     setIsSubmitting(true);
+    setIsWalletSigning(false);
     setSubmitError(null);
 
     try {
-      // 1. Check Wallet Connection
+      // 1) Wallet connection check
       const connected = await isConnected();
       if (!connected) {
         throw new Error('Freighter wallet not connected. Please install and connect Freighter.');
@@ -68,40 +90,87 @@ export default function CreateEscrowWizard() {
         throw new Error('Could not retrieve address from Freighter.');
       }
 
-      // 2. Build Transaction (Mock/Placeholder logic)
-      // In a real app, you would fetch the sequence number, build the invokeHostFunction op, etc.
-      // For this demo, we'll demonstrate the intent.
+      // 2) Resolve counterparty to an existing Vaultix user
+      const counterparty = await apiRequest<{ id: string }>(
+        `/auth/wallet/${data.counterpartyAddress}`,
+      );
 
-      // Example:
-      // const server = new Horizon.Server('https://horizon-testnet.stellar.org');
-      // const account = await server.loadAccount(publicKey);
-      // const tx = new TransactionBuilder(account, {
-      //   fee: '100',
-      //   networkPassphrase: Networks.TESTNET,
-      // })
-      // .addOperation(...) // Invoke contract logic here
-      // .setTimeout(30)
-      // .build();
+      // 3) Create escrow record
+      const createdEscrow = await apiRequest<{ id: string; amount: number }>(
+        '/escrows',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            title: data.title,
+            description: data.description,
+            amount: Number(data.amount),
+            asset: data.asset,
+            expiresAt: data.deadline.toISOString(),
+            parties: [{ userId: counterparty.id, role: 'seller' }],
+          }),
+        },
+      );
 
-      // Since we don't have the contract bindings generated, we'll simulate the delay and signing request
-      // to demonstrate the UX flow.
+      setCreatedEscrowId(createdEscrow.id);
 
-      // await signTransaction(tx.toXDR(), { network: 'TESTNET' });
+      // 4) Request unsigned funding tx XDR
+      const prepared = await apiRequest<{ transactionXdr: string }>(
+        `/escrows/${createdEscrow.id}/fund/prepare`,
+      );
 
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate building
+      // 5) Ask wallet to sign
+      setIsWalletSigning(true);
+      const freighterNetwork = connectedNetwork === 'public' ? 'PUBLIC' : 'TESTNET';
+      const signedXdrResult = await signTransaction(prepared.transactionXdr, {
+        network: freighterNetwork,
+      });
+      setIsWalletSigning(false);
 
-      // Simulate signing success
-      // const signedXdr = await signTransaction(mockXdr, ...);
+      const signedXdr =
+        typeof signedXdrResult === 'string'
+          ? signedXdrResult
+          : (signedXdrResult as { signedTxXdr?: string; signedEnvelopeXdr?: string });
+      const signedEnvelope =
+        typeof signedXdr === 'string'
+          ? signedXdr
+          : signedXdr.signedTxXdr || signedXdr.signedEnvelopeXdr;
 
-      // Simulate submission
-      // await server.submitTransaction(transaction);
+      if (!signedEnvelope) {
+        throw new Error('Wallet did not return a signed transaction.');
+      }
 
-      setTxHash('7a8b9c...mock_hash...1d2e3f'); // Success state
+      // 6) Submit signed tx via backend fund endpoint
+      const funded = await apiRequest<{ id: string; stellarTxHash?: string }>(
+        `/escrows/${createdEscrow.id}/fund`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            amount: Number(data.amount),
+            signedTransactionXdr: signedEnvelope,
+          }),
+        },
+      );
 
-    } catch (error: any) {
-      console.error(error);
-      setSubmitError(error.message || 'Failed to create escrow. Please try again.');
+      if (!funded.stellarTxHash) {
+        throw new Error('Funding succeeded but transaction hash is missing.');
+      }
+
+      const network = connectedNetwork === 'public' ? 'public' : 'testnet';
+      setTxHash(funded.stellarTxHash);
+      setExplorerUrl(explorerTxUrl(funded.stellarTxHash, network));
+    } catch (error) {
+      const message = parseErrorMessage(error);
+      if (/reject|denied|declined|cancelled|canceled/i.test(message)) {
+        setSubmitError('Transaction signing was canceled in wallet.');
+      } else if (/insufficient/i.test(message)) {
+        setSubmitError('Insufficient balance to fund this escrow.');
+      } else if (/network/i.test(message)) {
+        setSubmitError('Network error while creating or funding escrow.');
+      } else {
+        setSubmitError(message);
+      }
     } finally {
+      setIsWalletSigning(false);
       setIsSubmitting(false);
     }
   };
@@ -120,10 +189,25 @@ export default function CreateEscrowWizard() {
           <p className="text-xs text-gray-500 uppercase">Transaction Hash</p>
           <p className="font-mono text-sm text-gray-700">{txHash}</p>
         </div>
+        {explorerUrl && (
+          <a
+            href={explorerUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex text-blue-600 hover:text-blue-700 font-medium"
+          >
+            View on Stellar Explorer
+          </a>
+        )}
         <div className="pt-4">
-          <Link href="/dashboard" className="text-blue-600 hover:text-blue-700 font-medium">
-            Return to Dashboard
-          </Link>
+          <button
+            type="button"
+            onClick={() => router.push(createdEscrowId ? `/escrow/${createdEscrowId}` : '/dashboard')}
+            className="text-blue-600 hover:text-blue-700 font-medium"
+          >
+            Go to Escrow Details
+          </button>
+          <p className="mt-2 text-xs text-gray-500">Redirecting automatically...</p>
         </div>
       </div>
     );
@@ -215,7 +299,7 @@ export default function CreateEscrowWizard() {
                   {isSubmitting ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Creating...
+                      {isWalletSigning ? 'Awaiting wallet signature...' : 'Creating...'}
                     </>
                   ) : (
                     <>

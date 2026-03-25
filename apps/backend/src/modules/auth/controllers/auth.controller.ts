@@ -7,10 +7,15 @@ import {
   Req,
   HttpCode,
   HttpStatus,
+  Param,
+  BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { ThrottlerGuard } from '@nestjs/throttler';
+import { StrKey } from '@stellar/stellar-sdk';
 import { AuthService } from '../services/auth.service';
+import { UserService } from '../../user/user.service';
 import {
   ChallengeDto,
   VerifyDto,
@@ -22,7 +27,28 @@ import { AuthGuard } from '../middleware/auth.guard';
 @Controller('auth')
 @UseGuards(ThrottlerGuard)
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly userService: UserService,
+  ) {}
+
+  /**
+   * Resolve a Vaultix user id by Stellar wallet address (counterparty must have signed in once).
+   */
+  @Get('wallet/:address')
+  @UseGuards(AuthGuard)
+  async getUserByWallet(@Param('address') address: string) {
+    if (!StrKey.isValidEd25519PublicKey(address)) {
+      throw new BadRequestException('Invalid Stellar address');
+    }
+    const user = await this.userService.findByWalletAddress(address);
+    if (!user) {
+      throw new NotFoundException(
+        'No Vaultix account exists for this wallet address',
+      );
+    }
+    return { id: user.id, walletAddress: user.walletAddress };
+  }
 
   @Post('challenge')
   @HttpCode(HttpStatus.OK)

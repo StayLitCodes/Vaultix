@@ -38,6 +38,7 @@ import { ExpireEscrowDto } from '../dto/expire-escrow.dto';
 import { validateTransition, isTerminalStatus } from '../escrow-state-machine';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
 import { WebhookService } from '../../../services/webhook/webhook.service';
+import { StellarService } from '../../../services/stellar.service';
 
 @Injectable()
 export class EscrowService {
@@ -54,6 +55,7 @@ export class EscrowService {
     private disputeRepository: Repository<Dispute>,
 
     private readonly stellarIntegrationService: EscrowStellarIntegrationService,
+    private readonly stellarService: StellarService,
     private readonly webhookService: WebhookService,
   ) {}
 
@@ -446,6 +448,42 @@ export class EscrowService {
     return this.findOne(id);
   }
 
+  /**
+   * Returns an unsigned funding transaction (XDR) for the buyer to sign in their wallet.
+   */
+  async prepareFund(
+    id: string,
+    userId: string,
+    walletAddress: string,
+  ): Promise<{ transactionXdr: string }> {
+    const escrow = await this.findOne(id);
+
+    if (escrow.creatorId !== userId) {
+      throw new ForbiddenException('Only the buyer can fund this escrow');
+    }
+
+    if (escrow.status !== EscrowStatus.PENDING) {
+      throw new BadRequestException(
+        'Escrow can only be funded while in pending status',
+      );
+    }
+
+    if (escrow.stellarTxHash) {
+      throw new BadRequestException('Escrow is already funded');
+    }
+
+    const escrowAmount = Number(escrow.amount);
+    const transactionXdr =
+      await this.stellarIntegrationService.prepareFundTransactionXdr(
+        id,
+        walletAddress,
+        String(escrowAmount),
+        escrow.asset ?? 'XLM',
+      );
+
+    return { transactionXdr };
+  }
+
   async fund(
     id: string,
     dto: FundEscrowDto,
@@ -476,13 +514,19 @@ export class EscrowService {
 
     validateTransition(escrow.status, EscrowStatus.ACTIVE);
 
-    const stellarTxHash =
-      await this.stellarIntegrationService.fundOnChainEscrow(
-        id,
-        walletAddress,
-        String(dto.amount),
-        escrow.asset ?? 'XLM',
-      );
+    const stellarTxHash = dto.signedTransactionXdr
+      ? (
+          await this.stellarService.submitSignedTransactionXdr(
+            dto.signedTransactionXdr,
+            walletAddress,
+          )
+        ).hash
+      : await this.stellarIntegrationService.fundOnChainEscrow(
+          id,
+          walletAddress,
+          String(dto.amount),
+          escrow.asset ?? 'XLM',
+        );
 
     const fundedAt = new Date();
     await this.escrowRepository.update(id, {

@@ -2,6 +2,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import stellarConfig from '../config/stellar.config';
 import * as StellarSdk from '@stellar/stellar-sdk';
+import { BadRequestException } from '@nestjs/common';
 import { retryWithBackoff } from '../utils/retry.util';
 import {
   StellarAccountResponse,
@@ -116,6 +117,50 @@ export class StellarService {
    * @param transaction The transaction object to submit
    * @returns Transaction result
    */
+  /**
+   * Submits a wallet-signed transaction envelope (base64 XDR).
+   * Verifies the transaction source matches the authenticated wallet.
+   */
+  async submitSignedTransactionXdr(
+    signedXdr: string,
+    expectedSourceAccount: string,
+  ): Promise<StellarSubmitTransactionResponse> {
+    try {
+      const parsed = StellarSdk.TransactionBuilder.fromXDR(
+        signedXdr,
+        this.networkPassphrase,
+      );
+
+      const FeeBump = (StellarSdk as unknown as { FeeBumpTransaction?: abstract new () => unknown })
+        .FeeBumpTransaction;
+      if (FeeBump && parsed instanceof FeeBump) {
+        throw new BadRequestException('Fee bump transactions are not supported');
+      }
+
+      const tx = parsed as StellarSdk.Transaction;
+      const source = tx.source;
+
+      if (!source || source !== expectedSourceAccount) {
+        throw new BadRequestException(
+          'Signed transaction source does not match your wallet address',
+        );
+      }
+
+      return this.submitTransaction(tx);
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      this.logger.error(
+        `Failed to parse or submit signed XDR: ${this.getErrorMessage(error)}`,
+      );
+      throw this.mapStellarError(
+        error,
+        'Invalid or failed signed transaction submission',
+      );
+    }
+  }
+
   async submitTransaction(
     transaction: StellarSdk.Transaction,
   ): Promise<StellarSubmitTransactionResponse> {

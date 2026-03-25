@@ -22,6 +22,7 @@ import {
 } from '@nestjs/common';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
 import { WebhookService } from '../../../services/webhook/webhook.service';
+import { StellarService } from '../../../services/stellar.service';
 import {
   EscrowOverviewRole,
   EscrowOverviewSortBy,
@@ -119,6 +120,17 @@ describe('EscrowService', () => {
           useValue: {
             completeOnChainEscrow: jest.fn().mockResolvedValue('mock-tx-hash'),
             fundOnChainEscrow: jest.fn().mockResolvedValue('mock-fund-tx-hash'),
+            prepareFundTransactionXdr: jest
+              .fn()
+              .mockResolvedValue('mock-unsigned-xdr'),
+          },
+        },
+        {
+          provide: StellarService,
+          useValue: {
+            submitSignedTransactionXdr: jest
+              .fn()
+              .mockResolvedValue({ hash: 'signed-submit-hash' }),
           },
         },
         {

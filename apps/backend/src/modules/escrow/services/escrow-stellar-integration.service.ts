@@ -111,13 +111,51 @@ export class EscrowStellarIntegrationService {
   }
 
   /**
-   * Funds an escrow on the Stellar blockchain
-   * @param escrowId The ID of the escrow to fund
-   * @param funderPublicKey The public key of the account funding the escrow
-   * @param amount The amount to fund
-   * @param assetCode The asset code (e.g., 'XLM' or custom asset)
-   * @returns Transaction hash of the funding transaction
+   * Builds an unsigned funding transaction (for client-side wallet signing).
    */
+  async buildFundOnChainEscrowTransaction(
+    escrowId: string,
+    funderPublicKey: string,
+    amount: string,
+    assetCode: string = 'XLM',
+  ) {
+    this.logger.log(
+      `Building funding transaction for escrow ${escrowId}, amount: ${amount} ${assetCode}`,
+    );
+
+    const asset =
+      assetCode === 'XLM' || assetCode === 'native'
+        ? StellarSdk.Asset.native()
+        : new StellarSdk.Asset(assetCode, funderPublicKey);
+
+    const operations = this.escrowOperationsService.createFundingOps(
+      escrowId,
+      funderPublicKey,
+      amount,
+      asset,
+    );
+
+    return this.stellarService.buildTransaction(
+      funderPublicKey,
+      operations,
+    );
+  }
+
+  async prepareFundTransactionXdr(
+    escrowId: string,
+    funderPublicKey: string,
+    amount: string,
+    assetCode: string = 'XLM',
+  ): Promise<string> {
+    const tx = await this.buildFundOnChainEscrowTransaction(
+      escrowId,
+      funderPublicKey,
+      amount,
+      assetCode,
+    );
+    return tx.toXDR();
+  }
+
   async fundOnChainEscrow(
     escrowId: string,
     funderPublicKey: string,
@@ -129,27 +167,13 @@ export class EscrowStellarIntegrationService {
         `Funding on-chain escrow ${escrowId} with ${amount} ${assetCode}`,
       );
 
-      // Determine asset
-      const asset =
-        assetCode === 'XLM' || assetCode === 'native'
-          ? StellarSdk.Asset.native()
-          : new StellarSdk.Asset(assetCode, funderPublicKey); // Simplified - in reality, issuer would be different
-
-      // Create funding operations
-      const operations = this.escrowOperationsService.createFundingOps(
+      const transaction = await this.buildFundOnChainEscrowTransaction(
         escrowId,
         funderPublicKey,
         amount,
-        asset,
+        assetCode,
       );
 
-      // Build the transaction
-      const transaction = await this.stellarService.buildTransaction(
-        funderPublicKey, // Source account
-        operations,
-      );
-
-      // Submit the transaction to the Stellar network
       const result: StellarSubmitTransactionResponse =
         await this.stellarService.submitTransaction(transaction);
 
