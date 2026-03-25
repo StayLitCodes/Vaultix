@@ -1,6 +1,4 @@
-import { Linter } from "eslint";
-
-/** @type {Linter.FlatConfig[]} */
+/** @type {import("eslint").Linter.FlatConfig[]} */
 const config = [
   {
     languageOptions: {
