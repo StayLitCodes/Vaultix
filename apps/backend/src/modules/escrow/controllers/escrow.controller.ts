@@ -1,0 +1,248 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  Param,
+  Query,
+  UseGuards,
+  Request,
+  Req,
+} from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
+import { Request as ExpressRequest } from 'express';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { AuthGuard } from '../../auth/middleware/auth.guard';
+import { EscrowAccessGuard } from '../guards/escrow-access.guard';
+import { EscrowService } from '../services/escrow.service';
+import { CreateEscrowDto } from '../dto/create-escrow.dto';
+import { UpdateEscrowDto } from '../dto/update-escrow.dto';
+import { ListEscrowsDto } from '../dto/list-escrows.dto';
+import { ListEventsDto } from '../dto/list-events.dto';
+import { CancelEscrowDto } from '../dto/cancel-escrow.dto';
+import {
+  EscrowOverviewQueryDto,
+  EscrowOverviewResponseDto,
+} from '../dto/escrow-overview.dto';
+import { FulfillConditionDto } from '../dto/fulfill-condition.dto';
+import { FileDisputeDto, ResolveDisputeDto } from '../dto/dispute.dto';
+import { FundEscrowDto } from '../dto/fund-escrow.dto';
+import { ExpireEscrowDto } from '../dto/expire-escrow.dto';
+
+interface AuthenticatedRequest extends ExpressRequest {
+  user: { sub: string; walletAddress: string };
+}
+
+@Controller('escrows')
+@ApiTags('escrows')
+@ApiBearerAuth()
+@UseGuards(ThrottlerGuard, AuthGuard)
+export class EscrowController {
+  constructor(private readonly escrowService: EscrowService) {}
+
+  @Post()
+  async create(
+    @Body() dto: CreateEscrowDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.sub;
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.create(dto, userId, ipAddress);
+  }
+
+  @Get()
+  async findAll(
+    @Query() query: ListEscrowsDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.sub;
+    return this.escrowService.findAll(userId, query);
+  }
+
+  @Get('overview')
+  @ApiOperation({
+    summary: 'Get paginated escrow overview for authenticated user dashboard',
+  })
+  @ApiOkResponse({ type: EscrowOverviewResponseDto })
+  async findOverview(
+    @Query() query: EscrowOverviewQueryDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.sub;
+    return this.escrowService.findOverview(userId, query);
+  }
+
+  @Get(':id')
+  @UseGuards(EscrowAccessGuard)
+  async findOne(@Param('id') id: string) {
+    return this.escrowService.findOne(id);
+  }
+
+  @Patch(':id')
+  @UseGuards(EscrowAccessGuard)
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateEscrowDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.sub;
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.update(id, dto, userId, ipAddress);
+  }
+
+  @Post(':id/cancel')
+  @UseGuards(EscrowAccessGuard)
+  async cancel(
+    @Param('id') id: string,
+    @Body() dto: CancelEscrowDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.sub;
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.cancel(id, dto, userId, ipAddress);
+  }
+
+  @Post(':id/expire')
+  @UseGuards(EscrowAccessGuard)
+  async expire(
+    @Param('id') id: string,
+    @Body() dto: ExpireEscrowDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.sub;
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+
+    return this.escrowService.expire(id, dto, userId, ipAddress);
+  }
+
+  @Get(':id/events')
+  @UseGuards(EscrowAccessGuard)
+  async findEscrowEvents(
+    @Param('id') id: string,
+    @Query() query: ListEventsDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.sub;
+    return this.escrowService.findEvents(userId, query, id);
+  }
+
+  @Post(':id/fund')
+  @UseGuards(EscrowAccessGuard)
+  async fund(
+    @Param('id') id: string,
+    @Body() dto: FundEscrowDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.fund(
+      id,
+      dto,
+      req.user.sub,
+      req.user.walletAddress,
+      ipAddress,
+    );
+  }
+
+  @Post(':id/release')
+  @UseGuards(AuthGuard)
+  async releaseEscrow(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const escrow = await this.escrowService.releaseEscrow(
+      id,
+      req.user.sub,
+      true, // manual trigger
+    );
+
+    return {
+      id: escrow.id,
+      status: escrow.status,
+      transactionHash: escrow.releaseTransactionHash,
+    };
+  }
+
+  @Post(':id/conditions/:conditionId/fulfill')
+  @UseGuards(EscrowAccessGuard)
+  async fulfillCondition(
+    @Param('id') escrowId: string,
+    @Param('conditionId') conditionId: string,
+    @Body() dto: FulfillConditionDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.sub;
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.fulfillCondition(
+      escrowId,
+      conditionId,
+      dto,
+      userId,
+      ipAddress,
+    );
+  }
+
+  @Post(':id/conditions/:conditionId/confirm')
+  @UseGuards(EscrowAccessGuard)
+  async confirmCondition(
+    @Param('id') escrowId: string,
+    @Param('conditionId') conditionId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const userId = req.user.sub;
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.confirmCondition(
+      escrowId,
+      conditionId,
+      userId,
+      ipAddress,
+    );
+  }
+
+  /**
+   * POST /escrows/:id/dispute
+   * File a dispute against an active escrow. Only a buyer or seller party may call this.
+   * Transitions the escrow from ACTIVE → DISPUTED and freezes fund release.
+   */
+  @Post(':id/dispute')
+  @UseGuards(EscrowAccessGuard)
+  async fileDispute(
+    @Param('id') id: string,
+    @Body() dto: FileDisputeDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.fileDispute(id, req.user.sub, dto, ipAddress);
+  }
+
+  /**
+   * GET /escrows/:id/dispute
+   * Retrieve the dispute record for an escrow. Accessible to any party on the escrow.
+   */
+  @Get(':id/dispute')
+  @UseGuards(EscrowAccessGuard)
+  async getDispute(@Param('id') id: string) {
+    return this.escrowService.getDispute(id);
+  }
+
+  /**
+   * POST /escrows/:id/dispute/resolve
+   * Resolve an open dispute. Only an assigned arbitrator party may call this.
+   * Transitions the escrow from DISPUTED → COMPLETED (release/split) or CANCELLED (refund).
+   */
+  @Post(':id/dispute/resolve')
+  @UseGuards(EscrowAccessGuard)
+  async resolveDispute(
+    @Param('id') id: string,
+    @Body() dto: ResolveDisputeDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.resolveDispute(id, req.user.sub, dto, ipAddress);
+  }
+}

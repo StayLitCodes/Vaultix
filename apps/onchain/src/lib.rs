@@ -1,0 +1,1360 @@
+// lib.rs
+#![no_std]
+#![allow(unexpected_cfgs)]
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, BytesN, Env,
+    Symbol, Vec,
+};
+
+#[contracttype]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MilestoneStatus {
+    Pending,
+    Released,
+    Disputed,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct Milestone {
+    pub amount: i128,
+    pub status: MilestoneStatus,
+    pub description: Symbol,
+}
+
+#[contracttype]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EscrowStatus {
+    Created,   // Escrow created but funds not yet deposited
+    Active,    // Funds deposited and locked in contract
+    Completed, // All milestones released
+    Cancelled, // Escrow cancelled, funds refunded
+    Disputed,
+    Resolved,
+    Expired, // Escrow expired and refunded to depositor
+}
+
+#[contracttype]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Resolution {
+    None,
+    Depositor,
+    Recipient,
+    Split,
+}
+
+#[contracttype]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ContractState {
+    Active,
+    Paused,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct Escrow {
+    pub depositor: Address,
+    pub recipient: Address,
+    pub token_address: Address,
+    pub total_amount: i128,
+    pub total_released: i128,
+    pub milestones: Vec<Milestone>,
+    pub status: EscrowStatus,
+    pub deadline: u64,
+    pub resolution: Resolution,
+    pub threshold_amount: i128,  // Threshold amount for multi-sig requirement
+    pub required_signatures: u32, // Number of signatures required for release
+    pub collected_signatures: Vec<Address>, // Addresses that have signed for release
+}
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Error {
+    EscrowNotFound = 1,
+    EscrowAlreadyExists = 2,
+    MilestoneNotFound = 3,
+    MilestoneAlreadyReleased = 4,
+    UnauthorizedAccess = 5,
+    InvalidMilestoneAmount = 6,
+    TotalAmountMismatch = 7,
+    InsufficientBalance = 8,
+    EscrowNotActive = 9,
+    VectorTooLarge = 10,
+    ZeroAmount = 11,
+    InvalidDeadline = 12,
+    SelfDealing = 13,
+    EscrowAlreadyFunded = 14,
+    TokenTransferFailed = 15,
+    TreasuryNotInitialized = 16,
+    InvalidFeeConfiguration = 17,
+    AdminNotInitialized = 18,
+    AlreadyInitialized = 19,
+    InvalidEscrowStatus = 20,
+    AlreadyInDispute = 21,
+    InvalidWinner = 22,
+    ContractPaused = 23,
+    DeadlineNotReached = 24,
+    InvalidStatusForRefund = 25,
+    NoFundsToRefund = 26,
+    Unauthorized = 27,
+    OperatorNotInitialized = 28,
+    ArbitratorNotInitialized = 29,
+}
+
+const DEFAULT_FEE_BPS: i128 = 50;
+const BPS_DENOMINATOR: i128 = 10000;
+
+#[contract]
+pub struct VaultixEscrow;
+
+#[contractimpl]
+impl VaultixEscrow {
+    /// Secure contract upgrade function (Admin Proxy).
+    /// WARNING: Future upgrades MUST preserve storage layout (structs, enums, keys) to avoid corrupting state.
+    /// Only admin can call. Emits ContractUpgraded event before upgrade.
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), Error> {
+        let admin = get_admin(&env)?;
+        admin.require_auth();
+
+        // Emit ContractUpgraded event
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "ContractUpgraded"),
+            ),
+            new_wasm_hash.clone(),
+        );
+
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+        Ok(())
+    }
+
+    pub fn initialize(env: Env, treasury: Address, fee_bps: Option<i128>) -> Result<(), Error> {
+        treasury.require_auth();
+
+        let fee = fee_bps.unwrap_or(DEFAULT_FEE_BPS);
+
+        if !(0..=BPS_DENOMINATOR).contains(&fee) {
+            return Err(Error::InvalidFeeConfiguration);
+        }
+
+        env.storage()
+            .instance()
+            .set(&symbol_short!("treasury"), &treasury);
+        env.storage()
+            .instance()
+            .set(&symbol_short!("fee_bps"), &fee);
+
+        let vaultix_topic = Symbol::new(&env, "Vaultix");
+
+        // Emit RoleUpdated(role, old_addr, new_addr) - using Option for old_addr
+        env.events().publish(
+            (
+                vaultix_topic.clone(),
+                Symbol::new(&env, "RoleUpdated"),
+                Symbol::new(&env, "Treasury"),
+            ),
+            (Option::<Address>::None, treasury.clone()),
+        );
+
+        // Emit FeeUpdated(scope, key, old_fee, new_fee)
+        env.events().publish(
+            (vaultix_topic, Symbol::new(&env, "FeeUpdated")),
+            (
+                Symbol::new(&env, "Global"),
+                Symbol::new(&env, "PlatformFee"),
+                0i128,
+                fee,
+            ),
+        );
+
+        Ok(())
+    }
+
+    pub fn update_fee(env: Env, new_fee_bps: i128) -> Result<(), Error> {
+        let operator = get_operator(&env)?;
+        operator.require_auth();
+
+        if !(0..=BPS_DENOMINATOR).contains(&new_fee_bps) {
+            return Err(Error::InvalidFeeConfiguration);
+        }
+
+        let old_fee: i128 = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("fee_bps"))
+            .unwrap_or(DEFAULT_FEE_BPS);
+
+        env.storage()
+            .instance()
+            .set(&symbol_short!("fee_bps"), &new_fee_bps);
+
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "FeeUpdated"),
+            ),
+            (
+                Symbol::new(&env, "Global"),
+                Symbol::new(&env, "PlatformFee"),
+                old_fee,
+                new_fee_bps,
+            ),
+        );
+
+        Ok(())
+    }
+
+    /// Set fee override for a specific token.
+    /// Only treasury (admin) can call this function.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment reference
+    /// * `token_address` - Address of the token to set fee for
+    /// * `fee_bps` - Fee in basis points (must be in range [0, BPS_DENOMINATOR])
+    ///
+    /// # Returns
+    /// Ok(()) on success, or Error if validation fails
+    pub fn set_token_fee(env: Env, token_address: Address, fee_bps: i128) -> Result<(), Error> {
+        let treasury: Address = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("treasury"))
+            .ok_or(Error::TreasuryNotInitialized)?;
+        treasury.require_auth();
+
+        if !(0..=BPS_DENOMINATOR).contains(&fee_bps) {
+            return Err(Error::InvalidFeeConfiguration);
+        }
+
+        let token_fee_key = get_token_fee_key(&token_address);
+        let old_fee: Option<i128> = env.storage().persistent().get(&token_fee_key);
+
+        env.storage().persistent().set(&token_fee_key, &fee_bps);
+
+        // Emit FeeUpdated event for token-level override
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "FeeUpdated"),
+            ),
+            (
+                Symbol::new(&env, "Token"),
+                token_address.clone(),
+                old_fee.unwrap_or(DEFAULT_FEE_BPS),
+                fee_bps,
+            ),
+        );
+
+        Ok(())
+    }
+
+    /// Set fee override for a specific escrow.
+    /// Only treasury (admin) can call this function.
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment reference
+    /// * `escrow_id` - ID of the escrow to set fee for
+    /// * `fee_bps` - Fee in basis points (must be in range [0, BPS_DENOMINATOR])
+    ///
+    /// # Returns
+    /// Ok(()) on success, or Error if validation fails
+    pub fn set_escrow_fee(env: Env, escrow_id: u64, fee_bps: i128) -> Result<(), Error> {
+        let treasury: Address = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("treasury"))
+            .ok_or(Error::TreasuryNotInitialized)?;
+        treasury.require_auth();
+
+        if !(0..=BPS_DENOMINATOR).contains(&fee_bps) {
+            return Err(Error::InvalidFeeConfiguration);
+        }
+
+        let escrow_fee_key = get_escrow_fee_key(escrow_id);
+        let old_fee: Option<i128> = env.storage().persistent().get(&escrow_fee_key);
+
+        env.storage().persistent().set(&escrow_fee_key, &fee_bps);
+
+        // Emit FeeUpdated event for escrow-level override
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "FeeUpdated"),
+            ),
+            (
+                Symbol::new(&env, "Escrow"),
+                escrow_id,
+                old_fee.unwrap_or(DEFAULT_FEE_BPS),
+                fee_bps,
+            ),
+        );
+
+        Ok(())
+    }
+
+    pub fn get_config(env: Env) -> Result<(Address, i128), Error> {
+        let treasury: Address = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("treasury"))
+            .ok_or(Error::TreasuryNotInitialized)?;
+        let fee_bps: i128 = env
+            .storage()
+            .instance()
+            .get(&symbol_short!("fee_bps"))
+            .unwrap_or(DEFAULT_FEE_BPS);
+        Ok((treasury, fee_bps))
+    }
+
+    pub fn set_paused(env: Env, paused: bool) -> Result<(), Error> {
+        let operator = get_operator(&env)?;
+        operator.require_auth();
+
+        let state = if paused {
+            ContractState::Paused
+        } else {
+            ContractState::Active
+        };
+        env.storage()
+            .instance()
+            .set(&symbol_short!("state"), &state);
+
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "PausedStateChanged"),
+            ),
+            (paused, operator),
+        );
+
+        Ok(())
+    }
+
+    pub fn init(
+        env: Env,
+        admin: Address,
+        operator: Address,
+        arbitrator: Address,
+    ) -> Result<(), Error> {
+        if env.storage().persistent().has(&admin_storage_key()) {
+            return Err(Error::AlreadyInitialized);
+        }
+
+        admin.require_auth();
+
+        env.storage().persistent().set(&admin_storage_key(), &admin);
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, "operator"), &operator);
+        env.storage()
+            .persistent()
+            .set(&Symbol::new(&env, "arbitrator"), &arbitrator);
+
+        let vaultix_topic = Symbol::new(&env, "Vaultix");
+
+        env.events().publish(
+            (
+                vaultix_topic.clone(),
+                Symbol::new(&env, "RoleUpdated"),
+                Symbol::new(&env, "Admin"),
+            ),
+            (Option::<Address>::None, admin),
+        );
+        env.events().publish(
+            (
+                vaultix_topic.clone(),
+                Symbol::new(&env, "RoleUpdated"),
+                Symbol::new(&env, "Operator"),
+            ),
+            (Option::<Address>::None, operator),
+        );
+        env.events().publish(
+            (
+                vaultix_topic,
+                Symbol::new(&env, "RoleUpdated"),
+                Symbol::new(&env, "Arbitrator"),
+            ),
+            (Option::<Address>::None, arbitrator),
+        );
+
+        Ok(())
+    }
+
+    /// Configure the threshold amount and required signatures for an escrow
+    /// Only the depositor can call this function
+    pub fn configure_multisig(
+        env: Env,
+        escrow_id: u64,
+        threshold_amount: i128,
+        required_signatures: u32,
+    ) -> Result<(), Error> {
+        let storage_key = get_storage_key(escrow_id);
+        ensure_not_paused(&env)?;
+
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&storage_key)
+            .ok_or(Error::EscrowNotFound)?;
+        
+        escrow.depositor.require_auth();
+        
+        // Only allow configuration if the escrow hasn't been funded yet
+        if escrow.status != EscrowStatus::Created {
+            return Err(Error::InvalidEscrowStatus);
+        }
+        
+        escrow.threshold_amount = threshold_amount;
+        escrow.required_signatures = required_signatures;
+        
+        env.storage().persistent().set(&storage_key, &escrow);
+        
+        // Emit event
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "MultisigConfigured"),
+                escrow_id,
+            ),
+            (threshold_amount, required_signatures),
+        );
+        
+        Ok(())
+    }
+
+    pub fn create_escrow(
+        env: Env,
+        escrow_id: u64,
+        depositor: Address,
+        recipient: Address,
+        token_address: Address,
+        milestones: Vec<Milestone>,
+        deadline: u64,
+    ) -> Result<(), Error> {
+        depositor.require_auth();
+        ensure_not_paused(&env)?;
+
+        if depositor == recipient {
+            return Err(Error::SelfDealing);
+        }
+
+        let storage_key = get_storage_key(escrow_id);
+        if env.storage().persistent().has(&storage_key) {
+            return Err(Error::EscrowAlreadyExists);
+        }
+
+        let total_amount = validate_milestones(&milestones)?;
+
+        let mut initialized_milestones = Vec::new(&env);
+        for milestone in milestones.iter() {
+            let mut m = milestone.clone();
+            m.status = MilestoneStatus::Pending;
+            initialized_milestones.push_back(m);
+        }
+
+        let escrow = Escrow {
+            depositor: depositor.clone(),
+            recipient: recipient.clone(),
+            token_address: token_address.clone(),
+            total_amount,
+            total_released: 0,
+            milestones: initialized_milestones,
+            status: EscrowStatus::Created,
+            deadline,
+            resolution: Resolution::None,
+            threshold_amount: 10000, // Default threshold amount (configurable)
+            required_signatures: 1,   // Default to single signature
+            collected_signatures: Vec::new(&env),
+        };
+
+        env.storage().persistent().set(&storage_key, &escrow);
+        env.storage()
+            .persistent()
+            .extend_ttl(&storage_key, 100, 2_000_000);
+
+        // Standardized Event
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "EscrowCreated"),
+                escrow_id,
+            ),
+            (depositor, recipient, token_address, total_amount, deadline),
+        );
+
+        Ok(())
+    }
+
+    pub fn deposit_funds(env: Env, escrow_id: u64) -> Result<(), Error> {
+        let storage_key = get_storage_key(escrow_id);
+        ensure_not_paused(&env)?;
+
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&storage_key)
+            .ok_or(Error::EscrowNotFound)?;
+        escrow.depositor.require_auth();
+
+        if escrow.status != EscrowStatus::Created {
+            return Err(Error::EscrowAlreadyFunded);
+        }
+
+        let token_client = token::Client::new(&env, &escrow.token_address);
+        // Defensive checks to avoid host traps when the token contract would trap
+        // on transfer_from due to missing allowance or insufficient balance.
+        // Check depositor balance first.
+        let depositor_balance = token_client.balance(&escrow.depositor);
+        if depositor_balance < escrow.total_amount {
+            return Err(Error::InsufficientBalance);
+        }
+
+        // Check allowance granted to this contract (spender) by the depositor.
+        // If allowance is insufficient, return a TokenTransferFailed error instead
+        // of invoking transfer_from which would trap the host.
+        let spender = env.current_contract_address();
+        let allowance = token_client.allowance(&escrow.depositor, &spender);
+        if allowance < escrow.total_amount {
+            return Err(Error::TokenTransferFailed);
+        }
+
+        // Safe to call transfer_from now that basic preconditions hold.
+        token_client.transfer_from(&spender, &escrow.depositor, &spender, &escrow.total_amount);
+
+        escrow.status = EscrowStatus::Active;
+        env.storage().persistent().set(&storage_key, &escrow);
+        env.storage()
+            .persistent()
+            .extend_ttl(&storage_key, 100, 2_000_000);
+
+        // Standardized Event
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "EscrowFunded"),
+                escrow_id,
+            ),
+            escrow.total_amount,
+        );
+
+        Ok(())
+    }
+
+    /// Collect a signature for releasing funds
+    /// The signature can come from either the depositor or a designated third party
+    pub fn collect_signature(
+        env: Env,
+        escrow_id: u64,
+        signer: Address,
+    ) -> Result<(), Error> {
+        let storage_key = get_storage_key(escrow_id);
+        ensure_not_paused(&env)?;
+
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&storage_key)
+            .ok_or(Error::EscrowNotFound)?;
+        
+        // Require authentication from the signer
+        signer.require_auth();
+        
+        // Check if this signer has already signed
+        for existing_signer in escrow.collected_signatures.iter() {
+            if existing_signer == signer {
+                return Ok(()); // Idempotent - no error if already signed
+            }
+        }
+        
+        // Add the new signature
+        escrow.collected_signatures.push_back(signer);
+        
+        env.storage().persistent().set(&storage_key, &escrow);
+        
+        // Emit event
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "SignatureCollected"),
+                escrow_id,
+            ),
+            signer,
+        );
+        
+        Ok(())
+    }
+
+    pub fn get_escrow(env: Env, escrow_id: u64) -> Result<Escrow, Error> {
+        let storage_key = get_storage_key(escrow_id);
+        env.storage()
+            .persistent()
+            .get(&storage_key)
+            .ok_or(Error::EscrowNotFound)
+    }
+
+    pub fn get_state(env: Env, escrow_id: u64) -> Result<EscrowStatus, Error> {
+        let escrow = Self::get_escrow(env, escrow_id)?;
+        Ok(escrow.status)
+    }
+
+    pub fn release_milestone(env: Env, escrow_id: u64, milestone_index: u32) -> Result<(), Error> {
+        let storage_key = get_storage_key(escrow_id);
+        ensure_not_paused(&env)?;
+
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&storage_key)
+            .ok_or(Error::EscrowNotFound)?;
+        
+        // For amounts exceeding the threshold, check multi-signature requirements
+        let milestone = escrow
+            .milestones
+            .get(milestone_index)
+            .ok_or(Error::MilestoneNotFound)?;
+        
+        if milestone.amount >= escrow.threshold_amount {
+            // Check if we have enough signatures
+            if escrow.collected_signatures.len() < escrow.required_signatures {
+                return Err(Error::UnauthorizedAccess);
+            }
+        } else {
+            // For amounts below threshold, only depositor can release
+            escrow.depositor.require_auth();
+        }
+
+        if escrow.status != EscrowStatus::Active {
+            return Err(Error::EscrowNotActive);
+        }
+        if milestone_index >= escrow.milestones.len() {
+            return Err(Error::MilestoneNotFound);
+        }
+
+        let mut milestone = escrow
+            .milestones
+            .get(milestone_index)
+            .ok_or(Error::MilestoneNotFound)?;
+        if milestone.status == MilestoneStatus::Released {
+            return Err(Error::MilestoneAlreadyReleased);
+        }
+
+        let (treasury, _) = Self::get_config(env.clone())?;
+        let fee_bps = resolve_fee(&env, escrow_id, &escrow.token_address)?;
+        let fee = calculate_fee(milestone.amount, fee_bps)?;
+        let payout = milestone
+            .amount
+            .checked_sub(fee)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+
+        let token_client = token::Client::new(&env, &escrow.token_address);
+        safe_transfer(
+            &token_client,
+            &env.current_contract_address(),
+            &escrow.recipient,
+            payout,
+        )?;
+
+        if fee > 0 {
+            safe_transfer(
+                &token_client,
+                &env.current_contract_address(),
+                &treasury,
+                fee,
+            )?;
+        }
+
+        milestone.status = MilestoneStatus::Released;
+        escrow.milestones.set(milestone_index, milestone.clone());
+
+        escrow.total_released = escrow
+            .total_released
+            .checked_add(milestone.amount)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+
+        env.storage().persistent().set(&storage_key, &escrow);
+        env.storage()
+            .persistent()
+            .extend_ttl(&storage_key, 100, 2_000_000);
+
+        // Standardized Event
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "MilestoneReleased"),
+                escrow_id,
+                milestone_index,
+            ),
+            (payout, fee),
+        );
+
+        Ok(())
+    }
+
+    pub fn confirm_delivery(
+        env: Env,
+        escrow_id: u64,
+        milestone_index: u32,
+        buyer: Address,
+    ) -> Result<(), Error> {
+        let storage_key = get_storage_key(escrow_id);
+        ensure_not_paused(&env)?;
+
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&storage_key)
+            .ok_or(Error::EscrowNotFound)?;
+        buyer.require_auth();
+
+        if escrow.depositor != buyer {
+            return Err(Error::UnauthorizedAccess);
+        }
+        if escrow.status != EscrowStatus::Active {
+            return Err(Error::EscrowNotActive);
+        }
+        if milestone_index >= escrow.milestones.len() {
+            return Err(Error::MilestoneNotFound);
+        }
+
+        let mut milestone = escrow
+            .milestones
+            .get(milestone_index)
+            .ok_or(Error::MilestoneNotFound)?;
+        if milestone.status == MilestoneStatus::Released {
+            return Err(Error::MilestoneAlreadyReleased);
+        }
+        
+        // For amounts exceeding the threshold, check multi-signature requirements
+        if milestone.amount >= escrow.threshold_amount {
+            // Check if we have enough signatures
+            if escrow.collected_signatures.len() < escrow.required_signatures {
+                return Err(Error::UnauthorizedAccess);
+            }
+        }
+
+        milestone.status = MilestoneStatus::Released;
+        escrow.milestones.set(milestone_index, milestone.clone());
+
+        escrow.total_released = escrow
+            .total_released
+            .checked_add(milestone.amount)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+
+        let token_client = token::Client::new(&env, &escrow.token_address);
+        safe_transfer(
+            &token_client,
+            &env.current_contract_address(),
+            &escrow.recipient,
+            milestone.amount,
+        )?;
+
+        env.storage().persistent().set(&storage_key, &escrow);
+
+        // Standardized Event
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "MilestoneReleased"),
+                escrow_id,
+                milestone_index,
+            ),
+            (milestone.amount, 0i128),
+        );
+
+        Ok(())
+    }
+
+    pub fn raise_dispute(env: Env, escrow_id: u64, caller: Address) -> Result<(), Error> {
+        let storage_key = get_storage_key(escrow_id);
+        ensure_not_paused(&env)?;
+
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&storage_key)
+            .ok_or(Error::EscrowNotFound)?;
+
+        if caller != escrow.depositor && caller != escrow.recipient {
+            return Err(Error::UnauthorizedAccess);
+        }
+        caller.require_auth();
+
+        if escrow.status == EscrowStatus::Disputed {
+            return Err(Error::AlreadyInDispute);
+        }
+        if escrow.status != EscrowStatus::Active && escrow.status != EscrowStatus::Created {
+            return Err(Error::InvalidEscrowStatus);
+        }
+
+        let mut updated_milestones = Vec::new(&env);
+        for milestone in escrow.milestones.iter() {
+            let mut m = milestone.clone();
+            if m.status == MilestoneStatus::Pending {
+                m.status = MilestoneStatus::Disputed;
+            }
+            updated_milestones.push_back(m);
+        }
+
+        escrow.milestones = updated_milestones;
+        escrow.status = EscrowStatus::Disputed;
+        escrow.resolution = Resolution::None;
+        env.storage().persistent().set(&storage_key, &escrow);
+
+        // Standardized Event
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "DisputeRaised"),
+                escrow_id,
+            ),
+            caller,
+        );
+
+        Ok(())
+    }
+
+    pub fn resolve_dispute(
+        env: Env,
+        escrow_id: u64,
+        winner: Address,
+        split_winner_amount: Option<i128>,
+    ) -> Result<(), Error> {
+        let arbitrator = get_arbitrator(&env)?;
+        arbitrator.require_auth();
+
+        let storage_key = get_storage_key(escrow_id);
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&storage_key)
+            .ok_or(Error::EscrowNotFound)?;
+
+        if escrow.status != EscrowStatus::Disputed {
+            return Err(Error::InvalidEscrowStatus);
+        }
+        if winner != escrow.depositor && winner != escrow.recipient {
+            return Err(Error::InvalidWinner);
+        }
+
+        let outstanding = escrow
+            .total_amount
+            .checked_sub(escrow.total_released)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+
+        if outstanding < 0 {
+            return Err(Error::InvalidMilestoneAmount);
+        }
+
+        let other = if winner == escrow.depositor {
+            escrow.recipient.clone()
+        } else {
+            escrow.depositor.clone()
+        };
+
+        let (amount_to_winner, amount_to_other) = match split_winner_amount {
+            None => (outstanding, 0i128),
+            Some(winner_amount) => {
+                if winner_amount < 0 || winner_amount > outstanding {
+                    return Err(Error::InvalidMilestoneAmount);
+                }
+                let other_amount = outstanding
+                    .checked_sub(winner_amount)
+                    .ok_or(Error::InvalidMilestoneAmount)?;
+                (winner_amount, other_amount)
+            }
+        };
+
+        let token_client = token::Client::new(&env, &escrow.token_address);
+
+        if amount_to_winner > 0 {
+            safe_transfer(
+                &token_client,
+                &env.current_contract_address(),
+                &winner,
+                amount_to_winner,
+            )?;
+        }
+
+        if amount_to_other > 0 {
+            safe_transfer(
+                &token_client,
+                &env.current_contract_address(),
+                &other,
+                amount_to_other,
+            )?;
+        }
+
+        // Update accounting and milestone statuses
+        let (amount_to_recipient, resolution) = if amount_to_winner == outstanding
+            && amount_to_other == 0
+        {
+            if winner == escrow.recipient {
+                // Full payout to recipient
+                let mut updated_milestones = Vec::new(&env);
+                for milestone in escrow.milestones.iter() {
+                    let mut m = milestone.clone();
+                    if m.status != MilestoneStatus::Released {
+                        m.status = MilestoneStatus::Released;
+                    }
+                    updated_milestones.push_back(m);
+                }
+                escrow.milestones = updated_milestones;
+                (outstanding, Resolution::Recipient)
+            } else {
+                // Full refund to depositor
+                let mut updated_milestones = Vec::new(&env);
+                for milestone in escrow.milestones.iter() {
+                    let mut m = milestone.clone();
+                    if m.status == MilestoneStatus::Pending || m.status == MilestoneStatus::Disputed
+                    {
+                        m.status = MilestoneStatus::Disputed;
+                    }
+                    updated_milestones.push_back(m);
+                }
+                escrow.milestones = updated_milestones;
+                (0i128, Resolution::Depositor)
+            }
+        } else {
+            // Split resolution
+            let mut updated_milestones = Vec::new(&env);
+            for milestone in escrow.milestones.iter() {
+                let mut m = milestone.clone();
+                if m.status != MilestoneStatus::Released {
+                    m.status = MilestoneStatus::Disputed;
+                }
+                updated_milestones.push_back(m);
+            }
+            escrow.milestones = updated_milestones;
+
+            let recipient_amount = if winner == escrow.recipient {
+                amount_to_winner
+            } else {
+                amount_to_other
+            };
+            (recipient_amount, Resolution::Split)
+        };
+
+        escrow.total_released = escrow
+            .total_released
+            .checked_add(amount_to_recipient)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+
+        if escrow.total_released > escrow.total_amount {
+            return Err(Error::InvalidMilestoneAmount);
+        }
+
+        escrow.resolution = resolution;
+        escrow.status = EscrowStatus::Resolved;
+        env.storage().persistent().set(&storage_key, &escrow);
+
+        // Standardized Event
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "DisputeResolved"),
+                escrow_id,
+            ),
+            (winner, amount_to_winner, amount_to_other),
+        );
+
+        Ok(())
+    }
+
+    pub fn cancel_escrow(env: Env, escrow_id: u64) -> Result<(), Error> {
+        let storage_key = get_storage_key(escrow_id);
+        ensure_not_paused(&env)?;
+
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&storage_key)
+            .ok_or(Error::EscrowNotFound)?;
+        escrow.depositor.require_auth();
+
+        // Debug: emit start of cancel operation
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "CancelStart"),
+                escrow_id,
+            ),
+            (escrow.total_amount, escrow.total_released, escrow.status),
+        );
+
+        if escrow.status != EscrowStatus::Active && escrow.status != EscrowStatus::Created {
+            return Err(Error::InvalidEscrowStatus);
+        }
+        if escrow.total_released > 0 {
+            return Err(Error::MilestoneAlreadyReleased);
+        }
+
+        if escrow.status == EscrowStatus::Active {
+            let token_client = token::Client::new(&env, &escrow.token_address);
+            let refund_amount = if let Ok((treasury, _)) = Self::get_config(env.clone()) {
+                let fee_bps = resolve_fee(&env, escrow_id, &escrow.token_address)?;
+                let fee = calculate_fee(escrow.total_amount, fee_bps)?;
+                // Debug: fee resolved
+                env.events().publish(
+                    (
+                        Symbol::new(&env, "Vaultix"),
+                        Symbol::new(&env, "FeeResolved"),
+                        escrow_id,
+                    ),
+                    (fee_bps, fee),
+                );
+                // Emit debug events to help trace panics in tests
+                env.events().publish(
+                    (
+                        Symbol::new(&env, "Vaultix"),
+                        Symbol::new(&env, "FeeTransferAttempt"),
+                        escrow_id,
+                    ),
+                    (fee,),
+                );
+                if fee > 0 {
+                    safe_transfer(
+                        &token_client,
+                        &env.current_contract_address(),
+                        &treasury,
+                        fee,
+                    )?;
+                }
+                let refund = escrow
+                    .total_amount
+                    .checked_sub(fee)
+                    .ok_or(Error::InvalidMilestoneAmount)?;
+                env.events().publish(
+                    (
+                        Symbol::new(&env, "Vaultix"),
+                        Symbol::new(&env, "RefundAmountComputed"),
+                        escrow_id,
+                    ),
+                    (refund,),
+                );
+                refund
+            } else {
+                escrow.total_amount
+            };
+
+            if refund_amount > 0 {
+                safe_transfer(
+                    &token_client,
+                    &env.current_contract_address(),
+                    &escrow.depositor,
+                    refund_amount,
+                )?;
+            }
+        }
+
+        escrow.status = EscrowStatus::Cancelled;
+        env.storage().persistent().set(&storage_key, &escrow);
+        env.storage()
+            .persistent()
+            .extend_ttl(&storage_key, 100, 2_000_000);
+
+        // Standardized Event
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "EscrowCancelled"),
+                escrow_id,
+            ),
+            escrow.depositor.clone(),
+        );
+
+        Ok(())
+    }
+
+    pub fn complete_escrow(env: Env, escrow_id: u64) -> Result<(), Error> {
+        let storage_key = get_storage_key(escrow_id);
+        ensure_not_paused(&env)?;
+
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&storage_key)
+            .ok_or(Error::EscrowNotFound)?;
+        escrow.depositor.require_auth();
+
+        if escrow.status != EscrowStatus::Active {
+            return Err(Error::InvalidEscrowStatus);
+        }
+        if !verify_all_released(&escrow.milestones) {
+            return Err(Error::EscrowNotActive);
+        }
+
+        escrow.status = EscrowStatus::Completed;
+        env.storage().persistent().set(&storage_key, &escrow);
+        env.storage()
+            .persistent()
+            .extend_ttl(&storage_key, 100, 2_000_000);
+
+        // Standardized Event
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "EscrowCompleted"),
+                escrow_id,
+            ),
+            (),
+        );
+
+        Ok(())
+    }
+
+    pub fn refund_expired(env: Env, escrow_id: u64, caller: Address) -> Result<(), Error> {
+        let storage_key = get_storage_key(escrow_id);
+
+        // Load escrow from storage
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&storage_key)
+            .ok_or(Error::EscrowNotFound)?;
+
+        // Validate deadline has passed
+        let current_time = env.ledger().timestamp();
+        if current_time <= escrow.deadline {
+            return Err(Error::DeadlineNotReached);
+        }
+
+        // Validate escrow status is Active
+        if escrow.status != EscrowStatus::Active {
+            return Err(Error::InvalidStatusForRefund);
+        }
+
+        // Authorization validation - only buyer can refund
+        caller.require_auth();
+        if caller != escrow.depositor {
+            return Err(Error::Unauthorized);
+        }
+
+        // Calculate remaining balance
+        let remaining_balance = escrow
+            .total_amount
+            .checked_sub(escrow.total_released)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+
+        // Check if there are funds to refund
+        if remaining_balance <= 0 {
+            return Err(Error::NoFundsToRefund);
+        }
+
+        // Retrieve platform fee BPS from contract configuration
+        let (treasury, _) = Self::get_config(env.clone())?;
+
+        // Resolve fee with precedence: escrow > token > global
+        let fee_bps = resolve_fee(&env, escrow_id, &escrow.token_address)?;
+
+        // Calculate platform fee using checked arithmetic
+        let platform_fee = calculate_fee(remaining_balance, fee_bps)?;
+
+        // Calculate refund amount
+        let refund_amount = remaining_balance
+            .checked_sub(platform_fee)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+
+        // Get token client for escrow's token address
+        let token_client = token::Client::new(&env, &escrow.token_address);
+
+        // Transfer refund amount to buyer
+        safe_transfer(
+            &token_client,
+            &env.current_contract_address(),
+            &escrow.depositor,
+            refund_amount,
+        )?;
+
+        // If platform fee > 0, transfer fee to fee recipient
+        if platform_fee > 0 {
+            safe_transfer(
+                &token_client,
+                &env.current_contract_address(),
+                &treasury,
+                platform_fee,
+            )?;
+        }
+
+        // Update escrow state
+        escrow.status = EscrowStatus::Expired;
+        escrow.total_released = escrow.total_amount;
+        env.storage().persistent().set(&storage_key, &escrow);
+        env.storage()
+            .persistent()
+            .extend_ttl(&storage_key, 100, 2_000_000);
+
+        // Emit RefundEvent
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "RefundExpired"),
+                escrow_id,
+            ),
+            (escrow.depositor.clone(), refund_amount, current_time),
+        );
+
+        Ok(())
+    }
+}
+
+fn get_storage_key(escrow_id: u64) -> (Symbol, u64) {
+    (symbol_short!("escrow"), escrow_id)
+}
+
+/// Generates storage key for token-specific fee override
+/// Returns a tuple of (Symbol, Address) for scoped storage access
+fn get_token_fee_key(token_address: &Address) -> (Symbol, Address) {
+    (symbol_short!("tokfee"), token_address.clone())
+}
+
+/// Generates storage key for escrow-specific fee override
+/// Returns a tuple of (Symbol, u64) for scoped storage access
+fn get_escrow_fee_key(escrow_id: u64) -> (Symbol, u64) {
+    (symbol_short!("escfee"), escrow_id)
+}
+
+/// Resolves the applicable fee for a transaction using the following precedence:
+/// 1. Per-escrow fee override (highest priority)
+/// 2. Per-token fee override
+/// 3. Global default fee (fallback)
+///
+/// # Arguments
+/// * `env` - Soroban environment reference
+/// * `escrow_id` - ID of the escrow transaction
+/// * `token_address` - Token being transferred
+///
+/// # Returns
+/// The fee in basis points to apply for the transaction
+fn resolve_fee(env: &Env, escrow_id: u64, token_address: &Address) -> Result<i128, Error> {
+    // Check escrow-specific override first (highest priority)
+    let escrow_fee_key = get_escrow_fee_key(escrow_id);
+    if let Some(escrow_fee) = env
+        .storage()
+        .persistent()
+        .get::<(Symbol, u64), i128>(&escrow_fee_key)
+    {
+        return Ok(escrow_fee);
+    }
+
+    // Check token-specific override second
+    let token_fee_key = get_token_fee_key(token_address);
+    if let Some(token_fee) = env
+        .storage()
+        .persistent()
+        .get::<(Symbol, Address), i128>(&token_fee_key)
+    {
+        return Ok(token_fee);
+    }
+
+    // Fall back to global default fee
+    let global_fee: i128 = env
+        .storage()
+        .instance()
+        .get(&symbol_short!("fee_bps"))
+        .unwrap_or(DEFAULT_FEE_BPS);
+
+    Ok(global_fee)
+}
+
+/// Safely transfer tokens from `from` to `to`, returning an error if balance is insufficient.
+fn safe_transfer(
+    token_client: &token::Client,
+    from: &Address,
+    to: &Address,
+    amount: i128,
+) -> Result<(), Error> {
+    if amount <= 0 {
+        return Ok(());
+    }
+    let balance = token_client.balance(from);
+    if balance < amount {
+        return Err(Error::InsufficientBalance);
+    }
+    token_client.transfer(from, to, &amount);
+    Ok(())
+}
+
+fn ensure_not_paused(env: &Env) -> Result<(), Error> {
+    let state: ContractState = env
+        .storage()
+        .instance()
+        .get(&symbol_short!("state"))
+        .unwrap_or(ContractState::Active);
+    if state == ContractState::Paused {
+        return Err(Error::ContractPaused);
+    }
+    Ok(())
+}
+
+fn admin_storage_key() -> Symbol {
+    symbol_short!("admin")
+}
+
+fn get_admin(env: &Env) -> Result<Address, Error> {
+    env.storage()
+        .persistent()
+        .get(&admin_storage_key())
+        .ok_or(Error::AdminNotInitialized)
+}
+
+fn validate_milestones(milestones: &Vec<Milestone>) -> Result<i128, Error> {
+    if milestones.len() > 20 {
+        return Err(Error::VectorTooLarge);
+    }
+    let mut total: i128 = 0;
+    for milestone in milestones.iter() {
+        if milestone.amount <= 0 {
+            return Err(Error::ZeroAmount);
+        }
+        total = total
+            .checked_add(milestone.amount)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+    }
+    Ok(total)
+}
+
+fn verify_all_released(milestones: &Vec<Milestone>) -> bool {
+    for milestone in milestones.iter() {
+        if milestone.status != MilestoneStatus::Released {
+            return false;
+        }
+    }
+    true
+}
+
+/// Calculate platform fee using basis points (BPS)
+/// Formula: fee = (amount * fee_bps) / 10000
+/// Uses checked arithmetic to prevent overflow
+fn calculate_fee(amount: i128, fee_bps: i128) -> Result<i128, Error> {
+    // Multiply amount by fee basis points with overflow protection
+    let fee_numerator = amount
+        .checked_mul(fee_bps)
+        .ok_or(Error::InvalidMilestoneAmount)?;
+
+    // Divide by BPS denominator (10000) to get final fee
+    let fee = fee_numerator
+        .checked_div(BPS_DENOMINATOR)
+        .ok_or(Error::InvalidMilestoneAmount)?;
+
+    Ok(fee)
+}
+
+fn get_operator(env: &Env) -> Result<Address, Error> {
+    env.storage()
+        .persistent()
+        .get(&Symbol::new(env, "operator"))
+        .ok_or(Error::OperatorNotInitialized)
+}
+
+fn get_arbitrator(env: &Env) -> Result<Address, Error> {
+    env.storage()
+        .persistent()
+        .get(&Symbol::new(env, "arbitrator"))
+        .ok_or(Error::ArbitratorNotInitialized)
+}
+
+#[cfg(test)]
+mod fee_tests;
+#[cfg(test)]
+mod test;
