@@ -43,7 +43,7 @@ export class EscrowStellarIntegrationService {
       // Get the escrow from the database
       const escrow = await this.escrowRepository.findOne({
         where: { id: escrowId },
-        relations: ['parties', 'conditions'],
+        relations: ['parties', 'parties.user', 'conditions'],
       });
 
       if (!escrow) {
@@ -52,18 +52,26 @@ export class EscrowStellarIntegrationService {
 
       // Get the depositor (usually the buyer)
       const depositor = escrow.parties.find(
-        (party) => party.role === ('buyer' as any),
+        (party) => party.role === 'buyer'
       );
       if (!depositor) {
         throw new Error(`Depositor not found for escrow ${escrowId}`);
       }
 
+      if (!depositor.user?.walletAddress) {
+        throw new Error(`Depositor wallet address not found for escrow ${escrowId}`);
+      }
+
       // Get the recipient (usually the seller)
       const recipient = escrow.parties.find(
-        (party) => party.role === ('seller' as any),
+        (party) => party.role === 'seller'
       );
       if (!recipient) {
         throw new Error(`Recipient not found for escrow ${escrowId}`);
+      }
+
+      if (!recipient.user?.walletAddress) {
+        throw new Error(`Recipient wallet address not found for escrow ${escrowId}`);
       }
 
       // Convert conditions to milestones format
@@ -79,18 +87,18 @@ export class EscrowStellarIntegrationService {
       const operations =
         this.escrowOperationsService.createEscrowInitializationOps(
           escrowId,
-          depositor.user.walletAddress, // User's Stellar wallet address
-          recipient.user.walletAddress, // User's Stellar wallet address
-          'native', // Using XLM as the asset for this example
+          depositor.user.walletAddress,
+          recipient.user.walletAddress,
+          'native',
           milestones,
           escrow.expiresAt
             ? Math.floor(new Date(escrow.expiresAt).getTime() / 1000)
-            : Math.floor(Date.now() / 1000) + 86400, // Convert to Unix timestamp or default to 24 hours
+            : Math.floor(Date.now() / 1000) + 86400,
         );
 
       // Build the transaction
       const transaction = await this.stellarService.buildTransaction(
-        depositor.user.walletAddress, // Source account
+        depositor.user.walletAddress,
         operations,
       );
 
@@ -123,10 +131,7 @@ export class EscrowStellarIntegrationService {
       `Building funding transaction for escrow ${escrowId}, amount: ${amount} ${assetCode}`,
     );
 
-    const asset =
-      assetCode === 'XLM' || assetCode === 'native'
-        ? StellarSdk.Asset.native()
-        : new StellarSdk.Asset(assetCode, funderPublicKey);
+    const asset = this.getAssetFromCode(assetCode, funderPublicKey);
 
     const operations = this.escrowOperationsService.createFundingOps(
       escrowId,
@@ -212,11 +217,8 @@ export class EscrowStellarIntegrationService {
         `Releasing milestone ${milestoneId} for escrow ${escrowId}`,
       );
 
-      // Determine asset
-      const asset =
-        assetCode === 'XLM' || assetCode === 'native'
-          ? StellarSdk.Asset.native()
-          : new StellarSdk.Asset(assetCode, recipientPublicKey); // Simplified
+      // Get the asset
+      const asset = this.getAssetFromCode(assetCode, recipientPublicKey);
 
       // Create milestone release operations
       const operations = this.escrowOperationsService.createMilestoneReleaseOps(
@@ -230,7 +232,7 @@ export class EscrowStellarIntegrationService {
 
       // Build the transaction
       const transaction = await this.stellarService.buildTransaction(
-        releaserPublicKey, // Source account
+        releaserPublicKey,
         operations,
       );
 
@@ -276,7 +278,7 @@ export class EscrowStellarIntegrationService {
 
       // Build the transaction
       const transaction = await this.stellarService.buildTransaction(
-        confirmerPublicKey, // Source account
+        confirmerPublicKey,
         operations,
       );
 
@@ -306,7 +308,6 @@ export class EscrowStellarIntegrationService {
   async cancelOnChainEscrow(
     escrowId: string,
     cancellerPublicKey: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     refundDestination: string,
   ): Promise<string> {
     try {
@@ -320,7 +321,7 @@ export class EscrowStellarIntegrationService {
 
       // Build the transaction
       const transaction = await this.stellarService.buildTransaction(
-        cancellerPublicKey, // Source account
+        cancellerPublicKey,
         operations,
       );
 
@@ -361,7 +362,7 @@ export class EscrowStellarIntegrationService {
 
       // Build the transaction
       const transaction = await this.stellarService.buildTransaction(
-        completerPublicKey, // Source account
+        completerPublicKey,
         operations,
       );
 
@@ -386,12 +387,14 @@ export class EscrowStellarIntegrationService {
    * @param escrowId The ID of the escrow to monitor
    * @param accountPublicKey The public key of the account to monitor
    * @param callback Callback function to handle state changes
+   * @param onError Optional error callback
    * @returns EventSource object for stream control
    */
   monitorOnChainEscrow(
     escrowId: string,
     accountPublicKey: string,
     callback: (transaction: StellarTransactionResponse) => void,
+    onError?: (error: Error) => void,
   ): EventSource {
     this.logger.log(
       `Starting to monitor on-chain escrow ${escrowId} for account: ${accountPublicKey}`,
@@ -399,26 +402,58 @@ export class EscrowStellarIntegrationService {
 
     // Create a wrapper callback that filters for our escrow-related transactions
     const filteredCallback = (transaction: StellarTransactionResponse) => {
-      // Check if this transaction relates to our escrow
-      const isEscrowRelated =
-        transaction.memo &&
-        typeof transaction.memo === 'string' &&
-        transaction.memo.includes(escrowId);
+      try {
+        // Check if this transaction relates to our escrow
+        const isEscrowRelated =
+          transaction.memo &&
+          typeof transaction.memo === 'string' &&
+          transaction.memo.includes(escrowId);
 
-      if (isEscrowRelated) {
-        this.logger.log(
-          `Detected escrow ${escrowId} related transaction: ${transaction.hash}`,
+        if (isEscrowRelated) {
+          this.logger.log(
+            `Detected escrow ${escrowId} related transaction: ${transaction.hash}`,
+          );
+          callback(transaction);
+        }
+      } catch (error) {
+        this.logger.error(
+          `Error processing transaction for escrow ${escrowId}: ${this.getErrorMessage(error)}`,
         );
-        callback(transaction);
+        if (onError) {
+          onError(error instanceof Error ? error : new Error(String(error)));
+        }
       }
     };
 
     // Stream transactions for the account
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    return this.stellarService.streamTransactions(
-      accountPublicKey,
-      filteredCallback,
-    );
+    try {
+      return this.stellarService.streamTransactions(
+        accountPublicKey,
+        filteredCallback,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to start monitoring escrow ${escrowId}: ${this.getErrorMessage(error)}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Helper method to get Stellar asset from code and issuer
+   */
+  private getAssetFromCode(assetCode: string, issuerPublicKey?: string): StellarSdk.Asset {
+    // Handle native asset (XLM)
+    if (assetCode === 'XLM' || assetCode === 'native') {
+      return StellarSdk.Asset.native();
+    }
+
+    // For custom assets, issuer is required
+    if (!issuerPublicKey) {
+      throw new Error(`Issuer public key is required for asset ${assetCode}`);
+    }
+
+    return new StellarSdk.Asset(assetCode, issuerPublicKey);
   }
 
   /**
@@ -429,9 +464,19 @@ export class EscrowStellarIntegrationService {
       return error.message;
     }
     if (typeof error === 'object' && error !== null && 'message' in error) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      return String((error as any).message);
+      const err = error as { message: unknown };
+      if (typeof err.message === 'string') {
+        return err.message;
+      }
+      if (typeof err.message === 'object' && err.message !== null) {
+        try {
+          return JSON.stringify(err.message);
+        } catch {
+          return String(err.message);
+        }
+      }
+      return String(err.message);
     }
-    return 'Unknown error';
+    return String(error);
   }
 }
