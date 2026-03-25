@@ -1,10 +1,16 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument */
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import type { Server } from 'http';
 import { DataSource, Repository } from 'typeorm';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { AppModule } from '../src/app.module';
+import {
+  Escrow,
+  EscrowStatus,
+  EscrowType,
+} from '../src/modules/escrow/entities/escrow.entity';
+import { PartyRole } from '../src/modules/escrow/entities/party.entity';
 
 // Mock Stellar keypair for testing
 interface MockKeypair {
@@ -42,8 +48,6 @@ describe('Escrow (e2e)', () => {
   let arbitratorWalletAddress: string;
   let arbitratorAccessToken: string;
   let arbitratorUserId: string;
-
-  let escrowRepository: Repository<Escrow>;
 
   beforeAll(async () => {
     // Use an isolated in-memory SQLite database for every test run

@@ -18,14 +18,14 @@ export class Notification {
   @Column()
   userId: string;
 
-  @Column({ type: 'enum', enum: NotificationEventType })
+  @Column({ type: 'simple-enum', enum: NotificationEventType })
   eventType: NotificationEventType;
 
-  @Column({ type: 'jsonb' })
+  @Column({ type: 'simple-json' })
   payload: Record<string, unknown>;
 
   @Column({
-    type: 'enum',
+    type: 'simple-enum',
     enum: NotificationStatus,
     default: NotificationStatus.PENDING,
   })

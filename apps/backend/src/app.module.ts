@@ -21,6 +21,10 @@ import { ApiKeyModule } from './api-key/api-key.module';
 import { StellarEventModule } from './modules/stellar/stellar-event.module';
 import { Notification } from './notifications/entities/notification.entity';
 import { NotificationPreference } from './notifications/entities/notification-preference.entity';
+import { ApiKey } from './api-key/entities/api-key.entity';
+import { AdminAuditLog } from './modules/admin/entities/admin-audit-log.entity';
+import { Webhook } from './modules/webhook/webhook.entity';
+import { StellarEvent } from './modules/stellar/entities/stellar-event.entity';
 
 @Module({
   imports: [
@@ -45,8 +49,14 @@ import { NotificationPreference } from './notifications/entities/notification-pr
           Dispute,
           Notification,
           NotificationPreference,
+          ApiKey,
+          AdminAuditLog,
+          Webhook,
+          StellarEvent,
         ],
-        synchronize: configService.get<string>('NODE_ENV') !== 'production',
+        synchronize: false,
+        migrations: [__dirname + '/migrations/*.ts'],
+        migrationsRun: true,
       }),
       inject: [ConfigService],
     }),

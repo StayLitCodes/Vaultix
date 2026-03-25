@@ -2132,6 +2132,260 @@ fn test_zero_fee_valid() {
     assert_eq!(token_client.balance(&treasury), 0i128);
 }
 
+#
+#[test]
+fn test_configure_multisig_threshold() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    client.initialize(&treasury, &Some(50));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let escrow_id = 100u64;
+
+    let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &10000);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1706400000u64,
+    );
+
+    // Configure multisig: threshold of 3000 and require 2 signatures
+    client.configure_multisig(&escrow_id, &3000, &2);
+
+    let escrow = client.get_escrow(&escrow_id);
+    assert_eq!(escrow.threshold_amount, 3000);
+    assert_eq!(escrow.required_signatures, 2);
+}
+
+#[test]
+fn test_collect_signature() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    client.initialize(&treasury, &Some(50));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let third_party = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let escrow_id = 101u64;
+
+    let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &10000);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1706400000u64,
+    );
+
+    // Configure multisig: threshold of 3000 and require 2 signatures
+    client.configure_multisig(&escrow_id, &3000, &2);
+
+    // Collect first signature
+    client.collect_signature(&escrow_id, &depositor);
+
+    let escrow = client.get_escrow(&escrow_id);
+    assert_eq!(escrow.collected_signatures.len(), 1);
+    assert_eq!(escrow.collected_signatures.get(0).unwrap(), depositor);
+
+    // Collect second signature
+    client.collect_signature(&escrow_id, &third_party);
+
+    let escrow = client.get_escrow(&escrow_id);
+    assert_eq!(escrow.collected_signatures.len(), 2);
+    assert_eq!(escrow.collected_signatures.get(0).unwrap(), depositor);
+    assert_eq!(escrow.collected_signatures.get(1).unwrap(), third_party);
+}
+
+#[test]
+fn test_release_milestone_below_threshold_single_signature() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    client.initialize(&treasury, &Some(0));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let escrow_id = 102u64;
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &10000);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 2000, // Below threshold of 3000
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1706400000u64,
+    );
+    
+    // Configure multisig: threshold of 3000 and require 2 signatures
+    client.configure_multisig(&escrow_id, &3000, &2);
+    
+    token_client.approve(&depositor, &contract_id, &10000, &200);
+    client.deposit_funds(&escrow_id);
+
+    // Should be able to release since amount is below threshold
+    client.release_milestone(&escrow_id, &0);
+
+    let escrow = client.get_escrow(&escrow_id);
+    assert_eq!(escrow.milestones.get(0).unwrap().status, MilestoneStatus::Released);
+}
+
+#[test]
+fn test_release_milestone_above_threshold_insufficient_signatures() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    client.initialize(&treasury, &Some(0));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let escrow_id = 103u64;
+
+    let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &10000);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5000, // Above threshold of 3000
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1706400000u64,
+    );
+    
+    // Configure multisig: threshold of 3000 and require 2 signatures
+    client.configure_multisig(&escrow_id, &3000, &2);
+    
+    let result = client.try_release_milestone(&escrow_id, &0);
+    
+    // Should fail because there are insufficient signatures
+    assert_eq!(result, Err(Ok(Error::UnauthorizedAccess)));
+}
+
+#[test]
+fn test_release_milestone_above_threshold_sufficient_signatures() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    client.initialize(&treasury, &Some(0));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let third_party = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let escrow_id = 104u64;
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &10000);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5000, // Above threshold of 3000
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1706400000u64,
+    );
+    
+    // Configure multisig: threshold of 3000 and require 2 signatures
+    client.configure_multisig(&escrow_id, &3000, &2);
+    
+    token_client.approve(&depositor, &contract_id, &10000, &200);
+    client.deposit_funds(&escrow_id);
+
+    // Collect required signatures
+    client.collect_signature(&escrow_id, &depositor);
+    client.collect_signature(&escrow_id, &third_party);
+
+    // Now should be able to release since we have sufficient signatures
+    client.release_milestone(&escrow_id, &0);
+
+    let escrow = client.get_escrow(&escrow_id);
+    assert_eq!(escrow.milestones.get(0).unwrap().status, MilestoneStatus::Released);
+}
+
 #[test]
 fn test_max_fee_10000_bps_valid() {
     let env = Env::default();

@@ -22,9 +22,9 @@ export class AdminAuditLog {
   @Column({ type: 'varchar', length: 128, nullable: true })
   resourceId: string | null;
 
-  @Column({ type: 'jsonb', nullable: true })
+  @Column({ type: 'simple-json', nullable: true })
   metadata?: Record<string, unknown>;
 
-  @CreateDateColumn({ type: 'timestamptz' })
+  @CreateDateColumn()
   createdAt: Date;
 }

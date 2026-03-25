@@ -9,17 +9,18 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Horizon } from '@stellar/stellar-sdk';
+import { rpc, xdr, Address } from '@stellar/stellar-sdk';
 import {
   StellarEvent,
   StellarEventType,
 } from '../entities/stellar-event.entity';
 import { Escrow, EscrowStatus } from '../../escrow/entities/escrow.entity';
+import { SorobanClientService } from '../../../services/stellar/soroban-client.service';
 
 @Injectable()
 export class StellarEventListenerService implements OnModuleInit {
   private readonly logger = new Logger(StellarEventListenerService.name);
-  private server: any;
+  private server: rpc.Server;
   private contractId: string;
   private isRunning = false;
   private lastProcessedLedger = 0;
@@ -33,21 +34,18 @@ export class StellarEventListenerService implements OnModuleInit {
     private stellarEventRepository: Repository<StellarEvent>,
     @InjectRepository(Escrow)
     private escrowRepository: Repository<Escrow>,
+    private sorobanClient: SorobanClientService,
   ) {}
 
   async onModuleInit() {
-    const contractId = this.configService.get<string>('STELLAR_CONTRACT_ID');
-    const rpcUrl = this.configService.get<string>('STELLAR_RPC_URL');
+    this.contractId = this.sorobanClient.getContractId();
+    this.server = this.sorobanClient.getRpc();
 
-    if (!contractId || !rpcUrl) {
-      this.logger.error(
-        'Missing required configuration: STELLAR_CONTRACT_ID or STELLAR_RPC_URL',
-      );
+    if (!this.contractId) {
+      this.logger.error('Missing required configuration: STELLAR_CONTRACT_ID');
       return;
     }
 
-    this.contractId = contractId;
-    this.server = new (Horizon as any).Server(rpcUrl);
     await this.startEventListener();
   }
 
@@ -103,7 +101,7 @@ export class StellarEventListenerService implements OnModuleInit {
     while (this.isRunning) {
       try {
         await this.processNewEvents();
-        await this.sleep(5000); // Poll every 5 seconds
+        await this.sleep(10000); // Poll every 10 seconds for Soroban
       } catch (error) {
         this.logger.error('Error during event polling:', error);
         await this.handleReconnection();
@@ -112,31 +110,19 @@ export class StellarEventListenerService implements OnModuleInit {
   }
 
   private async processNewEvents() {
-    const latestLedger = await this.server.latestLedger();
+    const latestLedgerResponse = await this.server.getLatestLedger();
+    const latestLedger = latestLedgerResponse.sequence;
 
-    if (latestLedger.sequence <= this.lastProcessedLedger) {
+    if (latestLedger <= this.lastProcessedLedger) {
       return; // No new ledgers to process
     }
 
     this.logger.debug(
-      `Processing ledgers ${this.lastProcessedLedger + 1} to ${latestLedger.sequence}`,
+      `Processing ledgers ${this.lastProcessedLedger + 1} to ${latestLedger}`,
     );
 
-    // Process events in batches to avoid overwhelming the system
-    const batchSize = 100;
-    let currentLedger = this.lastProcessedLedger + 1;
-
-    while (currentLedger <= latestLedger.sequence && this.isRunning) {
-      const endLedger = Math.min(
-        currentLedger + batchSize - 1,
-        latestLedger.sequence,
-      );
-
-      await this.processLedgerRange(currentLedger, endLedger);
-      currentLedger = endLedger + 1;
-    }
-
-    this.lastProcessedLedger = latestLedger.sequence;
+    await this.processLedgerRange(this.lastProcessedLedger + 1, latestLedger);
+    this.lastProcessedLedger = latestLedger;
   }
 
   private async processLedgerRange(startLedger: number, endLedger: number) {
@@ -158,77 +144,56 @@ export class StellarEventListenerService implements OnModuleInit {
     startLedger: number,
     endLedger: number,
   ) {
-    // This would use the actual Stellar SDK to get events
-    // For now, we'll simulate the structure
-    const events: any[] = [];
+    const allEvents: any[] = [];
+    let currentStart = startLedger;
 
     try {
-      // Get events for the contract in the ledger range
-      const ledgerPage = await this.server
-        .ledgers()
-        .cursor(startLedger.toString())
-        .limit(endLedger - startLedger + 1)
-        .call();
+      while (currentStart <= endLedger) {
+        // Soroban getEvents might have a limit on range
+        const response = await this.server.getEvents({
+          startLedger: currentStart,
+          filters: [
+            {
+              type: 'contract',
+              contractIds: [this.contractId],
+            },
+          ],
+          limit: 100,
+        });
 
-      for (const ledger of ledgerPage.records) {
-        // Parse contract events from the ledger
-        const contractEvents = await this.extractContractEvents(ledger);
-        events.push(...contractEvents);
+        if (!response.events || response.events.length === 0) {
+          break;
+        }
+
+        for (const event of response.events) {
+          allEvents.push({
+            txHash: event.txHash,
+            eventIndex: 0, // Simplified as Soroban doesn't expose index easily in getEvents?
+            ledger: event.ledger,
+            timestamp: new Date(event.ledgerClosedAt),
+            rawEvent: event,
+          });
+        }
+
+        // Update currentStart based on last event ledger or just break if we reached endLedger
+        const lastLedger = response.events[response.events.length - 1].ledger;
+        if (lastLedger >= endLedger) break;
+        currentStart = lastLedger + 1;
+
+        if (response.events.length < 100) break;
       }
     } catch (error) {
       this.logger.error(
-        `Failed to get events for range ${startLedger}-${endLedger}:`,
+        `Failed to get Soroban events for range ${startLedger}-${endLedger}:`,
         error,
       );
     }
 
-    return events;
-  }
-
-  private async extractContractEvents(ledger: any): Promise<any[]> {
-    // This is a placeholder for actual Soroban event extraction
-    // In reality, this would parse the transaction results for contract events
-    const events: any[] = [];
-
-    try {
-      // Simulate finding contract events in the ledger
-      // This would need to be implemented with actual Stellar SDK calls
-      const transactions = ledger.transactions || [];
-
-      for (const tx of transactions) {
-        if (tx.resultMeta && tx.resultMeta.events) {
-          for (let i = 0; i < tx.resultMeta.events.length; i++) {
-            const event = tx.resultMeta.events[i];
-
-            // Check if this event is from our contract
-            if (this.isContractEvent(event)) {
-              events.push({
-                txHash: tx.hash,
-                eventIndex: i,
-                event,
-                ledger: ledger.sequence,
-                timestamp: new Date(ledger.closed_at),
-              });
-            }
-          }
-        }
-      }
-    } catch (error) {
-      this.logger.error('Error extracting contract events:', error);
-    }
-
-    return events;
+    return allEvents;
   }
 
   private isContractEvent(event: any): boolean {
-    // Check if the event is from our contract
-    // This would need to be implemented based on actual event structure
-    return (
-      event.contractId === this.contractId ||
-      (event.type &&
-        event.type.includes('contract') &&
-        event.contractId === this.contractId)
-    );
+    return event.contractId === this.contractId;
   }
 
   private async processEvent(eventData: any) {
@@ -279,7 +244,7 @@ export class StellarEventListenerService implements OnModuleInit {
     timestamp: Date,
   ): Promise<StellarEvent> {
     const eventType = this.mapEventType(event);
-    const extractedFields = this.extractEventFields(event, eventType);
+    const extractedFields = await this.extractEventFields(event, eventType);
 
     return this.stellarEventRepository.create({
       txHash,
@@ -299,88 +264,99 @@ export class StellarEventListenerService implements OnModuleInit {
     });
   }
 
-  private mapEventType(event: any): StellarEventType {
-    // Map Stellar contract events to our internal event types
-    const eventName = event.type || event.name || event.topic;
-
-    switch (eventName) {
-      case 'escrow_created':
-        return StellarEventType.ESCROW_CREATED;
-      case 'escrow_funded':
-        return StellarEventType.ESCROW_FUNDED;
-      case 'milestone_released':
-        return StellarEventType.MILESTONE_RELEASED;
-      case 'escrow_completed':
-        return StellarEventType.ESCROW_COMPLETED;
-      case 'escrow_cancelled':
-        return StellarEventType.ESCROW_CANCELLED;
-      case 'dispute_created':
-        return StellarEventType.DISPUTE_CREATED;
-      case 'dispute_resolved':
-        return StellarEventType.DISPUTE_RESOLVED;
-      default:
-        this.logger.warn(`Unknown event type: ${eventName}`);
-        return eventName as StellarEventType;
-    }
-  }
-
-  private extractEventFields(
-    event: Record<string, any>,
+  private async extractEventFields(
+    event: any,
     eventType: StellarEventType,
-  ): Record<string, any> {
+  ): Promise<Record<string, any>> {
     const fields: Record<string, any> = {};
 
     try {
-      // Extract common fields based on event type
+      // Soroban event structure in getEvents response:
+      // event.topic: Array of ScVal (XDR base64)
+      // event.value: ScVal (XDR base64)
+
+      const topics = event.topic.map((t: string) =>
+        xdr.ScVal.fromXDR(t, 'base64'),
+      );
+      const value = xdr.ScVal.fromXDR(event.value, 'base64');
+
+      // First topic is always the event name (Symbol)
+      // Second topic is usually the escrow ID (U64)
+      if (topics.length > 1) {
+        fields.escrowId = topics[1].u64().low.toString();
+      }
+
       switch (eventType) {
-        case StellarEventType.ESCROW_CREATED:
-          fields.escrowId = event.body?.escrow_id || event.value?.escrow_id;
-          fields.amount = event.body?.amount || event.value?.amount;
-          fields.asset = event.body?.asset || event.value?.asset;
-          fields.fromAddress = event.body?.creator || event.value?.creator;
+        case StellarEventType.ESCROW_CREATED: {
+          // Value: [depositor, recipient, token_address, milestones, deadline]
+          const createdVec = value.vec();
+          if (createdVec) {
+            fields.fromAddress = Address.fromScVal(createdVec[0]).toString();
+            fields.toAddress = Address.fromScVal(createdVec[1]).toString();
+            // ... (milestones and other fields can be extracted if needed)
+          }
           break;
+        }
 
         case StellarEventType.ESCROW_FUNDED:
-          fields.escrowId = event.body?.escrow_id || event.value?.escrow_id;
-          fields.amount = event.body?.amount || event.value?.amount;
-          fields.asset = event.body?.asset || event.value?.asset;
-          fields.fromAddress = event.body?.funder || event.value?.funder;
+          // Value: funder (Address)
+          fields.fromAddress = Address.fromScVal(value).toString();
           break;
 
-        case StellarEventType.MILESTONE_RELEASED:
-          fields.escrowId = event.body?.escrow_id || event.value?.escrow_id;
-          fields.milestoneIndex =
-            event.body?.milestone_index || event.value?.milestone_index;
-          fields.amount = event.body?.amount || event.value?.amount;
-          fields.toAddress = event.body?.recipient || event.value?.recipient;
+        case StellarEventType.MILESTONE_RELEASED: {
+          // Topics: [Symbol("milestone_released"), escrow_id, milestone_index]
+          // Value: amount (i128)
+          fields.milestoneIndex = topics[2].u32();
+          const amountParts = value.i128();
+          fields.amount = amountParts.lo().toString();
           break;
+        }
 
         case StellarEventType.ESCROW_COMPLETED:
-          fields.escrowId = event.body?.escrow_id || event.value?.escrow_id;
-          fields.toAddress = event.body?.recipient || event.value?.recipient;
-          break;
-
         case StellarEventType.ESCROW_CANCELLED:
-          fields.escrowId = event.body?.escrow_id || event.value?.escrow_id;
-          fields.reason = event.body?.reason || event.value?.reason;
+          // Value: ()
           break;
 
         case StellarEventType.DISPUTE_CREATED:
-          fields.escrowId = event.body?.escrow_id || event.value?.escrow_id;
-          fields.fromAddress = event.body?.disputant || event.value?.disputant;
-          fields.reason = event.body?.reason || event.value?.reason;
-          break;
-
-        case StellarEventType.DISPUTE_RESOLVED:
-          fields.escrowId = event.body?.escrow_id || event.value?.escrow_id;
-          fields.reason = event.body?.resolution || event.value?.resolution;
+          // Topics: [Symbol("dispute_raised"), escrow_id, caller]
+          fields.fromAddress = Address.fromScVal(topics[2]).toString();
           break;
       }
     } catch (error) {
-      this.logger.error(`Error extracting fields from event:`, error);
+      this.logger.error(`Error extracting fields from Soroban event:`, error);
     }
 
     return fields;
+  }
+
+  private mapEventType(event: any): StellarEventType {
+    try {
+      const topic0 = xdr.ScVal.fromXDR(event.topic[0], 'base64');
+      const eventName = topic0.sym().toString();
+
+      switch (eventName) {
+        case 'escrow_created':
+          return StellarEventType.ESCROW_CREATED;
+        case 'escrow_funded':
+          return StellarEventType.ESCROW_FUNDED;
+        case 'milestone_released':
+          return StellarEventType.MILESTONE_RELEASED;
+        case 'escrow_completed':
+          return StellarEventType.ESCROW_COMPLETED;
+        case 'escrow_cancelled':
+          return StellarEventType.ESCROW_CANCELLED;
+        case 'dispute_raised': // Note: contract uses "dispute_raised"
+          return StellarEventType.DISPUTE_CREATED;
+        case 'dispute_resolved':
+          return StellarEventType.DISPUTE_RESOLVED;
+        default:
+          this.logger.warn(`Unknown Soroban event topic: ${eventName}`);
+          return eventName as any;
+      }
+    } catch (error) {
+      this.logger.error('Error mapping event type:', error);
+      return 'unknown' as any;
+    }
   }
 
   private async updateEscrowFromEvent(event: StellarEvent) {

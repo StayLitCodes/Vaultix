@@ -86,6 +86,9 @@ pub struct Escrow {
     pub status: EscrowStatus,
     pub deadline: u64,
     pub resolution: Resolution,
+    pub threshold_amount: i128,  // Threshold amount for multi-sig requirement
+    pub required_signatures: u32, // Number of signatures required for release
+    pub collected_signatures: Vec<Address>, // Addresses that have signed for release
 }
 
 #[contracterror]
@@ -382,6 +385,48 @@ impl VaultixEscrow {
         Ok(())
     }
 
+    /// Configure the threshold amount and required signatures for an escrow
+    /// Only the depositor can call this function
+    pub fn configure_multisig(
+        env: Env,
+        escrow_id: u64,
+        threshold_amount: i128,
+        required_signatures: u32,
+    ) -> Result<(), Error> {
+        let storage_key = get_storage_key(escrow_id);
+        ensure_not_paused(&env)?;
+
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&storage_key)
+            .ok_or(Error::EscrowNotFound)?;
+        
+        escrow.depositor.require_auth();
+        
+        // Only allow configuration if the escrow hasn't been funded yet
+        if escrow.status != EscrowStatus::Created {
+            return Err(Error::InvalidEscrowStatus);
+        }
+        
+        escrow.threshold_amount = threshold_amount;
+        escrow.required_signatures = required_signatures;
+        
+        env.storage().persistent().set(&storage_key, &escrow);
+        
+        // Emit event
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "MultisigConfigured"),
+                escrow_id,
+            ),
+            (threshold_amount, required_signatures),
+        );
+        
+        Ok(())
+    }
+
     pub fn create_escrow(
         env: Env,
         escrow_id: u64,
@@ -422,6 +467,9 @@ impl VaultixEscrow {
             status: EscrowStatus::Created,
             deadline,
             resolution: Resolution::None,
+            threshold_amount: 10000, // Default threshold amount (configurable)
+            required_signatures: 1,   // Default to single signature
+            collected_signatures: Vec::new(&env),
         };
 
         env.storage().persistent().set(&storage_key, &escrow);
@@ -497,6 +545,50 @@ impl VaultixEscrow {
         Ok(())
     }
 
+    /// Collect a signature for releasing funds
+    /// The signature can come from either the depositor or a designated third party
+    pub fn collect_signature(
+        env: Env,
+        escrow_id: u64,
+        signer: Address,
+    ) -> Result<(), Error> {
+        let storage_key = get_storage_key(escrow_id);
+        ensure_not_paused(&env)?;
+
+        let mut escrow: Escrow = env
+            .storage()
+            .persistent()
+            .get(&storage_key)
+            .ok_or(Error::EscrowNotFound)?;
+        
+        // Require authentication from the signer
+        signer.require_auth();
+        
+        // Check if this signer has already signed
+        for existing_signer in escrow.collected_signatures.iter() {
+            if existing_signer == signer {
+                return Ok(()); // Idempotent - no error if already signed
+            }
+        }
+        
+        // Add the new signature
+        escrow.collected_signatures.push_back(signer);
+        
+        env.storage().persistent().set(&storage_key, &escrow);
+        
+        // Emit event
+        env.events().publish(
+            (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "SignatureCollected"),
+                escrow_id,
+            ),
+            signer,
+        );
+        
+        Ok(())
+    }
+
     pub fn get_escrow(env: Env, escrow_id: u64) -> Result<Escrow, Error> {
         let storage_key = get_storage_key(escrow_id);
         env.storage()
@@ -519,7 +611,22 @@ impl VaultixEscrow {
             .persistent()
             .get(&storage_key)
             .ok_or(Error::EscrowNotFound)?;
-        escrow.depositor.require_auth();
+        
+        // For amounts exceeding the threshold, check multi-signature requirements
+        let milestone = escrow
+            .milestones
+            .get(milestone_index)
+            .ok_or(Error::MilestoneNotFound)?;
+        
+        if milestone.amount >= escrow.threshold_amount {
+            // Check if we have enough signatures
+            if escrow.collected_signatures.len() < escrow.required_signatures {
+                return Err(Error::UnauthorizedAccess);
+            }
+        } else {
+            // For amounts below threshold, only depositor can release
+            escrow.depositor.require_auth();
+        }
 
         if escrow.status != EscrowStatus::Active {
             return Err(Error::EscrowNotActive);
@@ -620,6 +727,14 @@ impl VaultixEscrow {
             .ok_or(Error::MilestoneNotFound)?;
         if milestone.status == MilestoneStatus::Released {
             return Err(Error::MilestoneAlreadyReleased);
+        }
+        
+        // For amounts exceeding the threshold, check multi-signature requirements
+        if milestone.amount >= escrow.threshold_amount {
+            // Check if we have enough signatures
+            if escrow.collected_signatures.len() < escrow.required_signatures {
+                return Err(Error::UnauthorizedAccess);
+            }
         }
 
         milestone.status = MilestoneStatus::Released;

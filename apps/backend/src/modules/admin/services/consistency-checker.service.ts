@@ -6,18 +6,26 @@ import {
   FieldMismatch,
 } from '../dto/consistency-check.dto';
 import { EscrowService } from '../../escrow/services/escrow.service';
-// Placeholder for Soroban client abstraction
-// import { SorobanClientService } from '../../stellar/services/soroban-client.service';
+import {
+  SorobanClientService,
+  OnchainEscrow,
+} from '../../../services/stellar/soroban-client.service';
+import { Escrow } from '../../escrow/entities/escrow.entity';
 
 @Injectable()
 export class ConsistencyCheckerService {
   private readonly logger = new Logger(ConsistencyCheckerService.name);
-  // Add SorobanClientService when available
-  constructor(private readonly escrowService: EscrowService) {}
+
+  constructor(
+    private readonly escrowService: EscrowService,
+    private readonly sorobanClient: SorobanClientService,
+  ) {}
 
   async checkConsistency(
     request: ConsistencyCheckRequest,
   ): Promise<ConsistencyCheckResponse> {
+    // ... (rest of the method logic remains similar, but using this.sorobanClient.getEscrow)
+    // I'll replace the loop part below
     // 1. Resolve escrow IDs
     let escrowIds: string[] = [];
     if ('escrowIds' in request) {
@@ -50,16 +58,20 @@ export class ConsistencyCheckerService {
         let dbEscrow: unknown = null;
         try {
           dbEscrow = await this.escrowService.findOne(escrowId);
-        } catch {
+        } catch (error) {
+          this.logger.warn(
+            `Escrow ${escrowId} not found in DB: ${(error as Error).message}`,
+          );
           dbEscrow = null;
         }
         // Fetch from on-chain (Soroban)
         let onchainEscrow: unknown = null;
         try {
-          // TODO: Replace with actual Soroban fetch
-          // onchainEscrow = await this.sorobanClient.getEscrow(escrowId);
-          onchainEscrow = null; // Placeholder
-        } catch {
+          onchainEscrow = await this.sorobanClient.getEscrow(Number(escrowId));
+        } catch (error) {
+          this.logger.warn(
+            `Escrow ${escrowId} not found on-chain: ${(error as Error).message}`,
+          );
           onchainEscrow = null;
         }
 
@@ -97,7 +109,10 @@ export class ConsistencyCheckerService {
         }
 
         // Compare fields
-        const mismatches = this.compareEscrow(dbEscrow, onchainEscrow);
+        const mismatches = this.compareEscrow(
+          dbEscrow as Escrow,
+          onchainEscrow as OnchainEscrow,
+        );
         const isConsistent = mismatches.length === 0;
         if (!isConsistent) totalInconsistent++;
         reports.push({
@@ -130,30 +145,43 @@ export class ConsistencyCheckerService {
   }
 
   // Helper: compare two escrow objects and return diff
-  compareEscrow(dbEscrow: unknown, onchainEscrow: unknown): FieldMismatch[] {
-    // Only compare fields that exist on Escrow
-    const fields = ['status', 'amount'];
+  compareEscrow(
+    dbEscrow: Escrow,
+    onchainEscrow: OnchainEscrow,
+  ): FieldMismatch[] {
     const mismatches: FieldMismatch[] = [];
-    if (
-      typeof dbEscrow === 'object' &&
-      dbEscrow &&
-      typeof onchainEscrow === 'object' &&
-      onchainEscrow
-    ) {
-      for (const field of fields) {
-        if (
-          (dbEscrow as Record<string, unknown>)[field] !==
-          (onchainEscrow as Record<string, unknown>)[field]
-        ) {
-          mismatches.push({
-            fieldName: field,
-            dbValue: (dbEscrow as Record<string, unknown>)[field],
-            onchainValue: (onchainEscrow as Record<string, unknown>)[field],
-          });
-        }
-      }
+
+    // Compare Status (with mapping)
+    const mappedOnchainStatus = this.mapContractStatus(onchainEscrow.status);
+    if (mappedOnchainStatus !== (dbEscrow.status as string)) {
+      mismatches.push({
+        fieldName: 'status',
+        dbValue: dbEscrow.status,
+        onchainValue: onchainEscrow.status,
+      });
     }
-    // Optionally compare milestones here
+
+    // Compare Amount
+    if (Number(onchainEscrow.amount) !== Number(dbEscrow.amount)) {
+      mismatches.push({
+        fieldName: 'amount',
+        dbValue: dbEscrow.amount,
+        onchainValue: onchainEscrow.amount,
+      });
+    }
+
     return mismatches;
+  }
+
+  private mapContractStatus(contractStatus: string): string {
+    const statusMap: Record<string, string> = {
+      Created: 'pending',
+      Active: 'funded',
+      Completed: 'completed',
+      Cancelled: 'cancelled',
+      Disputed: 'disputed',
+      ArbiterResolved: 'completed',
+    };
+    return statusMap[contractStatus] || contractStatus.toLowerCase();
   }
 }

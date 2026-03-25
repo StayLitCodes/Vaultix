@@ -57,6 +57,26 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## Database Migrations
+
+This project uses TypeORM migrations for database schema management.
+
+```bash
+# Generate a new migration based on entity changes
+$ npm run migration:generate -- src/migrations/MigrationName
+
+# Execute pending migrations
+$ npm run migration:run
+
+# Rollback the last executed migration
+$ npm run migration:revert
+
+# List all migrations and their status
+$ npm run migration:show
+```
+
+Note: In development, `synchronize: false` is set to ensure schema changes are always handled via migrations. Migrations run automatically on application startup (`migrationsRun: true`).
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.

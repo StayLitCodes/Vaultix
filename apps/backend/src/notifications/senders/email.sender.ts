@@ -26,12 +26,14 @@ export class EmailSender implements NotificationSender {
       'no-reply@vaultix.local',
     );
 
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     this.transporter = createTransport({
       host,
       port,
       secure: port === 465,
       auth: user && pass ? { user, pass } : undefined,
-    });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
   }
 
   async send(notification: Notification): Promise<void> {
@@ -45,7 +47,8 @@ export class EmailSender implements NotificationSender {
     const template = this.buildEmailTemplate(notification);
 
     try {
-      await this.transporter.sendMail({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+      await (this.transporter as any).sendMail({
         from: this.fromAddress,
         to,
         subject: template.subject,

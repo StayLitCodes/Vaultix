@@ -18,7 +18,7 @@ export class NotificationPreference {
   @Column()
   userId: string;
 
-  @Column({ type: 'enum', enum: NotificationChannel })
+  @Column({ type: 'simple-enum', enum: NotificationChannel })
   channel: NotificationChannel;
 
   @Column({ default: true })

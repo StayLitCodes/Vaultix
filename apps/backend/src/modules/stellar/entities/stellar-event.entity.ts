@@ -31,7 +31,7 @@ export class StellarEvent {
   eventIndex: number;
 
   @Column({
-    type: 'enum',
+    type: 'simple-enum',
     enum: StellarEventType,
   })
   @Index()
@@ -48,10 +48,10 @@ export class StellarEvent {
   @Index()
   timestamp: Date;
 
-  @Column({ type: 'json' })
+  @Column({ type: 'simple-json' })
   rawPayload: Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-  @Column({ type: 'json', nullable: true })
+  @Column({ type: 'simple-json', nullable: true })
   extractedFields?: Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
   @CreateDateColumn()
