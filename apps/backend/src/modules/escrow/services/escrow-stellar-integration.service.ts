@@ -302,13 +302,11 @@ export class EscrowStellarIntegrationService {
    * Cancels an escrow on the Stellar blockchain
    * @param escrowId The ID of the escrow to cancel
    * @param cancellerPublicKey The public key of the account canceling
-   * @param _refundDestination The destination for refunded funds (unused)
    * @returns Transaction hash of the cancellation transaction
    */
   async cancelOnChainEscrow(
     escrowId: string,
     cancellerPublicKey: string,
-    _refundDestination: string,
   ): Promise<string> {
     try {
       this.logger.log(`Canceling on-chain escrow ${escrowId}`);
