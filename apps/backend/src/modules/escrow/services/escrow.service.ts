@@ -39,6 +39,7 @@ import { validateTransition, isTerminalStatus } from '../escrow-state-machine';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
 import { WebhookService } from '../../../services/webhook/webhook.service';
 import { StellarService } from '../../../services/stellar.service';
+import { User, UserRole } from '../../user/entities/user.entity';
 
 @Injectable()
 export class EscrowService {
@@ -53,6 +54,8 @@ export class EscrowService {
     private eventRepository: Repository<EscrowEvent>,
     @InjectRepository(Dispute)
     private disputeRepository: Repository<Dispute>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
 
     private readonly stellarIntegrationService: EscrowStellarIntegrationService,
     private readonly stellarService: StellarService,
@@ -408,44 +411,27 @@ export class EscrowService {
   ): Promise<Escrow> {
     const escrow = await this.findOne(id);
 
-    if (isTerminalStatus(escrow.status)) {
-      throw new BadRequestException(
-        `Cannot expire an escrow that is already ${escrow.status}`,
-      );
-    }
-
-    const isArbitrator = escrow.parties?.some(
-      (party) => party.role === PartyRole.ARBITRATOR && party.userId === userId,
-    );
-    if (escrow.creatorId !== userId && !isArbitrator) {
+    const isAdmin = await this.isUserAdmin(userId);
+    if (escrow.creatorId !== userId && !isAdmin) {
       throw new ForbiddenException(
-        'Only the creator or arbitrator can expire this escrow',
+        'Only the creator or an admin can expire this escrow',
       );
     }
 
-    validateTransition(escrow.status, EscrowStatus.EXPIRED);
-
-    await this.escrowRepository.update(id, {
-      status: EscrowStatus.EXPIRED,
-      isActive: false,
-    });
-
-    await this.logEvent(
-      id,
-      EscrowEventType.EXPIRED,
-      userId,
-      {
-        reason: dto.reason ?? 'Manually expired',
-        previousStatus: escrow.status,
-      },
+    return this.expireEscrow(escrow, {
+      actorId: userId,
       ipAddress,
-    );
-    await this.webhookService.dispatchEvent('escrow.expired', {
-      escrowId: id,
-      reason: dto.reason ?? null,
+      reason: dto.reason ?? 'Manually expired',
+      webhookReason: dto.reason ?? null,
     });
+  }
 
-    return this.findOne(id);
+  async expireBySystem(id: string, reason: string): Promise<Escrow> {
+    const escrow = await this.findOne(id);
+    return this.expireEscrow(escrow, {
+      reason,
+      webhookReason: reason,
+    });
   }
 
   /**
@@ -1077,7 +1063,7 @@ export class EscrowService {
   private async logEvent(
     escrowId: string,
     eventType: EscrowEventType,
-    actorId: string,
+    actorId?: string,
     data?: Record<string, any>,
     ipAddress?: string,
   ): Promise<EscrowEvent> {
@@ -1090,5 +1076,65 @@ export class EscrowService {
     });
 
     return this.eventRepository.save(event);
+  }
+
+  async isUserAdmin(userId: string): Promise<boolean> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+
+    return (
+      user?.role === UserRole.ADMIN || user?.role === UserRole.SUPER_ADMIN
+    );
+  }
+
+  private async expireEscrow(
+    escrow: Escrow,
+    options: {
+      actorId?: string;
+      ipAddress?: string;
+      reason: string;
+      webhookReason: string | null;
+    },
+  ): Promise<Escrow> {
+    if (isTerminalStatus(escrow.status)) {
+      throw new BadRequestException(
+        `Cannot expire an escrow that is already ${escrow.status}`,
+      );
+    }
+
+    if (
+      escrow.status !== EscrowStatus.PENDING &&
+      escrow.status !== EscrowStatus.ACTIVE
+    ) {
+      throw new BadRequestException(
+        'Escrow can only be expired while in pending or active status',
+      );
+    }
+
+    validateTransition(escrow.status, EscrowStatus.EXPIRED);
+
+    await this.escrowRepository.update(escrow.id, {
+      status: EscrowStatus.EXPIRED,
+      isActive: false,
+    });
+
+    await this.logEvent(
+      escrow.id,
+      EscrowEventType.EXPIRED,
+      options.actorId,
+      {
+        reason: options.reason,
+        previousStatus: escrow.status,
+      },
+      options.ipAddress,
+    );
+
+    await this.webhookService.dispatchEvent('escrow.expired', {
+      escrowId: escrow.id,
+      reason: options.webhookReason,
+    });
+
+    return this.findOne(escrow.id);
   }
 }

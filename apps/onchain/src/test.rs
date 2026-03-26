@@ -2132,7 +2132,6 @@ fn test_zero_fee_valid() {
     assert_eq!(token_client.balance(&treasury), 0i128);
 }
 
-#
 #[test]
 fn test_configure_multisig_threshold() {
     let env = Env::default();
@@ -2271,10 +2270,10 @@ fn test_release_milestone_below_threshold_single_signature() {
         &milestones,
         &1706400000u64,
     );
-    
+
     // Configure multisig: threshold of 3000 and require 2 signatures
     client.configure_multisig(&escrow_id, &3000, &2);
-    
+
     token_client.approve(&depositor, &contract_id, &10000, &200);
     client.deposit_funds(&escrow_id);
 
@@ -2282,7 +2281,10 @@ fn test_release_milestone_below_threshold_single_signature() {
     client.release_milestone(&escrow_id, &0);
 
     let escrow = client.get_escrow(&escrow_id);
-    assert_eq!(escrow.milestones.get(0).unwrap().status, MilestoneStatus::Released);
+    assert_eq!(
+        escrow.milestones.get(0).unwrap().status,
+        MilestoneStatus::Released
+    );
 }
 
 #[test]
@@ -2321,12 +2323,12 @@ fn test_release_milestone_above_threshold_insufficient_signatures() {
         &milestones,
         &1706400000u64,
     );
-    
+
     // Configure multisig: threshold of 3000 and require 2 signatures
     client.configure_multisig(&escrow_id, &3000, &2);
-    
+
     let result = client.try_release_milestone(&escrow_id, &0);
-    
+
     // Should fail because there are insufficient signatures
     assert_eq!(result, Err(Ok(Error::UnauthorizedAccess)));
 }
@@ -2368,10 +2370,10 @@ fn test_release_milestone_above_threshold_sufficient_signatures() {
         &milestones,
         &1706400000u64,
     );
-    
+
     // Configure multisig: threshold of 3000 and require 2 signatures
     client.configure_multisig(&escrow_id, &3000, &2);
-    
+
     token_client.approve(&depositor, &contract_id, &10000, &200);
     client.deposit_funds(&escrow_id);
 
@@ -2383,7 +2385,10 @@ fn test_release_milestone_above_threshold_sufficient_signatures() {
     client.release_milestone(&escrow_id, &0);
 
     let escrow = client.get_escrow(&escrow_id);
-    assert_eq!(escrow.milestones.get(0).unwrap().status, MilestoneStatus::Released);
+    assert_eq!(
+        escrow.milestones.get(0).unwrap().status,
+        MilestoneStatus::Released
+    );
 }
 
 #[test]

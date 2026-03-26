@@ -30,6 +30,7 @@ import {
   EscrowOverviewStatus,
 } from '../dto/escrow-overview.dto';
 import { CreateEscrowDto } from '../dto/create-escrow.dto';
+import { User, UserRole } from '../../user/entities/user.entity';
 
 describe('EscrowService', () => {
   let service: EscrowService;
@@ -38,6 +39,8 @@ describe('EscrowService', () => {
   let conditionRepository: jest.Mocked<Repository<Condition>>;
   let eventRepository: jest.Mocked<Repository<EscrowEvent>>;
   let disputeRepository: jest.Mocked<Repository<Dispute>>;
+  let userRepository: jest.Mocked<Repository<User>>;
+  let webhookService: { dispatchEvent: jest.Mock };
 
   const mockEscrow: Partial<Escrow> = {
     id: 'escrow-123',
@@ -107,6 +110,10 @@ describe('EscrowService', () => {
       findOne: jest.fn(),
     };
 
+    const mockUserRepo = {
+      findOne: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EscrowService,
@@ -115,6 +122,7 @@ describe('EscrowService', () => {
         { provide: getRepositoryToken(Condition), useValue: mockConditionRepo },
         { provide: getRepositoryToken(EscrowEvent), useValue: mockEventRepo },
         { provide: getRepositoryToken(Dispute), useValue: mockDisputeRepo },
+        { provide: getRepositoryToken(User), useValue: mockUserRepo },
         {
           provide: EscrowStellarIntegrationService,
           useValue: {
@@ -148,6 +156,8 @@ describe('EscrowService', () => {
     conditionRepository = module.get(getRepositoryToken(Condition));
     eventRepository = module.get(getRepositoryToken(EscrowEvent));
     disputeRepository = module.get(getRepositoryToken(Dispute));
+    userRepository = module.get(getRepositoryToken(User));
+    webhookService = module.get(WebhookService);
   });
 
   it('should be defined', () => {
@@ -312,6 +322,149 @@ describe('EscrowService', () => {
       await expect(
         service.cancel('escrow-123', {}, 'other-user'),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('expire', () => {
+    beforeEach(() => {
+      eventRepository.create.mockReturnValue({} as EscrowEvent);
+      eventRepository.save.mockResolvedValue({} as EscrowEvent);
+      userRepository.findOne.mockResolvedValue({
+        id: 'user-123',
+        role: UserRole.USER,
+      } as User);
+    });
+
+    it('should expire a pending escrow for the creator', async () => {
+      escrowRepository.findOne
+        .mockResolvedValueOnce(mockEscrow as Escrow)
+        .mockResolvedValueOnce({
+          ...mockEscrow,
+          status: EscrowStatus.EXPIRED,
+          isActive: false,
+        } as Escrow);
+      escrowRepository.update.mockResolvedValue({
+        affected: 1,
+      } as UpdateResult);
+
+      const result = await service.expire(
+        'escrow-123',
+        { reason: 'Manual cleanup' },
+        'user-123',
+        '127.0.0.1',
+      );
+
+      expect(escrowRepository.update).toHaveBeenCalledWith('escrow-123', {
+        status: EscrowStatus.EXPIRED,
+        isActive: false,
+      });
+      expect(eventRepository.save).toHaveBeenCalled();
+      expect(result.status).toBe(EscrowStatus.EXPIRED);
+    });
+
+    it('should allow an admin to expire an active escrow', async () => {
+      escrowRepository.findOne
+        .mockResolvedValueOnce({
+          ...mockEscrow,
+          status: EscrowStatus.ACTIVE,
+        } as Escrow)
+        .mockResolvedValueOnce({
+          ...mockEscrow,
+          status: EscrowStatus.EXPIRED,
+          isActive: false,
+        } as Escrow);
+      escrowRepository.update.mockResolvedValue({
+        affected: 1,
+      } as UpdateResult);
+      userRepository.findOne.mockResolvedValue({
+        id: 'admin-1',
+        role: UserRole.ADMIN,
+      } as User);
+
+      await service.expire(
+        'escrow-123',
+        { reason: 'Admin expired' },
+        'admin-1',
+      );
+
+      expect(escrowRepository.update).toHaveBeenCalledWith('escrow-123', {
+        status: EscrowStatus.EXPIRED,
+        isActive: false,
+      });
+    });
+
+    it('should throw ForbiddenException for non-creator non-admin users', async () => {
+      escrowRepository.findOne.mockResolvedValue(mockEscrow as Escrow);
+      userRepository.findOne.mockResolvedValue({
+        id: 'user-999',
+        role: UserRole.USER,
+      } as User);
+
+      await expect(
+        service.expire('escrow-123', {}, 'user-999'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should throw BadRequestException when escrow is already terminal', async () => {
+      escrowRepository.findOne.mockResolvedValue({
+        ...mockEscrow,
+        status: EscrowStatus.COMPLETED,
+      } as Escrow);
+
+      await expect(
+        service.expire('escrow-123', {}, 'user-123'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should throw BadRequestException for non-expirable non-terminal states', async () => {
+      escrowRepository.findOne.mockResolvedValue({
+        ...mockEscrow,
+        status: EscrowStatus.DISPUTED,
+      } as Escrow);
+
+      await expect(
+        service.expire('escrow-123', {}, 'user-123'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should dispatch the expired webhook with the provided reason', async () => {
+      escrowRepository.findOne
+        .mockResolvedValueOnce(mockEscrow as Escrow)
+        .mockResolvedValueOnce({
+          ...mockEscrow,
+          status: EscrowStatus.EXPIRED,
+          isActive: false,
+        } as Escrow);
+      escrowRepository.update.mockResolvedValue({
+        affected: 1,
+      } as UpdateResult);
+
+      await service.expire(
+        'escrow-123',
+        { reason: 'User requested expiry' },
+        'user-123',
+        '10.0.0.8',
+      );
+
+      expect(webhookService.dispatchEvent).toHaveBeenCalledWith(
+        'escrow.expired',
+        {
+          escrowId: 'escrow-123',
+          reason: 'User requested expiry',
+        },
+      );
+      expect(eventRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          escrowId: 'escrow-123',
+          eventType: 'expired',
+          actorId: 'user-123',
+          ipAddress: '10.0.0.8',
+          data: expect.objectContaining({
+            reason: 'User requested expiry',
+            previousStatus: EscrowStatus.PENDING,
+          }),
+        }),
+      );
     });
   });
 

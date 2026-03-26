@@ -134,24 +134,14 @@ export class EscrowSchedulerService {
   private async autoCancelEscrow(escrow: Escrow) {
     this.logger.log(`Auto-expiring pending escrow: ${escrow.id}`);
 
-    escrow.status = EscrowStatus.EXPIRED;
-    escrow.isActive = false;
+    const expiredEscrow = await this.escrowService.expireBySystem(
+      escrow.id,
+      'EXPIRED_PENDING',
+    );
 
-    await this.escrowRepository.save(escrow);
-
-    await this.escrowEventRepository.save({
-      escrowId: escrow.id,
-      eventType: EscrowEventType.EXPIRED,
-      data: {
-        reason: 'EXPIRED_PENDING',
-        expiredAt: escrow.expiresAt,
-        processedAt: new Date(),
-      },
-    });
-
-    void this.notifyParties(escrow, 'ESCROW_EXPIRED', {
+    void this.notifyParties(expiredEscrow, 'ESCROW_EXPIRED', {
       reason: 'Escrow expired while pending',
-      expiredAt: escrow.expiresAt,
+      expiredAt: expiredEscrow.expiresAt,
     });
 
     this.logger.log(`Successfully expired pending escrow: ${escrow.id}`);
@@ -162,23 +152,14 @@ export class EscrowSchedulerService {
       `Escalating expired active escrow to expired status: ${escrow.id}`,
     );
 
-    escrow.status = EscrowStatus.EXPIRED;
+    const expiredEscrow = await this.escrowService.expireBySystem(
+      escrow.id,
+      'EXPIRED_ACTIVE',
+    );
 
-    await this.escrowRepository.save(escrow);
-
-    await this.escrowEventRepository.save({
-      escrowId: escrow.id,
-      eventType: EscrowEventType.EXPIRED,
-      data: {
-        reason: 'EXPIRED_ACTIVE',
-        expiredAt: escrow.expiresAt,
-        processedAt: new Date(),
-      },
-    });
-
-    void this.notifyParties(escrow, 'ESCROW_EXPIRED', {
+    void this.notifyParties(expiredEscrow, 'ESCROW_EXPIRED', {
       reason: 'Escrow expired while active',
-      expiredAt: escrow.expiresAt,
+      expiredAt: expiredEscrow.expiresAt,
       requiresArbitration: true,
     });
 

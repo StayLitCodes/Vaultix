@@ -368,6 +368,14 @@
                   "map": [
                     {
                       "key": {
+                        "symbol": "collected_signatures"
+                      },
+                      "val": {
+                        "vec": []
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "deadline"
                       },
                       "val": {
@@ -471,6 +479,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "required_signatures"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "resolution"
                       },
                       "val": {
@@ -491,6 +507,17 @@
                             "symbol": "Active"
                           }
                         ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "threshold_amount"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 10000
+                        }
                       }
                     },
                     {
@@ -2634,6 +2661,14 @@
               "map": [
                 {
                   "key": {
+                    "symbol": "collected_signatures"
+                  },
+                  "val": {
+                    "vec": []
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "deadline"
                   },
                   "val": {
@@ -2737,6 +2772,14 @@
                 },
                 {
                   "key": {
+                    "symbol": "required_signatures"
+                  },
+                  "val": {
+                    "u32": 1
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "resolution"
                   },
                   "val": {
@@ -2757,6 +2800,17 @@
                         "symbol": "Active"
                       }
                     ]
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "threshold_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 10000
+                    }
                   }
                 },
                 {
