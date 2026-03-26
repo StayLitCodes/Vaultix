@@ -52,7 +52,7 @@ export class EscrowStellarIntegrationService {
 
       // Get the depositor (usually the buyer)
       const depositor = escrow.parties.find(
-        (party) => party.role === 'buyer'
+        (party) => party.role === ('buyer' as any)
       );
       if (!depositor) {
         throw new Error(`Depositor not found for escrow ${escrowId}`);
@@ -64,7 +64,7 @@ export class EscrowStellarIntegrationService {
 
       // Get the recipient (usually the seller)
       const recipient = escrow.parties.find(
-        (party) => party.role === 'seller'
+        (party) => party.role === ('seller' as any)
       );
       if (!recipient) {
         throw new Error(`Recipient not found for escrow ${escrowId}`);
@@ -302,13 +302,13 @@ export class EscrowStellarIntegrationService {
    * Cancels an escrow on the Stellar blockchain
    * @param escrowId The ID of the escrow to cancel
    * @param cancellerPublicKey The public key of the account canceling
-   * @param refundDestination The destination for refunded funds
+   * @param _refundDestination The destination for refunded funds (unused)
    * @returns Transaction hash of the cancellation transaction
    */
   async cancelOnChainEscrow(
     escrowId: string,
     cancellerPublicKey: string,
-    refundDestination: string,
+    _refundDestination: string,
   ): Promise<string> {
     try {
       this.logger.log(`Canceling on-chain escrow ${escrowId}`);
@@ -430,7 +430,7 @@ export class EscrowStellarIntegrationService {
       return this.stellarService.streamTransactions(
         accountPublicKey,
         filteredCallback,
-      );
+      ) as unknown as EventSource;
     } catch (error) {
       this.logger.error(
         `Failed to start monitoring escrow ${escrowId}: ${this.getErrorMessage(error)}`,
@@ -472,7 +472,7 @@ export class EscrowStellarIntegrationService {
         try {
           return JSON.stringify(err.message);
         } catch {
-          return String(err.message);
+          return '[Object]';
         }
       }
       return String(err.message);

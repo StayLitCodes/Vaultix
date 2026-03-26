@@ -122,7 +122,7 @@ export default function CreateEscrowWizard() {
       setIsWalletSigning(true);
       const freighterNetwork = connectedNetwork === 'public' ? 'PUBLIC' : 'TESTNET';
       const signedXdrResult = await signTransaction(prepared.transactionXdr, {
-        network: freighterNetwork,
+        networkPassphrase: freighterNetwork,
       });
       setIsWalletSigning(false);
 
