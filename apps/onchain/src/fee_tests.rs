@@ -512,3 +512,285 @@ fn test_max_fee_10000_bps_valid() {
     let result = client.try_set_token_fee(&token_address, &10000);
     assert!(result.is_ok());
 }
+
+// ---------------------------------------------------------------------------
+// Tiered fee tests (issue #132)
+// ---------------------------------------------------------------------------
+
+/// Tier 1: amount < 10_000_000_000 (< 1,000 XLM) → 50 bps
+/// When initialized without an explicit fee (None), tiers apply.
+#[test]
+fn test_tiered_fee_tier1_low_volume() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    // No explicit fee → tiered defaults apply
+    client.initialize(&treasury, &None);
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let admin = Address::generate(&env);
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    // 5_000 tokens — well below Tier 1 threshold (10_000_000_000)
+    let amount = 5_000i128;
+    token_admin.mint(&depositor, &amount);
+
+    let escrow_id = 200u64;
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    token_client.approve(&depositor, &contract_id, &amount, &200);
+    client.deposit_funds(&escrow_id);
+    client.release_milestone(&escrow_id, &0);
+
+    // Tier 1 → 50 bps: fee = 5_000 * 50 / 10_000 = 25
+    let expected_fee = 25i128;
+    let expected_payout = amount - expected_fee;
+
+    assert_eq!(token_client.balance(&recipient), expected_payout);
+    assert_eq!(token_client.balance(&treasury), expected_fee);
+}
+
+/// Tier 2: 10_000_000_000 ≤ amount < 50_000_000_000 → 30 bps
+#[test]
+fn test_tiered_fee_tier2_medium_volume() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    client.initialize(&treasury, &None);
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let admin = Address::generate(&env);
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    // 20_000_000_000 tokens — in the Tier 2 range (1,000–5,000 XLM)
+    let amount = 20_000_000_000i128;
+    token_admin.mint(&depositor, &amount);
+
+    let escrow_id = 201u64;
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    // Raise threshold so depositor-only auth path is used (avoid multi-sig requirement)
+    client.configure_multisig(&escrow_id, &i128::MAX, &1);
+
+    token_client.approve(&depositor, &contract_id, &amount, &200);
+    client.deposit_funds(&escrow_id);
+    client.release_milestone(&escrow_id, &0);
+
+    // Tier 2 → 30 bps: fee = 20_000_000_000 * 30 / 10_000 = 60_000_000
+    let expected_fee = 60_000_000i128;
+    let expected_payout = amount - expected_fee;
+
+    assert_eq!(token_client.balance(&recipient), expected_payout);
+    assert_eq!(token_client.balance(&treasury), expected_fee);
+}
+
+/// Tier 3: amount ≥ 50_000_000_000 → 10 bps
+#[test]
+fn test_tiered_fee_tier3_high_volume() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    client.initialize(&treasury, &None);
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let admin = Address::generate(&env);
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    // 100_000_000_000 tokens — above Tier 3 threshold (> 5,000 XLM)
+    let amount = 100_000_000_000i128;
+    token_admin.mint(&depositor, &amount);
+
+    let escrow_id = 202u64;
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    // Raise threshold so depositor-only auth path is used
+    client.configure_multisig(&escrow_id, &i128::MAX, &1);
+
+    token_client.approve(&depositor, &contract_id, &amount, &200);
+    client.deposit_funds(&escrow_id);
+    client.release_milestone(&escrow_id, &0);
+
+    // Tier 3 → 10 bps: fee = 100_000_000_000 * 10 / 10_000 = 100_000_000
+    let expected_fee = 100_000_000i128;
+    let expected_payout = amount - expected_fee;
+
+    assert_eq!(token_client.balance(&recipient), expected_payout);
+    assert_eq!(token_client.balance(&treasury), expected_fee);
+}
+
+/// Explicit global fee override takes priority over tiers.
+#[test]
+fn test_explicit_global_fee_overrides_tiers() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    // Explicit 100 bps override — even for a Tier 3 amount this should apply
+    client.initialize(&treasury, &Some(100));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let admin = Address::generate(&env);
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    // High-volume amount that would normally land in Tier 3 (10 bps)
+    let amount = 100_000_000_000i128;
+    token_admin.mint(&depositor, &amount);
+
+    let escrow_id = 203u64;
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    // Raise threshold so depositor-only auth path is used
+    client.configure_multisig(&escrow_id, &i128::MAX, &1);
+
+    token_client.approve(&depositor, &contract_id, &amount, &200);
+    client.deposit_funds(&escrow_id);
+    client.release_milestone(&escrow_id, &0);
+
+    // Global override (100 bps) wins: fee = 100_000_000_000 * 100 / 10_000 = 1_000_000_000
+    let expected_fee = 1_000_000_000i128;
+    let expected_payout = amount - expected_fee;
+
+    assert_eq!(token_client.balance(&recipient), expected_payout);
+    assert_eq!(token_client.balance(&treasury), expected_fee);
+}
+
+/// Escrow-level override takes priority over tiers even for high-volume amounts.
+#[test]
+fn test_escrow_fee_override_takes_priority_over_tiers() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    client.initialize(&treasury, &None); // tiers as default
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let admin = Address::generate(&env);
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    // Tier 3 amount
+    let amount = 100_000_000_000i128;
+    token_admin.mint(&depositor, &amount);
+
+    let escrow_id = 204u64;
+    // Set explicit escrow-level fee of 200 bps (overrides Tier 3's 10 bps)
+    client.set_escrow_fee(&escrow_id, &200);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &(env.ledger().timestamp() + 3600),
+    );
+
+    // Raise threshold so depositor-only auth path is used
+    client.configure_multisig(&escrow_id, &i128::MAX, &1);
+
+    token_client.approve(&depositor, &contract_id, &amount, &200);
+    client.deposit_funds(&escrow_id);
+    client.release_milestone(&escrow_id, &0);
+
+    // Escrow override (200 bps): fee = 100_000_000_000 * 200 / 10_000 = 2_000_000_000
+    let expected_fee = 2_000_000_000i128;
+    let expected_payout = amount - expected_fee;
+
+    assert_eq!(token_client.balance(&recipient), expected_payout);
+    assert_eq!(token_client.balance(&treasury), expected_fee);
+}

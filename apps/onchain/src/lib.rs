@@ -128,6 +128,16 @@ pub enum Error {
 const DEFAULT_FEE_BPS: i128 = 50;
 const BPS_DENOMINATOR: i128 = 10000;
 
+// Dynamic tier-based fee thresholds (in token base units, e.g. XLM stroops: 1 XLM = 10_000_000)
+// Tier 1: 0 – 1,000 XLM  → 50 bps (0.50%)
+// Tier 2: 1,000 – 5,000 XLM → 30 bps (0.30%)
+// Tier 3: > 5,000 XLM    → 10 bps (0.10%)
+const FEE_TIER_1_THRESHOLD: i128 = 10_000_000_000; // 1,000 XLM in stroops
+const FEE_TIER_2_THRESHOLD: i128 = 50_000_000_000; // 5,000 XLM in stroops
+const FEE_TIER_1_BPS: i128 = 50; // 0.50% for low-volume escrows
+const FEE_TIER_2_BPS: i128 = 30; // 0.30% for medium-volume escrows
+const FEE_TIER_3_BPS: i128 = 10; // 0.10% for high-volume escrows
+
 #[contract]
 pub struct VaultixEscrow;
 
@@ -136,18 +146,9 @@ impl VaultixEscrow {
     pub fn initialize(env: Env, treasury: Address, fee_bps: Option<i128>) -> Result<(), Error> {
         treasury.require_auth();
 
-        let fee = fee_bps.unwrap_or(DEFAULT_FEE_BPS);
-
-        if !(0..=BPS_DENOMINATOR).contains(&fee) {
-            return Err(Error::InvalidFeeConfiguration);
-        }
-
         env.storage()
             .instance()
             .set(&symbol_short!("treasury"), &treasury);
-        env.storage()
-            .instance()
-            .set(&symbol_short!("fee_bps"), &fee);
 
         let vaultix_topic = Symbol::new(&env, "Vaultix");
 
@@ -161,16 +162,28 @@ impl VaultixEscrow {
             (Option::<Address>::None, treasury.clone()),
         );
 
-        // Emit FeeUpdated(scope, key, old_fee, new_fee)
-        env.events().publish(
-            (vaultix_topic, Symbol::new(&env, "FeeUpdated")),
-            (
-                Symbol::new(&env, "Global"),
-                Symbol::new(&env, "PlatformFee"),
-                0i128,
-                fee,
-            ),
-        );
+        // Only store an explicit global fee override; passing None defers to the
+        // dynamic tier-based fee schedule (see get_tiered_fee_bps / calculate_tiered_fee).
+        if let Some(fee) = fee_bps {
+            if !(0..=BPS_DENOMINATOR).contains(&fee) {
+                return Err(Error::InvalidFeeConfiguration);
+            }
+
+            env.storage()
+                .instance()
+                .set(&symbol_short!("fee_bps"), &fee);
+
+            // Emit FeeUpdated(scope, key, old_fee, new_fee)
+            env.events().publish(
+                (vaultix_topic, Symbol::new(&env, "FeeUpdated")),
+                (
+                    Symbol::new(&env, "Global"),
+                    Symbol::new(&env, "PlatformFee"),
+                    0i128,
+                    fee,
+                ),
+            );
+        }
 
         Ok(())
     }
@@ -640,7 +653,7 @@ impl VaultixEscrow {
         }
 
         let (treasury, _) = Self::get_config(env.clone())?;
-        let fee_bps = resolve_fee(&env, escrow_id, &escrow.token_address)?;
+        let fee_bps = resolve_fee(&env, escrow_id, &escrow.token_address, milestone.amount)?;
         let fee = calculate_fee(milestone.amount, fee_bps)?;
         let payout = milestone
             .amount
@@ -992,7 +1005,7 @@ impl VaultixEscrow {
         if escrow.status == EscrowStatus::Active {
             let token_client = token::Client::new(&env, &escrow.token_address);
             let refund_amount = if let Ok((treasury, _)) = Self::get_config(env.clone()) {
-                let fee_bps = resolve_fee(&env, escrow_id, &escrow.token_address)?;
+                let fee_bps = resolve_fee(&env, escrow_id, &escrow.token_address, escrow.total_amount)?;
                 let fee = calculate_fee(escrow.total_amount, fee_bps)?;
                 // Debug: fee resolved
                 env.events().publish(
@@ -1144,8 +1157,8 @@ impl VaultixEscrow {
         // Retrieve platform fee BPS from contract configuration
         let (treasury, _) = Self::get_config(env.clone())?;
 
-        // Resolve fee with precedence: escrow > token > global
-        let fee_bps = resolve_fee(&env, escrow_id, &escrow.token_address)?;
+        // Resolve fee with precedence: escrow > token > global override > tiers
+        let fee_bps = resolve_fee(&env, escrow_id, &escrow.token_address, remaining_balance)?;
 
         // Calculate platform fee using checked arithmetic
         let platform_fee = calculate_fee(remaining_balance, fee_bps)?;
@@ -1226,7 +1239,25 @@ fn get_escrow_fee_key(escrow_id: u64) -> (Symbol, u64) {
 ///
 /// # Returns
 /// The fee in basis points to apply for the transaction
-fn resolve_fee(env: &Env, escrow_id: u64, token_address: &Address) -> Result<i128, Error> {
+/// Returns the fee basis points for the given amount based on volume tiers.
+/// Higher-volume escrows receive progressively lower fee rates.
+fn get_tiered_fee_bps(amount: i128) -> i128 {
+    if amount < FEE_TIER_1_THRESHOLD {
+        FEE_TIER_1_BPS
+    } else if amount < FEE_TIER_2_THRESHOLD {
+        FEE_TIER_2_BPS
+    } else {
+        FEE_TIER_3_BPS
+    }
+}
+
+/// Calculate the platform fee using the dynamic tier-based rate for the given amount.
+fn calculate_tiered_fee(amount: i128) -> Result<i128, Error> {
+    let fee_bps = get_tiered_fee_bps(amount);
+    calculate_fee(amount, fee_bps)
+}
+
+fn resolve_fee(env: &Env, escrow_id: u64, token_address: &Address, amount: i128) -> Result<i128, Error> {
     // Check escrow-specific override first (highest priority)
     let escrow_fee_key = get_escrow_fee_key(escrow_id);
     if let Some(escrow_fee) = env
@@ -1247,14 +1278,17 @@ fn resolve_fee(env: &Env, escrow_id: u64, token_address: &Address) -> Result<i12
         return Ok(token_fee);
     }
 
-    // Fall back to global default fee
-    let global_fee: i128 = env
+    // Check for an explicit global fee override set by admin
+    if let Some(global_fee) = env
         .storage()
         .instance()
-        .get(&symbol_short!("fee_bps"))
-        .unwrap_or(DEFAULT_FEE_BPS);
+        .get::<_, i128>(&symbol_short!("fee_bps"))
+    {
+        return Ok(global_fee);
+    }
 
-    Ok(global_fee)
+    // Fall back to dynamic tiered fee based on amount
+    Ok(get_tiered_fee_bps(amount))
 }
 
 /// Safely transfer tokens from `from` to `to`, returning an error if balance is insufficient.
