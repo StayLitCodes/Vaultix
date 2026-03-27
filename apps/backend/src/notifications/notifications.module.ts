@@ -7,9 +7,13 @@ import { NotificationService } from './notifications.service';
 import { PreferenceService } from './preference.service';
 import { EmailSender } from './senders/email.sender';
 import { WebhookSender } from './senders/webhook.sender';
+import { WebSocketModule } from '../websocket/websocket.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Notification, NotificationPreference])],
+  imports: [
+    TypeOrmModule.forFeature([Notification, NotificationPreference]),
+    WebSocketModule,
+  ],
   controllers: [NotificationController],
   providers: [
     NotificationService,

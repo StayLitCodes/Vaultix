@@ -17,6 +17,7 @@ import { StellarModule } from '../stellar/stellar.module';
 import { EscrowStellarIntegrationService } from './services/escrow-stellar-integration.service';
 import { WebhookModule } from '../webhook/webhook.module';
 import { User } from '../user/entities/user.entity';
+import { WebSocketModule } from '../../websocket/websocket.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { User } from '../user/entities/user.entity';
     AuthModule,
     StellarModule,
     WebhookModule,
+    WebSocketModule,
   ],
   controllers: [EscrowController, EscrowSchedulerController, EventsController],
   providers: [

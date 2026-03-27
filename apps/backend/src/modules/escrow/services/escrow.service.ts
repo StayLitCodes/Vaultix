@@ -5,6 +5,8 @@ import {
   ForbiddenException,
   ConflictException,
   UnprocessableEntityException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository, SelectQueryBuilder } from 'typeorm';
@@ -39,6 +41,7 @@ import { validateTransition, isTerminalStatus } from '../escrow-state-machine';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
 import { WebhookService } from '../../../services/webhook/webhook.service';
 import { User, UserRole } from '../../user/entities/user.entity';
+import { WebSocketEventsService } from '../../../websocket/websocket-events.service';
 
 @Injectable()
 export class EscrowService {
@@ -58,6 +61,8 @@ export class EscrowService {
 
     private readonly stellarIntegrationService: EscrowStellarIntegrationService,
     private readonly webhookService: WebhookService,
+    @Inject(forwardRef(() => WebSocketEventsService))
+    private readonly wsEventsService: WebSocketEventsService,
   ) {}
 
   async create(
@@ -385,7 +390,17 @@ export class EscrowService {
 
     validateTransition(escrow.status, EscrowStatus.CANCELLED);
 
+    const previousStatus = escrow.status;
     await this.escrowRepository.update(id, { status: EscrowStatus.CANCELLED });
+
+    // Emit WebSocket event for status change
+    this.wsEventsService.emitEscrowStatusChanged({
+      escrowId: id,
+      previousStatus,
+      newStatus: EscrowStatus.CANCELLED,
+      timestamp: new Date(),
+      actorId: userId,
+    });
 
     await this.logEvent(
       id,
@@ -471,10 +486,21 @@ export class EscrowService {
       );
 
     const fundedAt = new Date();
+    const previousStatus = escrow.status;
     await this.escrowRepository.update(id, {
       stellarTxHash,
       fundedAt,
       status: EscrowStatus.ACTIVE,
+    });
+
+    // Emit WebSocket event for status change
+    this.wsEventsService.emitEscrowStatusChanged({
+      escrowId: id,
+      previousStatus,
+      newStatus: EscrowStatus.ACTIVE,
+      timestamp: fundedAt,
+      actorId: userId,
+      metadata: { stellarTxHash },
     });
 
     await this.logEvent(
@@ -566,11 +592,22 @@ export class EscrowService {
       escrow.creatorId,
     );
 
+    const previousStatus = escrow.status;
     escrow.status = EscrowStatus.COMPLETED;
     escrow.isReleased = true;
     escrow.releaseTransactionHash = txHash;
 
     await this.escrowRepository.save(escrow);
+
+    // Emit WebSocket event for status change
+    this.wsEventsService.emitEscrowStatusChanged({
+      escrowId: escrow.id,
+      previousStatus,
+      newStatus: EscrowStatus.COMPLETED,
+      timestamp: new Date(),
+      actorId: currentUserId,
+      metadata: { txHash },
+    });
 
     await this.logEvent(escrow.id, EscrowEventType.COMPLETED, currentUserId, {
       txHash,
@@ -642,6 +679,15 @@ export class EscrowService {
     condition.fulfillmentEvidence = dto.evidence;
 
     await this.conditionRepository.save(condition);
+
+    // Emit WebSocket event for condition fulfillment
+    this.wsEventsService.emitConditionFulfilled({
+      escrowId,
+      conditionId,
+      description: condition.description,
+      fulfilledBy: userId,
+      timestamp: new Date(),
+    });
 
     await this.logEvent(
       escrowId,
@@ -727,6 +773,15 @@ export class EscrowService {
     condition.metByUserId = userId;
 
     await this.conditionRepository.save(condition);
+
+    // Emit WebSocket event for condition confirmation
+    this.wsEventsService.emitConditionConfirmed({
+      escrowId,
+      conditionId,
+      description: condition.description,
+      confirmedBy: userId,
+      timestamp: new Date(),
+    });
 
     await this.logEvent(
       escrowId,
@@ -896,6 +951,15 @@ export class EscrowService {
     });
     const savedDispute = await this.disputeRepository.save(dispute);
 
+    // Emit WebSocket event for dispute filed
+    this.wsEventsService.emitDisputeFiled({
+      escrowId,
+      disputeId: savedDispute.id,
+      filedBy: userId,
+      reason: dto.reason,
+      timestamp: new Date(),
+    });
+
     await this.logEvent(
       escrowId,
       EscrowEventType.DISPUTE_FILED,
@@ -990,6 +1054,15 @@ export class EscrowService {
 
     const resolved = await this.disputeRepository.save(dispute);
 
+    // Emit WebSocket event for dispute resolved
+    this.wsEventsService.emitDisputeResolved({
+      escrowId,
+      disputeId: resolved.id,
+      outcome: dto.outcome,
+      resolvedBy: arbitratorUserId,
+      timestamp: new Date(),
+    });
+
     await this.logEvent(
       escrowId,
       EscrowEventType.DISPUTE_RESOLVED,
@@ -1068,9 +1141,20 @@ export class EscrowService {
 
     validateTransition(escrow.status, EscrowStatus.EXPIRED);
 
+    const previousStatus = escrow.status;
     await this.escrowRepository.update(escrow.id, {
       status: EscrowStatus.EXPIRED,
       isActive: false,
+    });
+
+    // Emit WebSocket event for status change
+    this.wsEventsService.emitEscrowStatusChanged({
+      escrowId: escrow.id,
+      previousStatus,
+      newStatus: EscrowStatus.EXPIRED,
+      timestamp: new Date(),
+      actorId: options.actorId,
+      metadata: { reason: options.reason },
     });
 
     await this.logEvent(

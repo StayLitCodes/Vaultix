@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   NotificationChannel,
@@ -12,6 +12,7 @@ import { WebhookSender } from './senders/webhook.sender';
 import { Repository, IsNull } from 'typeorm';
 import { EmailSender } from './senders/email.sender';
 import { PreferenceService } from './preference.service';
+import { WebSocketEventsService } from '../websocket/websocket-events.service';
 
 @Injectable()
 export class NotificationService {
@@ -24,6 +25,8 @@ export class NotificationService {
     private preferenceService: PreferenceService,
     emailSender: EmailSender,
     webhookSender: WebhookSender,
+    @Inject(forwardRef(() => WebSocketEventsService))
+    private readonly wsEventsService: WebSocketEventsService,
   ) {
     this.senders = new Map([
       [NotificationChannel.EMAIL, emailSender],
@@ -42,15 +45,25 @@ export class NotificationService {
       if (!pref.enabled) continue;
       if (!pref.eventTypes.includes(eventType)) continue;
 
-      await this.repo.save(
-        this.repo.create({
-          userId,
-          eventType,
-          payload,
-          escrowId: (payload.escrowId as string) || undefined,
-          status: NotificationStatus.PENDING,
-        }),
-      );
+      const notification = this.repo.create({
+        userId,
+        eventType,
+        payload,
+        escrowId: (payload.escrowId as string) || undefined,
+        status: NotificationStatus.PENDING,
+      });
+      const savedNotification = await this.repo.save(notification);
+
+      // Emit WebSocket event for new notification
+      this.wsEventsService.emitNotification({
+        notificationId: savedNotification.id,
+        userId,
+        eventType: eventType,
+        message: `Escrow event: ${eventType}`,
+        escrowId: (payload.escrowId as string) || undefined,
+        timestamp: new Date(),
+        data: payload,
+      });
     }
   }
 
