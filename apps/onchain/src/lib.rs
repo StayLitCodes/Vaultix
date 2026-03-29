@@ -1005,7 +1005,8 @@ impl VaultixEscrow {
         if escrow.status == EscrowStatus::Active {
             let token_client = token::Client::new(&env, &escrow.token_address);
             let refund_amount = if let Ok((treasury, _)) = Self::get_config(env.clone()) {
-                let fee_bps = resolve_fee(&env, escrow_id, &escrow.token_address, escrow.total_amount)?;
+                let fee_bps =
+                    resolve_fee(&env, escrow_id, &escrow.token_address, escrow.total_amount)?;
                 let fee = calculate_fee(escrow.total_amount, fee_bps)?;
                 // Debug: fee resolved
                 env.events().publish(
@@ -1257,7 +1258,12 @@ fn calculate_tiered_fee(amount: i128) -> Result<i128, Error> {
     calculate_fee(amount, fee_bps)
 }
 
-fn resolve_fee(env: &Env, escrow_id: u64, token_address: &Address, amount: i128) -> Result<i128, Error> {
+fn resolve_fee(
+    env: &Env,
+    escrow_id: u64,
+    token_address: &Address,
+    amount: i128,
+) -> Result<i128, Error> {
     // Check escrow-specific override first (highest priority)
     let escrow_fee_key = get_escrow_fee_key(escrow_id);
     if let Some(escrow_fee) = env
