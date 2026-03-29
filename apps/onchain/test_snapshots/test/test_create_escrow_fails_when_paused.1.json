@@ -221,7 +221,7 @@
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
             "key": {
-              "symbol": "arbitrator"
+              "symbol": "arbi"
             },
             "durability": "persistent"
           }
@@ -234,7 +234,7 @@
                 "ext": "v0",
                 "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
                 "key": {
-                  "symbol": "arbitrator"
+                  "symbol": "arbi"
                 },
                 "durability": "persistent",
                 "val": {
@@ -252,7 +252,7 @@
           "contract_data": {
             "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
             "key": {
-              "symbol": "operator"
+              "symbol": "oper"
             },
             "durability": "persistent"
           }
@@ -265,7 +265,7 @@
                 "ext": "v0",
                 "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
                 "key": {
-                  "symbol": "operator"
+                  "symbol": "oper"
                 },
                 "durability": "persistent",
                 "val": {
