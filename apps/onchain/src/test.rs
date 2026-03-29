@@ -210,6 +210,173 @@ fn test_create_and_get_escrow() {
 }
 
 #[test]
+fn test_create_escrows_batch_and_get() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let depositor = Address::generate(&env);
+    let recipient_1 = Address::generate(&env);
+    let recipient_2 = Address::generate(&env);
+    let token_address = Address::generate(&env);
+
+    let escrow_id_1 = 101u64;
+    let escrow_id_2 = 102u64;
+    let deadline_1 = 1706400000u64;
+    let deadline_2 = 1706403600u64;
+
+    let milestones_1 = vec![
+        &env,
+        Milestone {
+            amount: 3000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("A"),
+        },
+        Milestone {
+            amount: 7000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("B"),
+        },
+    ];
+    let milestones_2 = vec![
+        &env,
+        Milestone {
+            amount: 10_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("C"),
+        },
+    ];
+
+    let requests = vec![
+        &env,
+        CreateEscrowRequest {
+            escrow_id: escrow_id_1,
+            depositor: depositor.clone(),
+            recipient: recipient_1.clone(),
+            token_address: token_address.clone(),
+            milestones: milestones_1,
+            deadline: deadline_1,
+        },
+        CreateEscrowRequest {
+            escrow_id: escrow_id_2,
+            depositor: depositor.clone(),
+            recipient: recipient_2.clone(),
+            token_address: token_address.clone(),
+            milestones: milestones_2,
+            deadline: deadline_2,
+        },
+    ];
+
+    client.create_escrows_batch(&requests);
+
+    let escrow_1 = client.get_escrow(&escrow_id_1);
+    assert_eq!(escrow_1.depositor, depositor);
+    assert_eq!(escrow_1.recipient, recipient_1);
+    assert_eq!(escrow_1.token_address, token_address);
+    assert_eq!(escrow_1.total_amount, 10_000);
+    assert_eq!(escrow_1.total_released, 0);
+    assert_eq!(escrow_1.status, EscrowStatus::Created);
+    assert_eq!(escrow_1.deadline, deadline_1);
+
+    let escrow_2 = client.get_escrow(&escrow_id_2);
+    assert_eq!(escrow_2.depositor, escrow_1.depositor);
+    assert_eq!(escrow_2.recipient, recipient_2);
+    assert_eq!(escrow_2.token_address, escrow_1.token_address);
+    assert_eq!(escrow_2.total_amount, 10_000);
+    assert_eq!(escrow_2.total_released, 0);
+    assert_eq!(escrow_2.status, EscrowStatus::Created);
+    assert_eq!(escrow_2.deadline, deadline_2);
+
+    let events = env.events().all();
+    let event = events.last().unwrap();
+    assert_eq!(event.0, contract_id);
+
+    let expected_topics: soroban_sdk::Vec<soroban_sdk::Val> = (
+        Symbol::new(&env, "Vaultix"),
+        Symbol::new(&env, "EscrowsCreatedBatch"),
+    )
+        .into_val(&env);
+    assert_eq!(event.1, expected_topics);
+
+    let actual_items: soroban_sdk::Vec<EscrowCreatedBatchItem> = event.2.into_val(&env);
+    let expected_items: soroban_sdk::Vec<EscrowCreatedBatchItem> = vec![
+        &env,
+        EscrowCreatedBatchItem {
+            escrow_id: escrow_id_1,
+            depositor: escrow_1.depositor.clone(),
+            recipient: recipient_1,
+            token_address: escrow_1.token_address.clone(),
+            total_amount: 10_000,
+            deadline: deadline_1,
+        },
+        EscrowCreatedBatchItem {
+            escrow_id: escrow_id_2,
+            depositor: escrow_2.depositor.clone(),
+            recipient: recipient_2,
+            token_address: escrow_2.token_address.clone(),
+            total_amount: 10_000,
+            deadline: deadline_2,
+        },
+    ];
+    assert_eq!(actual_items, expected_items);
+}
+
+#[test]
+fn test_create_escrows_batch_is_atomic() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let depositor = Address::generate(&env);
+    let recipient_1 = Address::generate(&env);
+    let recipient_2 = Address::generate(&env);
+    let token_address = Address::generate(&env);
+
+    let escrow_id = 201u64;
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 10_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("X"),
+        },
+    ];
+
+    let requests = vec![
+        &env,
+        CreateEscrowRequest {
+            escrow_id,
+            depositor: depositor.clone(),
+            recipient: recipient_1,
+            token_address: token_address.clone(),
+            milestones: milestones.clone(),
+            deadline: 1706400000u64,
+        },
+        CreateEscrowRequest {
+            escrow_id,
+            depositor,
+            recipient: recipient_2,
+            token_address,
+            milestones,
+            deadline: 1706403600u64,
+        },
+    ];
+
+    let result = client.try_create_escrows_batch(&requests);
+    assert_eq!(result, Err(Ok(Error::EscrowAlreadyExists)));
+
+    let get_result = client.try_get_escrow(&escrow_id);
+    assert_eq!(get_result, Err(Ok(Error::EscrowNotFound)));
+
+    let events = env.events().all();
+    assert_eq!(events.len(), 0);
+}
+
+#[test]
 fn test_deposit_funds() {
     let env = Env::default();
     env.mock_all_auths();

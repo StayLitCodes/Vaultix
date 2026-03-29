@@ -377,7 +377,7 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "escfee"
+                  "symbol": "esc2"
                 },
                 {
                   "u64": 1
@@ -397,55 +397,7 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "escfee"
-                    },
-                    {
-                      "u64": 1
-                    }
-                  ]
-                },
-                "durability": "persistent",
-                "val": {
-                  "i128": {
-                    "hi": 0,
-                    "lo": 300
-                  }
-                }
-              }
-            },
-            "ext": "v0"
-          },
-          4095
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-            "key": {
-              "vec": [
-                {
-                  "symbol": "escrow"
-                },
-                {
-                  "u64": 1
-                }
-              ]
-            },
-            "durability": "persistent"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-                "key": {
-                  "vec": [
-                    {
-                      "symbol": "escrow"
+                      "symbol": "esc2"
                     },
                     {
                       "u64": 1
@@ -477,6 +429,17 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "fee_override_bps"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": 0,
+                          "lo": 300
+                        }
                       }
                     },
                     {
@@ -525,6 +488,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "packed_state"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "recipient"
                       },
                       "val": {
@@ -537,30 +508,6 @@
                       },
                       "val": {
                         "u32": 1
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "resolution"
-                      },
-                      "val": {
-                        "vec": [
-                          {
-                            "symbol": "None"
-                          }
-                        ]
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "status"
-                      },
-                      "val": {
-                        "vec": [
-                          {
-                            "symbol": "Active"
-                          }
-                        ]
                       }
                     },
                     {

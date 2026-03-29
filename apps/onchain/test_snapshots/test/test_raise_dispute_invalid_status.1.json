@@ -432,7 +432,7 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "escrow"
+                  "symbol": "esc2"
                 },
                 {
                   "u64": 21
@@ -452,7 +452,7 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "escrow"
+                      "symbol": "esc2"
                     },
                     {
                       "u64": 21
@@ -484,6 +484,17 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "fee_override_bps"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": -1,
+                          "lo": 18446744073709551615
+                        }
                       }
                     },
                     {
@@ -532,6 +543,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "packed_state"
+                      },
+                      "val": {
+                        "u32": 2
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "recipient"
                       },
                       "val": {
@@ -544,30 +563,6 @@
                       },
                       "val": {
                         "u32": 1
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "resolution"
-                      },
-                      "val": {
-                        "vec": [
-                          {
-                            "symbol": "None"
-                          }
-                        ]
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "status"
-                      },
-                      "val": {
-                        "vec": [
-                          {
-                            "symbol": "Completed"
-                          }
-                        ]
                       }
                     },
                     {
@@ -627,7 +622,7 @@
             "key": {
               "vec": [
                 {
-                  "symbol": "escrow"
+                  "symbol": "esc2"
                 },
                 {
                   "u64": 22
@@ -647,7 +642,7 @@
                 "key": {
                   "vec": [
                     {
-                      "symbol": "escrow"
+                      "symbol": "esc2"
                     },
                     {
                       "u64": 22
@@ -679,6 +674,17 @@
                       },
                       "val": {
                         "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "fee_override_bps"
+                      },
+                      "val": {
+                        "i128": {
+                          "hi": -1,
+                          "lo": 18446744073709551615
+                        }
                       }
                     },
                     {
@@ -727,6 +733,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "packed_state"
+                      },
+                      "val": {
+                        "u32": 3
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "recipient"
                       },
                       "val": {
@@ -739,30 +753,6 @@
                       },
                       "val": {
                         "u32": 1
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "resolution"
-                      },
-                      "val": {
-                        "vec": [
-                          {
-                            "symbol": "None"
-                          }
-                        ]
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "status"
-                      },
-                      "val": {
-                        "vec": [
-                          {
-                            "symbol": "Cancelled"
-                          }
-                        ]
                       }
                     },
                     {
