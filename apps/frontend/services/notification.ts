@@ -1,5 +1,10 @@
 import axios from 'axios';
-import { Notification } from '@/types/notification';
+import {
+  Notification,
+  NotificationPreference,
+  NotificationChannel,
+  NotificationEventType,
+} from '@/types/notification';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -20,6 +25,30 @@ export const notificationService = {
     const response = await axios.get(`${API_URL}/notifications/unread-count`, {
       headers: getAuthHeaders(),
     });
+    return response.data;
+  },
+
+  async getPreferences(): Promise<NotificationPreference[]> {
+    const response = await axios.get(`${API_URL}/notifications/preferences`, {
+      headers: getAuthHeaders(),
+    });
+    return response.data;
+  },
+
+  async updatePreferences(
+    preferences: Array<{
+      channel: NotificationChannel;
+      enabled: boolean;
+      eventTypes: NotificationEventType[];
+    }>,
+  ): Promise<NotificationPreference[]> {
+    const response = await axios.put(
+      `${API_URL}/notifications/preferences`,
+      preferences,
+      {
+        headers: getAuthHeaders(),
+      },
+    );
     return response.data;
   },
 
