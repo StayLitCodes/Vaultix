@@ -1,5 +1,5 @@
 use crate::{Error, Milestone, MilestoneStatus, VaultixEscrow, VaultixEscrowClient};
-use soroban_sdk::symbol_short;
+use soroban_sdk::{symbol_short, BytesN};
 /// Comprehensive tests for the Configurable Fee Model feature (#93)
 /// Tests cover:
 /// - Default global fee behavior (no overrides)
@@ -139,6 +139,7 @@ fn test_release_milestone_uses_global_fee_by_default() {
         &token_address,
         &milestones,
         &(env.ledger().timestamp() + 3600),
+        &BytesN::from_array(&env, &[0u8; 32]),
     );
 
     token_client.approve(&depositor, &contract_id, &10_000, &200);
@@ -195,6 +196,7 @@ fn test_release_milestone_uses_token_fee_override() {
         &token_address,
         &milestones,
         &(env.ledger().timestamp() + 3600),
+        &BytesN::from_array(&env, &[0u8; 32]),
     );
 
     token_client.approve(&depositor, &contract_id, &10_000, &200);
@@ -255,6 +257,7 @@ fn test_release_milestone_uses_escrow_fee_override() {
         &token_address,
         &milestones,
         &(env.ledger().timestamp() + 3600),
+        &BytesN::from_array(&env, &[0u8; 32]),
     );
 
     token_client.approve(&depositor, &contract_id, &10_000, &200);
@@ -314,6 +317,7 @@ fn test_fee_precedence_escrow_over_token_and_global() {
         &token_address,
         &milestones,
         &(env.ledger().timestamp() + 3600),
+        &BytesN::from_array(&env, &[0u8; 32]),
     );
 
     token_client.approve(&depositor, &contract_id, &10_000, &200);
@@ -367,6 +371,7 @@ fn test_cancel_escrow_uses_token_fee_override() {
         &token_address,
         &milestones,
         &(env.ledger().timestamp() + 3600),
+        &BytesN::from_array(&env, &[0u8; 32]),
     );
 
     token_client.approve(&depositor, &contract_id, &10_000, &200);
@@ -423,6 +428,7 @@ fn test_refund_expired_uses_escrow_fee_override() {
         &token_address,
         &milestones,
         &deadline,
+        &BytesN::from_array(&env, &[0u8; 32]),
     );
 
     token_client.approve(&depositor, &contract_id, &10_000, &200);
@@ -482,6 +488,7 @@ fn test_zero_fee_valid() {
         &token_address,
         &milestones,
         &(env.ledger().timestamp() + 3600),
+        &BytesN::from_array(&env, &[0u8; 32]),
     );
 
     // Approve contract to transfer depositor's tokens, then deposit

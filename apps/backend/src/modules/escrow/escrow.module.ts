@@ -13,7 +13,6 @@ import { EventsController } from './controllers/events.controller';
 import { EscrowAccessGuard } from './guards/escrow-access.guard';
 import { EscrowExpireGuard } from './guards/escrow-expire.guard';
 import { AuthModule } from '../auth/auth.module';
-import { StellarModule } from '../stellar/stellar.module';
 import { EscrowStellarIntegrationService } from './services/escrow-stellar-integration.service';
 import { WebhookModule } from '../webhook/webhook.module';
 import { User } from '../user/entities/user.entity';
@@ -29,7 +28,6 @@ import { User } from '../user/entities/user.entity';
       User,
     ]),
     AuthModule,
-    StellarModule,
     WebhookModule,
   ],
   controllers: [EscrowController, EscrowSchedulerController, EventsController],

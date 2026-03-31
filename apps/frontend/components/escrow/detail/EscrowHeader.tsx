@@ -4,10 +4,11 @@ import { IEscrowExtended } from '@/types/escrow';
 
 interface EscrowHeaderProps {
   escrow: IEscrowExtended;
-  userRole: 'creator' | 'counterparty' | null;
+  userRole: 'creator' | 'counterparty' | 'arbitrator' | null;
   connected: boolean;
   connect: () => void;
   publicKey: string | null;
+  onFileDispute?: () => void;
 }
 
 const getStatusColor = (status: string) => {
@@ -49,7 +50,8 @@ const EscrowHeader: React.FC<EscrowHeaderProps> = ({
   userRole, 
   connected, 
   connect, 
-  publicKey 
+  publicKey,
+  onFileDispute
 }: EscrowHeaderProps) => {
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -93,6 +95,18 @@ const EscrowHeader: React.FC<EscrowHeaderProps> = ({
             <ShareIcon className="h-4 w-4 mr-2" />
             Share
           </button>
+          
+          {/* File Dispute Button - only for buyer/seller on active escrows */}
+          {connected && userRole && ['creator', 'counterparty'].includes(userRole) && escrow.status === 'ACTIVE' && onFileDispute && (
+            <button
+              onClick={onFileDispute}
+              className="inline-flex items-center px-4 py-2 border border-red-300 text-sm font-medium rounded-md shadow-sm text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+            >
+              <AlertTriangle className="h-4 w-4 mr-2" />
+              File Dispute
+            </button>
+          )}
+          
           {!connected && (
             <button
               onClick={connect}

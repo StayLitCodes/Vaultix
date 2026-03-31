@@ -2,8 +2,8 @@
 #![no_std]
 #![allow(unexpected_cfgs)]
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, Env, Symbol,
-    Vec,
+    contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, BytesN, Env,
+    Symbol, Vec,
 };
 
 impl VaultixEscrow {
@@ -89,6 +89,7 @@ pub struct Escrow {
     pub threshold_amount: i128, // Threshold amount for multi-sig requirement
     pub required_signatures: u32, // Number of signatures required for release
     pub collected_signatures: Vec<Address>, // Addresses that have signed for release
+    pub metadata_hash: BytesN<32>, // IPFS metadata hash for the escrow agreement
 }
 
 #[contracttype]
@@ -106,6 +107,7 @@ struct EscrowEntryV2 {
     required_signatures: u32,
     collected_signatures: Vec<Address>,
     fee_override_bps: i128,
+    metadata_hash: BytesN<32>,
 }
 
 #[contracttype]
@@ -117,6 +119,7 @@ pub struct CreateEscrowRequest {
     pub token_address: Address,
     pub milestones: Vec<Milestone>,
     pub deadline: u64,
+    pub metadata_hash: BytesN<32>,
 }
 
 #[contracttype]
@@ -484,6 +487,7 @@ impl VaultixEscrow {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn create_escrow(
         env: Env,
         escrow_id: u64,
@@ -492,6 +496,7 @@ impl VaultixEscrow {
         token_address: Address,
         milestones: Vec<Milestone>,
         deadline: u64,
+        metadata_hash: BytesN<32>,
     ) -> Result<(), Error> {
         depositor.require_auth();
         ensure_not_paused(&env)?;
@@ -545,6 +550,7 @@ impl VaultixEscrow {
             required_signatures: 1,
             collected_signatures: Vec::new(&env),
             fee_override_bps,
+            metadata_hash: metadata_hash.clone(),
         };
 
         store_escrow_entry_v2(&env, escrow_id, &escrow);
@@ -556,7 +562,14 @@ impl VaultixEscrow {
                 Symbol::new(&env, "EscrowCreated"),
                 escrow_id,
             ),
-            (depositor, recipient, token_address, total_amount, deadline),
+            (
+                depositor,
+                recipient,
+                token_address,
+                total_amount,
+                deadline,
+                metadata_hash,
+            ),
         );
 
         Ok(())
@@ -581,6 +594,7 @@ impl VaultixEscrow {
             let token_address = request.token_address.clone();
             let milestones = request.milestones.clone();
             let deadline = request.deadline;
+            let metadata_hash = request.metadata_hash.clone();
 
             if depositor == recipient {
                 return Err(Error::SelfDealing);
@@ -645,6 +659,7 @@ impl VaultixEscrow {
                 required_signatures: 1,
                 collected_signatures: Vec::new(&env),
                 fee_override_bps,
+                metadata_hash,
             };
 
             pending_entries.push_back((escrow_id, escrow, fee_override_bps >= 0));
@@ -1669,6 +1684,7 @@ fn load_escrow_entry_v2(env: &Env, escrow_id: u64) -> Result<EscrowEntryV2, Erro
         required_signatures: legacy.required_signatures,
         collected_signatures: legacy.collected_signatures,
         fee_override_bps,
+        metadata_hash: BytesN::from_array(env, &[0u8; 32]),
     };
 
     env.storage().persistent().remove(&legacy_key);
@@ -1696,6 +1712,7 @@ fn escrow_entry_to_public(escrow: EscrowEntryV2) -> Escrow {
         threshold_amount: escrow.threshold_amount,
         required_signatures: escrow.required_signatures,
         collected_signatures: escrow.collected_signatures,
+        metadata_hash: escrow.metadata_hash,
     }
 }
 

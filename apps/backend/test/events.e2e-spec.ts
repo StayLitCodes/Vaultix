@@ -3,6 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import type { Server } from 'http';
 import { AppModule } from '../src/app.module';
+import { Keypair } from 'stellar-sdk';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RefreshToken } from '../src/modules/user/entities/refresh-token.entity';
 import { User } from '../src/modules/user/entities/user.entity';
@@ -11,32 +12,18 @@ import { Party, PartyRole } from '../src/modules/escrow/entities/party.entity';
 import { Condition } from '../src/modules/escrow/entities/condition.entity';
 import { EscrowEvent } from '../src/modules/escrow/entities/escrow-event.entity';
 
-// Mock Stellar keypair for testing
-interface MockKeypair {
-  publicKey: () => string;
-  sign: (data: string) => Buffer;
-}
-
-function createMockKeypair(): MockKeypair {
-  const randomKey =
-    'G' +
-    Array.from({ length: 55 }, () =>
-      'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'.charAt(Math.floor(Math.random() * 32)),
-    ).join('');
-  return {
-    publicKey: () => randomKey,
-    sign: (data: string) => Buffer.from(data + '-signed'),
-  };
+function createMockKeypair(): Keypair {
+  return Keypair.random();
 }
 
 describe('Events (e2e)', () => {
   let app: INestApplication;
   let httpServer: Server;
-  let testKeypair: MockKeypair;
+  let testKeypair: Keypair;
   let testWalletAddress: string;
   let accessToken: string;
 
-  let secondKeypair: MockKeypair;
+  let secondKeypair: Keypair;
   let secondWalletAddress: string;
   let secondAccessToken: string;
   let secondUserId: string;
@@ -73,7 +60,7 @@ describe('Events (e2e)', () => {
       .send({ walletAddress: testWalletAddress });
 
     const message = (challengeResponse.body as { message: string }).message;
-    const signature = testKeypair.sign(message).toString('hex');
+    const signature = testKeypair.sign(Buffer.from(message)).toString('hex');
 
     const verifyResponse = await request(httpServer).post('/auth/verify').send({
       walletAddress: testWalletAddress,
@@ -89,7 +76,9 @@ describe('Events (e2e)', () => {
       .send({ walletAddress: secondWalletAddress });
 
     const message2 = (challenge2.body as { message: string }).message;
-    const signature2 = secondKeypair.sign(message2).toString('hex');
+    const signature2 = secondKeypair
+      .sign(Buffer.from(message2))
+      .toString('hex');
 
     const verify2 = await request(httpServer).post('/auth/verify').send({
       walletAddress: secondWalletAddress,
@@ -120,7 +109,9 @@ describe('Events (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
   });
 
   interface EventResponse {
@@ -245,7 +236,9 @@ describe('Events (e2e)', () => {
         .send({ walletAddress: thirdWalletAddress });
 
       const message3 = (challenge3.body as { message: string }).message;
-      const signature3 = thirdKeypair.sign(message3).toString('hex');
+      const signature3 = thirdKeypair
+        .sign(Buffer.from(message3))
+        .toString('hex');
 
       const verify3 = await request(httpServer).post('/auth/verify').send({
         walletAddress: thirdWalletAddress,
@@ -288,7 +281,9 @@ describe('Events (e2e)', () => {
         .send({ walletAddress: thirdWalletAddress });
 
       const message3 = (challenge3.body as { message: string }).message;
-      const signature3 = thirdKeypair.sign(message3).toString('hex');
+      const signature3 = thirdKeypair
+        .sign(Buffer.from(message3))
+        .toString('hex');
 
       const verify3 = await request(httpServer).post('/auth/verify').send({
         walletAddress: thirdWalletAddress,

@@ -18,6 +18,7 @@ import { PartyAcceptanceModal } from '../modals/PartyAcceptanceModal';
 
 interface PartiesSectionProps {
   escrow: IEscrowExtended;
+  userRole: 'creator' | 'counterparty' | 'arbitrator' | null;
   currentParty: IParty | null;
   onEscrowUpdated: () => Promise<void>;
 }

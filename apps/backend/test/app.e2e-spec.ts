@@ -19,4 +19,10 @@ describe('AppController (e2e)', () => {
     const server = app.getHttpServer() as unknown as import('http').Server;
     return request(server).get('/').expect(200).expect('Hello World!');
   });
+
+  afterAll(async () => {
+    if (app) {
+      await app.close();
+    }
+  });
 });

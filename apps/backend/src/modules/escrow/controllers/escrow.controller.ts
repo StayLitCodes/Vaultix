@@ -36,6 +36,7 @@ import { FulfillConditionDto } from '../dto/fulfill-condition.dto';
 import { FileDisputeDto, ResolveDisputeDto } from '../dto/dispute.dto';
 import { FundEscrowDto } from '../dto/fund-escrow.dto';
 import { ExpireEscrowDto } from '../dto/expire-escrow.dto';
+import { ProposeMilestoneChangeDto } from '../dto/milestone-change.dto';
 
 interface AuthenticatedRequest extends ExpressRequest {
   user: { sub?: string; userId?: string; walletAddress: string };
@@ -212,6 +213,38 @@ export class EscrowController {
       conditionId,
       userId,
       ipAddress,
+    );
+  }
+
+  @Post(':id/conditions/:conditionId/propose')
+  @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Propose a change to a pending milestone' })
+  async proposeMilestoneChange(
+    @Param('id') escrowId: string,
+    @Param('conditionId') conditionId: string,
+    @Body() dto: ProposeMilestoneChangeDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.escrowService.proposeMilestoneChange(
+      escrowId,
+      conditionId,
+      dto,
+      this.getAuthenticatedUserId(req),
+    );
+  }
+
+  @Post(':id/conditions/:conditionId/accept')
+  @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Accept a proposed change to a milestone' })
+  async acceptMilestoneChange(
+    @Param('id') escrowId: string,
+    @Param('conditionId') conditionId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.escrowService.acceptMilestoneChange(
+      escrowId,
+      conditionId,
+      this.getAuthenticatedUserId(req),
     );
   }
 

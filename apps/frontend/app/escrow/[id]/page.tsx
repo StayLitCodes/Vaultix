@@ -13,6 +13,9 @@ import ActivityFeed from '@/components/common/ActivityFeed';
 import ConditionsList from '@/component/escrow/ConditionsList';
 import { IParty } from '@/types/escrow';
 import FileDisputeModal from '@/components/escrow/detail/file-dispute-modal';
+import DisputeSection from '@/components/escrow/detail/DisputeSection';
+import ArbitratorResolutionModal from '@/components/escrow/detail/ArbitratorResolutionModal';
+import { Button } from '@/components/ui/button';
 import { EscrowDetailSkeleton } from '@/components/ui/EscrowDetailSkeleton';
 
 const EscrowDetailPage = () => {
@@ -20,9 +23,11 @@ const EscrowDetailPage = () => {
 
   const { escrow, error, loading, refetch } = useEscrow(id as string);
   const { connected, publicKey, connect } = useWallet();
-  const [userRole, setUserRole] = useState<'creator' | 'counterparty' | null>(null);
+  const [userRole, setUserRole] = useState<'creator' | 'counterparty' | 'arbitrator' | null>(null);
   const [currentParty, setCurrentParty] = useState<IParty | null>(null);
   const [disputeOpen, setDisputeOpen] = useState(false);
+  const [resolutionOpen, setResolutionOpen] = useState(false);
+  const [dispute, setDispute] = useState<any>(null);
 
   useEffect(() => {
     if (escrow && publicKey) {
@@ -91,14 +96,29 @@ const EscrowDetailPage = () => {
           connected={connected}
           connect={connect}
           publicKey={publicKey}
+          onFileDispute={() => setDisputeOpen(true)}
         />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
           <div className="lg:col-span-2 space-y-8">
+            {/* Dispute Section (only show if disputed) */}
+            {escrow.status === 'DISPUTED' && (
+              <DisputeSection
+                escrowId={escrow.id}
+                escrowStatus={escrow.status}
+                userRole={userRole}
+                publicKey={publicKey}
+                onDisputeUpdate={() => {
+                  // Refresh escrow data to get updated status
+                  window.location.reload();
+                }}
+              />
+            )}
             <PartiesSection
               escrow={escrow}
               currentParty={currentParty}
               onEscrowUpdated={refetch}
+              userRole={userRole}
             />
 
             <ConditionsList
@@ -124,6 +144,20 @@ const EscrowDetailPage = () => {
         open={disputeOpen}
         onClose={() => setDisputeOpen(false)}
         escrowId={escrow.id}
+        userRole={userRole}
+        escrowStatus={escrow.status}
+      />
+
+      <ArbitratorResolutionModal
+        open={resolutionOpen}
+        onClose={() => setResolutionOpen(false)}
+        dispute={dispute}
+        escrowAmount={escrow.amount}
+        escrowAsset={escrow.asset}
+        onResolutionComplete={() => {
+          // Refresh escrow data to get updated status
+          window.location.reload();
+        }}
       />
     </div>
   );

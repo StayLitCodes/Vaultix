@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
   Logger,
+  OnModuleDestroy,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -16,8 +17,9 @@ import * as crypto from 'crypto';
 import axios from 'axios';
 
 @Injectable()
-export class WebhookService {
+export class WebhookService implements OnModuleDestroy {
   private readonly logger = new Logger(WebhookService.name);
+  private timeouts: Map<string, NodeJS.Timeout> = new Map();
   private readonly MAX_WEBHOOKS_PER_USER = 10;
   private readonly MAX_EVENTS_PER_WEBHOOK = 8;
 
@@ -25,6 +27,13 @@ export class WebhookService {
     @InjectRepository(Webhook)
     private readonly webhookRepo: Repository<Webhook>,
   ) {}
+
+  onModuleDestroy() {
+    for (const timeout of this.timeouts.values()) {
+      clearTimeout(timeout);
+    }
+    this.timeouts.clear();
+  }
 
   async createWebhook(
     userId: string,
@@ -113,10 +122,12 @@ export class WebhookService {
         `Webhook delivery failed (attempt ${attempt}) to ${webhook.url}: ${errorMsg}`,
       );
       if (attempt < maxAttempts) {
-        setTimeout(
-          () => void this.deliverWebhook(webhook, payload, attempt + 1),
-          backoff,
-        );
+        const timeoutId = `${webhook.id}-${attempt}`;
+        const timeout = setTimeout(() => {
+          this.timeouts.delete(timeoutId);
+          void this.deliverWebhook(webhook, payload, attempt + 1);
+        }, backoff);
+        this.timeouts.set(timeoutId, timeout);
       } else {
         this.logger.error(
           `Webhook delivery permanently failed to ${webhook.url}`,

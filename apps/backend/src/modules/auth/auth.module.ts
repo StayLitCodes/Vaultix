@@ -18,8 +18,8 @@ import { UserModule } from '../user/user.module';
     }),
     ThrottlerModule.forRoot([
       {
-        ttl: 60000, // 1 minute
-        limit: 10, // 10 requests per minute
+        ttl: 60000,
+        limit: process.env.NODE_ENV === 'test' ? 1000 : 10,
       },
     ]),
   ],

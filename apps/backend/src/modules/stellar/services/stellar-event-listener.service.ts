@@ -5,7 +5,12 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -18,7 +23,9 @@ import { Escrow, EscrowStatus } from '../../escrow/entities/escrow.entity';
 import { SorobanClientService } from '../../../services/stellar/soroban-client.service';
 
 @Injectable()
-export class StellarEventListenerService implements OnModuleInit {
+export class StellarEventListenerService
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(StellarEventListenerService.name);
   private server: rpc.Server;
   private contractId: string;
@@ -27,6 +34,7 @@ export class StellarEventListenerService implements OnModuleInit {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 5000; // 5 seconds
+  private abortController: AbortController | null = null;
 
   constructor(
     private configService: ConfigService,
@@ -46,7 +54,11 @@ export class StellarEventListenerService implements OnModuleInit {
       return;
     }
 
-    await this.startEventListener();
+    void this.startEventListener();
+  }
+
+  async onModuleDestroy() {
+    await this.stopEventListener();
   }
 
   async startEventListener() {
@@ -55,6 +67,7 @@ export class StellarEventListenerService implements OnModuleInit {
       return;
     }
 
+    this.abortController = new AbortController();
     this.isRunning = true;
     this.logger.log(
       `Starting Stellar event listener for contract: ${this.contractId}`,
@@ -67,19 +80,26 @@ export class StellarEventListenerService implements OnModuleInit {
       // Start the event polling loop
       await this.pollEvents();
     } catch (error) {
-      this.logger.error('Failed to start event listener:', error);
-      this.isRunning = false;
-      await this.handleReconnection();
+      if ((error as Error).name !== 'AbortError') {
+        this.logger.error('Failed to start event listener:', error);
+        this.isRunning = false;
+        await this.handleReconnection();
+      }
     }
   }
 
   async stopEventListener() {
     this.isRunning = false;
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
     this.logger.log('Stopped Stellar event listener');
   }
 
   private async initializeLastProcessedLedger() {
     const lastEvent = await this.stellarEventRepository.findOne({
+      where: {},
       order: { ledger: 'DESC' },
     });
 
@@ -101,8 +121,9 @@ export class StellarEventListenerService implements OnModuleInit {
     while (this.isRunning) {
       try {
         await this.processNewEvents();
-        await this.sleep(10000); // Poll every 10 seconds for Soroban
+        await this.sleep(10000, this.abortController?.signal); // Poll every 10 seconds for Soroban
       } catch (error) {
+        if ((error as Error).name === 'AbortError') break;
         this.logger.error('Error during event polling:', error);
         await this.handleReconnection();
       }
@@ -523,8 +544,24 @@ export class StellarEventListenerService implements OnModuleInit {
     }
   }
 
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  private sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        const err = new Error('AbortError');
+        err.name = 'AbortError';
+        reject(err);
+        return;
+      }
+
+      const timeout = setTimeout(resolve, ms);
+
+      signal?.addEventListener('abort', () => {
+        clearTimeout(timeout);
+        const err = new Error('AbortError');
+        err.name = 'AbortError';
+        reject(err);
+      });
+    });
   }
 
   // Public methods for external control

@@ -145,3 +145,39 @@ export interface IEscrowEventFilters {
   page?: number;
   limit?: number;
 }
+
+// Dispute related interfaces
+export interface IDispute {
+  id: string;
+  escrowId: string;
+  filedBy: string;
+  reason: string;
+  description: string;
+  evidenceUrls: string[];
+  severity: 'LOW' | 'MEDIUM' | 'HIGH';
+  status: 'OPEN' | 'UNDER_REVIEW' | 'RESOLVED';
+  resolution?: IDisputeResolution;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IDisputeResolution {
+  id: string;
+  resolvedBy: string;
+  outcome: 'RELEASED_TO_SELLER' | 'REFUNDED_TO_BUYER' | 'SPLIT';
+  notes?: string;
+  splitPercentage?: {
+    buyer: number;
+    seller: number;
+  };
+  resolvedAt: string;
+}
+
+export interface IDisputeTimeline {
+  id: string;
+  disputeId: string;
+  action: 'FILED' | 'ASSIGNED' | 'UNDER_REVIEW' | 'RESOLVED';
+  description: string;
+  actorId?: string;
+  createdAt: string;
+}

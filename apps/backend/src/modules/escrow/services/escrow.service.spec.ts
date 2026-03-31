@@ -1180,4 +1180,99 @@ describe('EscrowService', () => {
       ).resolves.toEqual(confirmedCondition);
     });
   });
+
+  describe('proposeMilestoneChange', () => {
+    it('should allow buyer to propose a milestone change', async () => {
+      const activeEscrow = activeEscrowWithParties();
+      escrowRepository.findOne.mockResolvedValue({
+        ...activeEscrow,
+        conditions: [{ ...mockCondition, isFulfilled: false, isMet: false }],
+      } as Escrow);
+      conditionRepository.save.mockResolvedValue({} as Condition);
+
+      const result = await service.proposeMilestoneChange(
+        'escrow-123',
+        'condition-123',
+        { amount: 150, description: 'new desc' },
+        'buyer-id',
+      );
+
+      expect(result.proposedAmount).toBe(150);
+      expect(result.proposedDescription).toBe('new desc');
+      expect(result.proposedByUserId).toBe('buyer-id');
+      expect(conditionRepository.save).toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException if escrow not active', async () => {
+      escrowRepository.findOne.mockResolvedValue({
+        ...mockEscrow,
+        status: EscrowStatus.PENDING,
+        conditions: [{ ...mockCondition, isFulfilled: false, isMet: false }],
+      } as Escrow);
+
+      await expect(
+        service.proposeMilestoneChange(
+          'escrow-123',
+          'condition-123',
+          { amount: 150 },
+          'buyer-id',
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('acceptMilestoneChange', () => {
+    it('should allow seller to accept a buyer proposal', async () => {
+      const activeEscrow = activeEscrowWithParties();
+      const conditionWithProposal = {
+        ...mockCondition,
+        isFulfilled: false,
+        isMet: false,
+        proposedAmount: 150,
+        proposedDescription: 'new desc',
+        proposedByUserId: 'buyer-id',
+      };
+
+      escrowRepository.findOne.mockResolvedValue({
+        ...activeEscrow,
+        conditions: [conditionWithProposal],
+      } as Escrow);
+      conditionRepository.save.mockResolvedValue({} as Condition);
+
+      const result = await service.acceptMilestoneChange(
+        'escrow-123',
+        'condition-123',
+        'seller-id',
+      );
+
+      expect(result.amount).toBe(150);
+      expect(result.description).toBe('new desc');
+      expect(result.proposedAmount).toBeNull();
+      expect(result.proposedByUserId).toBeNull();
+      expect(conditionRepository.save).toHaveBeenCalled();
+    });
+
+    it('should throw ForbiddenException if user tries to accept their own proposal', async () => {
+      const activeEscrow = activeEscrowWithParties();
+      const conditionWithProposal = {
+        ...mockCondition,
+        isFulfilled: false,
+        isMet: false,
+        proposedByUserId: 'buyer-id',
+      };
+
+      escrowRepository.findOne.mockResolvedValue({
+        ...activeEscrow,
+        conditions: [conditionWithProposal],
+      } as Escrow);
+
+      await expect(
+        service.acceptMilestoneChange(
+          'escrow-123',
+          'condition-123',
+          'buyer-id',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+  });
 });

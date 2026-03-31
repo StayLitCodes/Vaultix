@@ -3,24 +3,13 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import type { Server } from 'http';
 import { AppModule } from './../src/app.module';
-import supertest from 'supertest';
+import { Keypair } from 'stellar-sdk';
 
 // Mock Stellar keypair for testing
-interface MockKeypair {
-  publicKey: () => string;
-  sign: (data: Buffer) => Buffer;
-}
+// No mock needed, using real Keypair
 
-function createMockKeypair(): MockKeypair {
-  const randomKey =
-    'G' +
-    Array.from({ length: 55 }, () =>
-      'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'.charAt(Math.floor(Math.random() * 32)),
-    ).join('');
-  return {
-    publicKey: () => randomKey,
-    sign: (data: Buffer) => Buffer.from(data.toString() + '-signed'),
-  };
+function createMockKeypair(): Keypair {
+  return Keypair.random();
 }
 
 interface ChallengeResponse {
@@ -43,7 +32,7 @@ interface UserResponse {
 describe('AuthController (e2e)', () => {
   let app: INestApplication;
   let httpServer: Server;
-  let testKeypair: MockKeypair;
+  let testKeypair: Keypair;
   let testWalletAddress: string;
   let accessToken: string;
 
@@ -69,7 +58,9 @@ describe('AuthController (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
   });
 
   describe('/auth/challenge (POST)', () => {
@@ -172,7 +163,7 @@ describe('AuthController (e2e)', () => {
     });
 
     it('should return 401 without token', async () => {
-      await supertest(httpServer).get('/auth/me').expect(401);
+      await request(httpServer).get('/auth/me').expect(401);
     });
 
     it('should return 401 with invalid token', async () => {

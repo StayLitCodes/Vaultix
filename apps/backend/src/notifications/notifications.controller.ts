@@ -1,4 +1,4 @@
-import { AuthGuard } from '@nestjs/passport';
+import { AuthGuard } from '../modules/auth/middleware/auth.guard';
 import { NotificationService } from './notifications.service';
 import { PreferenceService } from './preference.service';
 import {

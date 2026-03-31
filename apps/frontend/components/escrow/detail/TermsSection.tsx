@@ -3,7 +3,7 @@ import { IEscrowExtended } from '@/types/escrow';
 
 interface TermsSectionProps {
   escrow: IEscrowExtended;
-  userRole: 'creator' | 'counterparty' | null;
+  userRole: 'creator' | 'counterparty' | 'arbitrator' | null;
 }
 
 const TermsSection: React.FC<TermsSectionProps> = ({ escrow, userRole }: TermsSectionProps) => {

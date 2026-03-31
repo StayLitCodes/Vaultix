@@ -5,6 +5,7 @@ import type { Server } from 'http';
 import { DataSource, Repository } from 'typeorm';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { AppModule } from '../src/app.module';
+import { Keypair } from 'stellar-sdk';
 import {
   Escrow,
   EscrowStatus,
@@ -12,39 +13,27 @@ import {
 } from '../src/modules/escrow/entities/escrow.entity';
 import { PartyRole } from '../src/modules/escrow/entities/party.entity';
 
-// Mock Stellar keypair for testing
-interface MockKeypair {
-  publicKey: () => string;
-  sign: (data: string) => Buffer;
-}
+// No mock needed, using real Keypair
 
-function createMockKeypair(): MockKeypair {
-  const randomKey =
-    'G' +
-    Array.from({ length: 55 }, () =>
-      'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'.charAt(Math.floor(Math.random() * 32)),
-    ).join('');
-  return {
-    publicKey: () => randomKey,
-    sign: (data: string) => Buffer.from(data + '-signed'),
-  };
+function createMockKeypair(): Keypair {
+  return Keypair.random();
 }
 
 describe('Escrow (e2e)', () => {
   let app: INestApplication;
   let httpServer: Server;
-  let testKeypair: MockKeypair;
+  let testKeypair: Keypair;
   let testWalletAddress: string;
   let accessToken: string;
   let userId: string;
 
-  let secondKeypair: MockKeypair;
+  let secondKeypair: Keypair;
   let secondWalletAddress: string;
   let secondAccessToken: string;
   let secondUserId: string;
   let escrowRepository: Repository<Escrow>;
 
-  let arbitratorKeypair: MockKeypair;
+  let arbitratorKeypair: Keypair;
   let arbitratorWalletAddress: string;
   let arbitratorAccessToken: string;
   let arbitratorUserId: string;
@@ -76,7 +65,7 @@ describe('Escrow (e2e)', () => {
       .send({ walletAddress: testWalletAddress });
 
     const message = (challengeResponse.body as { message: string }).message;
-    const signature = testKeypair.sign(message).toString('hex');
+    const signature = testKeypair.sign(Buffer.from(message)).toString('hex');
 
     const verifyResponse = await request(httpServer).post('/auth/verify').send({
       walletAddress: testWalletAddress,
@@ -97,7 +86,9 @@ describe('Escrow (e2e)', () => {
       .send({ walletAddress: secondWalletAddress });
 
     const message2 = (challenge2.body as { message: string }).message;
-    const signature2 = secondKeypair.sign(message2).toString('hex');
+    const signature2 = secondKeypair
+      .sign(Buffer.from(message2))
+      .toString('hex');
 
     const verify2 = await request(httpServer).post('/auth/verify').send({
       walletAddress: secondWalletAddress,
@@ -121,7 +112,9 @@ describe('Escrow (e2e)', () => {
       .send({ walletAddress: arbitratorWalletAddress });
 
     const message3 = (challenge3.body as { message: string }).message;
-    const signature3 = arbitratorKeypair.sign(message3).toString('hex');
+    const signature3 = arbitratorKeypair
+      .sign(Buffer.from(message3))
+      .toString('hex');
 
     const verify3 = await request(httpServer).post('/auth/verify').send({
       walletAddress: arbitratorWalletAddress,
@@ -142,7 +135,9 @@ describe('Escrow (e2e)', () => {
   });
 
   afterAll(async () => {
-    await app.close();
+    if (app) {
+      await app.close();
+    }
   });
 
   interface EscrowResponse {
@@ -591,12 +586,18 @@ describe('Escrow (e2e)', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({
         title: 'Dispute Test Escrow',
+        description: 'Test description',
         amount: 100,
+        asset: 'XLM',
         parties: [
           { userId: secondUserId, role: PartyRole.SELLER },
           { userId: arbitratorUserId, role: PartyRole.ARBITRATOR },
         ],
       });
+    if (res.status !== 201) {
+      console.log('CREATE ESCROW FAILED:', res.body);
+    }
+    expect(res.status).toBe(201);
     const id = (res.body as EscrowResponse).id;
     await escrowRepository.update(id, { status: EscrowStatus.ACTIVE });
     return id;
