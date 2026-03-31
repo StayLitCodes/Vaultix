@@ -56,6 +56,18 @@ export default function Navbar(): JSX.Element {
               Dashboard
             </Link>
             <Link
+              href="/profile"
+              className="text-gray-300 hover:text-white transition-colors"
+            >
+              Profile
+            </Link>
+            <Link
+              href="/settings"
+              className="text-gray-300 hover:text-white transition-colors"
+            >
+              Settings
+            </Link>
+            <Link
               href="/escrow/create"
               className="text-gray-300 hover:text-white transition-colors"
             >
@@ -101,6 +113,20 @@ export default function Navbar(): JSX.Element {
               className="block text-gray-300 hover:text-white transition-colors"
             >
               Dashboard
+            </Link>
+            <Link
+              href="/profile"
+              onClick={() => setIsMenuOpen(false)}
+              className="block text-gray-300 hover:text-white transition-colors"
+            >
+              Profile
+            </Link>
+            <Link
+              href="/settings"
+              onClick={() => setIsMenuOpen(false)}
+              className="block text-gray-300 hover:text-white transition-colors"
+            >
+              Settings
             </Link>
             <Link
               href="/escrow/create"

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '@/app/contexts/ToastProvider';
+import { WalletProvider } from '@/app/contexts/WalletContext';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
@@ -16,9 +17,11 @@ export default function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        {children}
-      </ToastProvider>
+      <WalletProvider>
+        <ToastProvider>
+          {children}
+        </ToastProvider>
+      </WalletProvider>
     </QueryClientProvider>
   );
 }
