@@ -54,6 +54,7 @@ export class AuthController {
       id: user.id,
       walletAddress: user.walletAddress,
       isActive: user.isActive,
+      role: user.role,
       createdAt: user.createdAt,
     };
   }

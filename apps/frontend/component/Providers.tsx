@@ -17,9 +17,11 @@ export default function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ToastProvider>
-        {children}
-      </ToastProvider>
+      <WalletProvider>
+        <ToastProvider>
+          {children}
+        </ToastProvider>
+      </WalletProvider>
     </QueryClientProvider>
   );
 }
