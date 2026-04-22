@@ -1,22 +1,3 @@
-test.rs
-use crate::{
-    Error, EscrowStatus, Milestone, MilestoneStatus, VaultixEscrow, VaultixEscrowClient,
-};
-
-use soroban_sdk::{
-    symbol_short, testutils::{Address as _, Ledger}, token, vec, Address, BytesN, Env,
-};
-
-fn create_token_contract<'a>(
-    env: &Env,
-    admin: &Address,
-) -> (token::Client<'a>, token::StellarAssetClient<'a>, Address) {
-    let token_address = env.register_stellar_asset_contract(admin.clone());
-    let token_admin = token::StellarAssetClient::new(env, &token_address);
-    let token_client = token::Client::new(env, &token_address);
-    (token_client, token_admin, token_address)
-}
-
 // ===============================================================================
 // Multi-sig hardening tests (#211)
 // Covers: duplicate signer rejection, signature reset semantics, replay
