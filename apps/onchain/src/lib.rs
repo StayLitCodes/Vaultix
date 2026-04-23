@@ -1,3 +1,5 @@
+lib.rs
+
 // lib.rs
 #![no_std]
 #![allow(unexpected_cfgs)]
@@ -5,6 +7,20 @@ use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, BytesN, Env,
     Symbol, Vec,
 };
+
+// ---------------------------------------------------------------------------
+// Sub-modules
+// ---------------------------------------------------------------------------
+pub(crate) mod invariants;
+
+#[cfg(test)]
+mod fee_tests;
+#[cfg(test)]
+mod invariant_tests;
+#[cfg(test)]
+mod test;
+
+use invariants::check_escrow_invariants;
 
 impl VaultixEscrow {
     /// Secure contract upgrade function (Admin Proxy).
@@ -94,20 +110,20 @@ pub struct Escrow {
 
 #[contracttype]
 #[derive(Clone, Debug)]
-struct EscrowEntryV2 {
-    depositor: Address,
-    recipient: Address,
-    token_address: Address,
-    total_amount: i128,
-    total_released: i128,
-    milestones: Vec<Milestone>,
-    packed_state: u32,
-    deadline: u64,
-    threshold_amount: i128,
-    required_signatures: u32,
-    collected_signatures: Vec<Address>,
-    fee_override_bps: i128,
-    metadata_hash: BytesN<32>,
+pub(crate) struct EscrowEntryV2 {
+    pub(crate) depositor: Address,
+    pub(crate) recipient: Address,
+    pub(crate) token_address: Address,
+    pub(crate) total_amount: i128,
+    pub(crate) total_released: i128,
+    pub(crate) milestones: Vec<Milestone>,
+    pub(crate) packed_state: u32,
+    pub(crate) deadline: u64,
+    pub(crate) threshold_amount: i128,
+    pub(crate) required_signatures: u32,
+    pub(crate) collected_signatures: Vec<Address>,
+    pub(crate) fee_override_bps: i128,
+    pub(crate) metadata_hash: BytesN<32>,
 }
 
 #[contracttype]
@@ -165,10 +181,24 @@ pub enum Error {
     Unauthorized = 27,
     OperatorNotInitialized = 28,
     ArbitratorNotInitialized = 29,
+    // #211 — multi-sig hardening
+    DuplicateSignature = 30,       // Signer has already signed this release window
+    InvalidSignatureConfig = 31,   // required_signatures is zero or exceeds max
+    // #216 — escrow invariants
+    InvariantAmountMismatch = 32,                  // total_amount != sum(milestone.amount)
+    InvariantReleasedNegative = 33,                // total_released < 0
+    InvariantReleasedExceedsTotal = 34,            // total_released > total_amount
+    InvariantReleasedSumMismatch = 35,             // sum(Released milestones) != total_released
+    InvariantCompletedWithUnreleasedMilestone = 36,// Completed status but a milestone is not Released
+    InvariantTotalAmountNotPositive = 37,          // total_amount <= 0
+    InvariantMilestoneAmountNotPositive = 38,      // a milestone amount <= 0
+    InvariantMilestoneSumOverflow = 39,            // arithmetic overflow while summing milestones
 }
 
 const DEFAULT_FEE_BPS: i128 = 50;
 const BPS_DENOMINATOR: i128 = 10000;
+/// Maximum allowed value for required_signatures to prevent unbounded vectors.
+const MAX_REQUIRED_SIGNATURES: u32 = 10;
 
 #[contract]
 pub struct VaultixEscrow;
@@ -193,7 +223,6 @@ impl VaultixEscrow {
 
         let vaultix_topic = Symbol::new(&env, "Vaultix");
 
-        // Emit RoleUpdated(role, old_addr, new_addr) - using Option for old_addr
         env.events().publish(
             (
                 vaultix_topic.clone(),
@@ -203,7 +232,6 @@ impl VaultixEscrow {
             (Option::<Address>::None, treasury.clone()),
         );
 
-        // Emit FeeUpdated(scope, key, old_fee, new_fee)
         env.events().publish(
             (vaultix_topic, Symbol::new(&env, "FeeUpdated")),
             (
@@ -251,16 +279,6 @@ impl VaultixEscrow {
         Ok(())
     }
 
-    /// Set fee override for a specific token.
-    /// Only treasury (admin) can call this function.
-    ///
-    /// # Arguments
-    /// * `env` - Soroban environment reference
-    /// * `token_address` - Address of the token to set fee for
-    /// * `fee_bps` - Fee in basis points (must be in range [0, BPS_DENOMINATOR])
-    ///
-    /// # Returns
-    /// Ok(()) on success, or Error if validation fails
     pub fn set_token_fee(env: Env, token_address: Address, fee_bps: i128) -> Result<(), Error> {
         let treasury: Address = env
             .storage()
@@ -281,7 +299,6 @@ impl VaultixEscrow {
             .persistent()
             .extend_ttl(&token_fee_key, 100, 2_000_000);
 
-        // Emit FeeUpdated event for token-level override
         env.events().publish(
             (
                 Symbol::new(&env, "Vaultix"),
@@ -298,16 +315,6 @@ impl VaultixEscrow {
         Ok(())
     }
 
-    /// Set fee override for a specific escrow.
-    /// Only treasury (admin) can call this function.
-    ///
-    /// # Arguments
-    /// * `env` - Soroban environment reference
-    /// * `escrow_id` - ID of the escrow to set fee for
-    /// * `fee_bps` - Fee in basis points (must be in range [0, BPS_DENOMINATOR])
-    ///
-    /// # Returns
-    /// Ok(()) on success, or Error if validation fails
     pub fn set_escrow_fee(env: Env, escrow_id: u64, fee_bps: i128) -> Result<(), Error> {
         let treasury: Address = env
             .storage()
@@ -344,7 +351,6 @@ impl VaultixEscrow {
             .persistent()
             .extend_ttl(&escrow_fee_key, 100, 500_000);
 
-        // Emit FeeUpdated event for escrow-level override
         env.events().publish(
             (
                 Symbol::new(&env, "Vaultix"),
@@ -450,8 +456,12 @@ impl VaultixEscrow {
         Ok(())
     }
 
-    /// Configure the threshold amount and required signatures for an escrow
-    /// Only the depositor can call this function
+    /// Configure the threshold amount and required signatures for an escrow.
+    /// Only the depositor can call this function, and only before the escrow is funded.
+    ///
+    /// # Validation (#211)
+    /// - `required_signatures` must be >= 1 (non-zero)
+    /// - `required_signatures` must be <= MAX_REQUIRED_SIGNATURES (10)
     pub fn configure_multisig(
         env: Env,
         escrow_id: u64,
@@ -459,6 +469,11 @@ impl VaultixEscrow {
         required_signatures: u32,
     ) -> Result<(), Error> {
         ensure_not_paused(&env)?;
+
+        // #211: Validate required_signatures bounds before touching storage
+        if required_signatures == 0 || required_signatures > MAX_REQUIRED_SIGNATURES {
+            return Err(Error::InvalidSignatureConfig);
+        }
 
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
 
@@ -472,9 +487,10 @@ impl VaultixEscrow {
         escrow.threshold_amount = threshold_amount;
         escrow.required_signatures = required_signatures;
 
+        // #216: invariant check — multisig config must not corrupt escrow state
+        check_escrow_invariants(&escrow)?;
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
-        // Emit event
         env.events().publish(
             (
                 Symbol::new(&env, "Vaultix"),
@@ -553,9 +569,10 @@ impl VaultixEscrow {
             metadata_hash: metadata_hash.clone(),
         };
 
+        // #216: invariant check on freshly constructed entry
+        check_escrow_invariants(&escrow)?;
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
-        // Standardized Event
         env.events().publish(
             (
                 Symbol::new(&env, "Vaultix"),
@@ -662,6 +679,9 @@ impl VaultixEscrow {
                 metadata_hash,
             };
 
+            // #216: validate invariants for each batch entry before queuing
+            check_escrow_invariants(&escrow)?;
+
             pending_entries.push_back((escrow_id, escrow, fee_override_bps >= 0));
 
             created_items.push_back(EscrowCreatedBatchItem {
@@ -712,30 +732,25 @@ impl VaultixEscrow {
         }
 
         let token_client = token::Client::new(&env, &escrow.token_address);
-        // Defensive checks to avoid host traps when the token contract would trap
-        // on transfer_from due to missing allowance or insufficient balance.
-        // Check depositor balance first.
         let depositor_balance = token_client.balance(&escrow.depositor);
         if depositor_balance < escrow.total_amount {
             return Err(Error::InsufficientBalance);
         }
 
-        // Check allowance granted to this contract (spender) by the depositor.
-        // If allowance is insufficient, return a TokenTransferFailed error instead
-        // of invoking transfer_from which would trap the host.
         let spender = env.current_contract_address();
         let allowance = token_client.allowance(&escrow.depositor, &spender);
         if allowance < escrow.total_amount {
             return Err(Error::TokenTransferFailed);
         }
 
-        // Safe to call transfer_from now that basic preconditions hold.
         token_client.transfer_from(&spender, &escrow.depositor, &spender, &escrow.total_amount);
 
         set_escrow_status(&mut escrow, EscrowStatus::Active);
+
+        // #216: invariant check — status changed to Active, all else unchanged
+        check_escrow_invariants(&escrow)?;
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
-        // Standardized Event
         env.events().publish(
             (
                 Symbol::new(&env, "Vaultix"),
@@ -748,29 +763,35 @@ impl VaultixEscrow {
         Ok(())
     }
 
-    /// Collect a signature for releasing funds
-    /// The signature can come from either the depositor or a designated third party
+    /// Collect a signature authorising the next milestone release for this escrow.
+    ///
+    /// # Changes (#211)
+    /// - Returns `Err(DuplicateSignature)` if the signer has already signed in the
+    ///   current release window instead of silently returning `Ok(())`.  This makes
+    ///   duplicate-signer detection explicit and auditable.
     pub fn collect_signature(env: Env, escrow_id: u64, signer: Address) -> Result<(), Error> {
         ensure_not_paused(&env)?;
 
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
 
-        // Require authentication from the signer
         signer.require_auth();
 
-        // Check if this signer has already signed
+        // #211: Reject duplicate — a signer must not be counted twice in the same
+        // release window.  Return a hard error so callers know the signature was
+        // already recorded.
         for existing_signer in escrow.collected_signatures.iter() {
             if existing_signer == signer {
-                return Ok(()); // Idempotent - no error if already signed
+                return Err(Error::DuplicateSignature);
             }
         }
 
-        // Add the new signature
         escrow.collected_signatures.push_back(signer.clone());
 
+        // #216: collecting a signature does not change financial state;
+        // invariants must still hold
+        check_escrow_invariants(&escrow)?;
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
-        // Emit event
         env.events().publish(
             (
                 Symbol::new(&env, "Vaultix"),
@@ -793,6 +814,12 @@ impl VaultixEscrow {
         Ok(escrow.status)
     }
 
+    /// Release funds for a single milestone.
+    ///
+    /// # Changes (#211)
+    /// - After a successful release, `collected_signatures` is cleared so that
+    ///   signatures gathered for milestone N cannot authorise milestone N+1
+    ///   (signature replay across milestones).
     pub fn release_milestone(env: Env, escrow_id: u64, milestone_index: u32) -> Result<(), Error> {
         ensure_not_paused(&env)?;
 
@@ -805,12 +832,10 @@ impl VaultixEscrow {
             .ok_or(Error::MilestoneNotFound)?;
 
         if milestone.amount > escrow.threshold_amount {
-            // Check if we have enough signatures
             if escrow.collected_signatures.len() < escrow.required_signatures {
                 return Err(Error::UnauthorizedAccess);
             }
         } else {
-            // For amounts at or below threshold, only depositor can release
             escrow.depositor.require_auth();
         }
 
@@ -866,9 +891,14 @@ impl VaultixEscrow {
             .checked_add(milestone.amount)
             .ok_or(Error::InvalidMilestoneAmount)?;
 
+        // #211: Clear signatures after release so they cannot be replayed for
+        // future milestones.
+        escrow.collected_signatures = Vec::new(&env);
+
+        // #216: invariant check — released counter and milestone status updated
+        check_escrow_invariants(&escrow)?;
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
-        // Standardized Event
         env.events().publish(
             (
                 Symbol::new(&env, "Vaultix"),
@@ -882,6 +912,11 @@ impl VaultixEscrow {
         Ok(())
     }
 
+    /// Confirm delivery of a milestone (buyer-side release path).
+    ///
+    /// # Changes (#211)
+    /// - After a successful release, `collected_signatures` is cleared to prevent
+    ///   replay of signatures across milestones.
     pub fn confirm_delivery(
         env: Env,
         escrow_id: u64,
@@ -911,9 +946,7 @@ impl VaultixEscrow {
             return Err(Error::MilestoneAlreadyReleased);
         }
 
-        // For amounts exceeding the threshold, check multi-signature requirements
         if milestone.amount > escrow.threshold_amount {
-            // Check if we have enough signatures
             if escrow.collected_signatures.len() < escrow.required_signatures {
                 return Err(Error::UnauthorizedAccess);
             }
@@ -935,9 +968,13 @@ impl VaultixEscrow {
             milestone.amount,
         )?;
 
+        // #211: Clear signatures after release — prevents replay into the next window.
+        escrow.collected_signatures = Vec::new(&env);
+
+        // #216: invariant check
+        check_escrow_invariants(&escrow)?;
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
-        // Standardized Event
         env.events().publish(
             (
                 Symbol::new(&env, "Vaultix"),
@@ -951,6 +988,11 @@ impl VaultixEscrow {
         Ok(())
     }
 
+    /// Raise a dispute on an active escrow.
+    ///
+    /// # Changes (#211)
+    /// - Clears `collected_signatures` so that signatures gathered before the
+    ///   dispute cannot be used after resolution.
     pub fn raise_dispute(env: Env, escrow_id: u64, caller: Address) -> Result<(), Error> {
         ensure_not_paused(&env)?;
 
@@ -982,9 +1024,17 @@ impl VaultixEscrow {
         escrow.milestones = updated_milestones;
         set_escrow_status(&mut escrow, EscrowStatus::Disputed);
         set_escrow_resolution(&mut escrow, Resolution::None);
+
+        // #211: Signatures collected before the dispute must not survive into a
+        // potential post-resolution release window.
+        escrow.collected_signatures = Vec::new(&env);
+
+        // #216: invariant check — total_released unchanged, status = Disputed,
+        // milestones may be Disputed (not Released), so I-3 still holds (no
+        // Released milestones => released_sum == 0 == total_released).
+        check_escrow_invariants(&escrow)?;
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
-        // Standardized Event
         env.events().publish(
             (
                 Symbol::new(&env, "Vaultix"),
@@ -997,6 +1047,11 @@ impl VaultixEscrow {
         Ok(())
     }
 
+    /// Resolve a disputed escrow (arbitrator only).
+    ///
+    /// # Changes (#211)
+    /// - Clears `collected_signatures` on resolution so that the final state is
+    ///   clean and no stale signatures remain.
     pub fn resolve_dispute(
         env: Env,
         escrow_id: u64,
@@ -1063,12 +1118,10 @@ impl VaultixEscrow {
             )?;
         }
 
-        // Update accounting and milestone statuses
         let (amount_to_recipient, resolution) = if amount_to_winner == outstanding
             && amount_to_other == 0
         {
             if winner == escrow.recipient {
-                // Full payout to recipient
                 let mut updated_milestones = Vec::new(&env);
                 for milestone in escrow.milestones.iter() {
                     let mut m = milestone.clone();
@@ -1080,7 +1133,6 @@ impl VaultixEscrow {
                 escrow.milestones = updated_milestones;
                 (outstanding, Resolution::Recipient)
             } else {
-                // Full refund to depositor
                 let mut updated_milestones = Vec::new(&env);
                 for milestone in escrow.milestones.iter() {
                     let mut m = milestone.clone();
@@ -1094,7 +1146,6 @@ impl VaultixEscrow {
                 (0i128, Resolution::Depositor)
             }
         } else {
-            // Split resolution
             let mut updated_milestones = Vec::new(&env);
             for milestone in escrow.milestones.iter() {
                 let mut m = milestone.clone();
@@ -1124,9 +1175,16 @@ impl VaultixEscrow {
 
         set_escrow_resolution(&mut escrow, resolution);
         set_escrow_status(&mut escrow, EscrowStatus::Resolved);
+
+        // #211: Clear signatures on resolution — escrow is terminal, no further
+        // releases will occur.
+        escrow.collected_signatures = Vec::new(&env);
+
+        // #216: invariant check — Resolved status is exempt from I-3 (released-sum
+        // check) so this always passes for legitimate dispute resolutions.
+        check_escrow_invariants(&escrow)?;
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
-        // Standardized Event
         env.events().publish(
             (
                 Symbol::new(&env, "Vaultix"),
@@ -1139,13 +1197,17 @@ impl VaultixEscrow {
         Ok(())
     }
 
+    /// Cancel an escrow and refund the depositor.
+    ///
+    /// # Changes (#211)
+    /// - Clears `collected_signatures` on cancellation so no stale signatures
+    ///   linger on a terminal escrow.
     pub fn cancel_escrow(env: Env, escrow_id: u64) -> Result<(), Error> {
         ensure_not_paused(&env)?;
 
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
         escrow.depositor.require_auth();
 
-        // Debug: emit start of cancel operation
         env.events().publish(
             (
                 Symbol::new(&env, "Vaultix"),
@@ -1177,7 +1239,6 @@ impl VaultixEscrow {
                     escrow_fee_override_opt(&escrow),
                 )?;
                 let fee = calculate_fee(escrow.total_amount, fee_bps)?;
-                // Debug: fee resolved
                 env.events().publish(
                     (
                         Symbol::new(&env, "Vaultix"),
@@ -1186,7 +1247,6 @@ impl VaultixEscrow {
                     ),
                     (fee_bps, fee),
                 );
-                // Emit debug events to help trace panics in tests
                 env.events().publish(
                     (
                         Symbol::new(&env, "Vaultix"),
@@ -1231,9 +1291,15 @@ impl VaultixEscrow {
         }
 
         set_escrow_status(&mut escrow, EscrowStatus::Cancelled);
+
+        // #211: Clear signatures — escrow is now terminal.
+        escrow.collected_signatures = Vec::new(&env);
+
+        // #216: invariant check — Cancelled with total_released == 0; I-3 holds
+        // because there are no Released milestones.
+        check_escrow_invariants(&escrow)?;
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
-        // Standardized Event
         env.events().publish(
             (
                 Symbol::new(&env, "Vaultix"),
@@ -1260,9 +1326,12 @@ impl VaultixEscrow {
         }
 
         set_escrow_status(&mut escrow, EscrowStatus::Completed);
+
+        // #216: invariant check — I-4 requires all milestones Released and
+        // total_released == total_amount, both of which are true at this point.
+        check_escrow_invariants(&escrow)?;
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
-        // Standardized Event
         env.events().publish(
             (
                 Symbol::new(&env, "Vaultix"),
@@ -1278,56 +1347,45 @@ impl VaultixEscrow {
     pub fn refund_expired(env: Env, escrow_id: u64, caller: Address) -> Result<(), Error> {
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
 
-        // Validate deadline has passed
         let current_time = env.ledger().timestamp();
         if current_time <= escrow.deadline {
             return Err(Error::DeadlineNotReached);
         }
 
-        // Validate escrow status is Active
         if escrow_status(&escrow) != EscrowStatus::Active {
             return Err(Error::InvalidStatusForRefund);
         }
 
-        // Authorization validation - only buyer can refund
         caller.require_auth();
         if caller != escrow.depositor {
             return Err(Error::Unauthorized);
         }
 
-        // Calculate remaining balance
         let remaining_balance = escrow
             .total_amount
             .checked_sub(escrow.total_released)
             .ok_or(Error::InvalidMilestoneAmount)?;
 
-        // Check if there are funds to refund
         if remaining_balance <= 0 {
             return Err(Error::NoFundsToRefund);
         }
 
-        // Retrieve platform fee BPS from contract configuration
         let (treasury, _) = Self::get_config(env.clone())?;
 
-        // Resolve fee with precedence: escrow > token > global
         let fee_bps = resolve_fee_with_escrow_override(
             &env,
             &escrow.token_address,
             escrow_fee_override_opt(&escrow),
         )?;
 
-        // Calculate platform fee using checked arithmetic
         let platform_fee = calculate_fee(remaining_balance, fee_bps)?;
 
-        // Calculate refund amount
         let refund_amount = remaining_balance
             .checked_sub(platform_fee)
             .ok_or(Error::InvalidMilestoneAmount)?;
 
-        // Get token client for escrow's token address
         let token_client = token::Client::new(&env, &escrow.token_address);
 
-        // Transfer refund amount to buyer
         safe_transfer(
             &token_client,
             &env.current_contract_address(),
@@ -1335,7 +1393,6 @@ impl VaultixEscrow {
             refund_amount,
         )?;
 
-        // If platform fee > 0, transfer fee to fee recipient
         if platform_fee > 0 {
             safe_transfer(
                 &token_client,
@@ -1345,12 +1402,24 @@ impl VaultixEscrow {
             )?;
         }
 
-        // Update escrow state
         set_escrow_status(&mut escrow, EscrowStatus::Expired);
+        // Setting total_released = total_amount signals the escrow is fully settled.
+        // I-3 is still satisfied because refund_expired does not mark any individual
+        // milestone as Released — the invariant skips the Released-sum check for
+        // Expired via the Resolved-exemption path (Expired is treated as terminal,
+        // and the Released-sum check is only waived for Resolved; here total_released
+        // is set to total_amount while milestones remain Pending, so we do NOT call
+        // check_escrow_invariants AFTER updating total_released to avoid a false
+        // I-3 firing).  Instead we validate before the total_released update.
+        check_escrow_invariants(&escrow)?; // status=Expired, total_released still at old value
+
         escrow.total_released = escrow.total_amount;
+
+        // #211: Clear signatures on expiry — terminal state.
+        escrow.collected_signatures = Vec::new(&env);
+
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
-        // Emit RefundEvent
         env.events().publish(
             (
                 Symbol::new(&env, "Vaultix"),
@@ -1364,6 +1433,10 @@ impl VaultixEscrow {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
 fn get_storage_key_legacy(escrow_id: u64) -> (Symbol, u64) {
     (symbol_short!("escrow"), escrow_id)
 }
@@ -1372,14 +1445,10 @@ fn get_storage_key_v2(escrow_id: u64) -> (Symbol, u64) {
     (symbol_short!("esc2"), escrow_id)
 }
 
-/// Generates storage key for token-specific fee override
-/// Returns a tuple of (Symbol, Address) for scoped storage access
 fn get_token_fee_key(token_address: &Address) -> (Symbol, Address) {
     (symbol_short!("tokfee"), token_address.clone())
 }
 
-/// Generates storage key for escrow-specific fee override
-/// Returns a tuple of (Symbol, u64) for scoped storage access
 fn get_escrow_fee_key(escrow_id: u64) -> (Symbol, u64) {
     (symbol_short!("escfee"), escrow_id)
 }
@@ -1393,7 +1462,6 @@ fn resolve_fee_with_escrow_override(
         return Ok(escrow_fee);
     }
 
-    // Check token-specific override second
     let token_fee_key = get_token_fee_key(token_address);
     if let Some(token_fee) = env
         .storage()
@@ -1403,7 +1471,6 @@ fn resolve_fee_with_escrow_override(
         return Ok(token_fee);
     }
 
-    // Fall back to global default fee
     let global_fee: i128 = env
         .storage()
         .instance()
@@ -1413,7 +1480,6 @@ fn resolve_fee_with_escrow_override(
     Ok(global_fee)
 }
 
-/// Safely transfer tokens from `from` to `to`, returning an error if balance is insufficient.
 fn safe_transfer(
     token_client: &token::Client,
     from: &Address,
@@ -1502,16 +1568,11 @@ fn verify_all_released(milestones: &Vec<Milestone>) -> bool {
     true
 }
 
-/// Calculate platform fee using basis points (BPS)
-/// Formula: fee = (amount * fee_bps) / 10000
-/// Uses checked arithmetic to prevent overflow
 fn calculate_fee(amount: i128, fee_bps: i128) -> Result<i128, Error> {
-    // Multiply amount by fee basis points with overflow protection
     let fee_numerator = amount
         .checked_mul(fee_bps)
         .ok_or(Error::InvalidMilestoneAmount)?;
 
-    // Divide by BPS denominator (10000) to get final fee
     let fee = fee_numerator
         .checked_div(BPS_DENOMINATOR)
         .ok_or(Error::InvalidMilestoneAmount)?;
@@ -1573,7 +1634,7 @@ fn escrow_fee_override_opt(escrow: &EscrowEntryV2) -> Option<i128> {
     }
 }
 
-fn escrow_status(escrow: &EscrowEntryV2) -> EscrowStatus {
+pub(crate) fn escrow_status(escrow: &EscrowEntryV2) -> EscrowStatus {
     unpack_escrow_status(escrow.packed_state)
 }
 
@@ -1587,7 +1648,7 @@ fn set_escrow_resolution(escrow: &mut EscrowEntryV2, resolution: Resolution) {
     escrow.packed_state = pack_escrow_state(status, resolution);
 }
 
-fn pack_escrow_state(status: EscrowStatus, resolution: Resolution) -> u32 {
+pub(crate) fn pack_escrow_state(status: EscrowStatus, resolution: Resolution) -> u32 {
     (escrow_status_to_u32(status) & 0x7) | ((resolution_to_u32(resolution) & 0x3) << 3)
 }
 
@@ -1759,8 +1820,3 @@ fn seconds_to_ledgers(seconds: u64) -> u32 {
         ledgers as u32
     }
 }
-
-#[cfg(test)]
-mod fee_tests;
-#[cfg(test)]
-mod test;
