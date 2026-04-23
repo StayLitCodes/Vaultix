@@ -24,6 +24,20 @@ import type {
 export * from "@stellar/stellar-sdk";
 export * as contract from "@stellar/stellar-sdk/contract";
 export * as rpc from "@stellar/stellar-sdk/rpc";
+import { xdr } from "@stellar/stellar-sdk";
+
+declare module "@stellar/stellar-sdk/contract" {
+  interface AssembledTransaction<T> {
+    asOperation(): xdr.Operation;
+  }
+}
+
+(AssembledTransaction.prototype as any).asOperation = function() {
+  if (!this.built) {
+    throw new Error("Transaction must be built before calling asOperation()");
+  }
+  return this.built.operations[0];
+};
 
 if (typeof window !== "undefined") {
   //@ts-ignore Buffer exists
@@ -300,26 +314,26 @@ export class Client extends ContractClient {
     )
   }
   public readonly fromJSON = {
-    init: this.txFromJSON<Result<void>>,
-        get_state: this.txFromJSON<Result<EscrowStatus>>,
-        get_config: this.txFromJSON<Result<readonly [string, i128]>>,
-        get_escrow: this.txFromJSON<Result<Escrow>>,
-        initialize: this.txFromJSON<Result<void>>,
-        set_paused: this.txFromJSON<Result<void>>,
-        update_fee: this.txFromJSON<Result<void>>,
-        cancel_escrow: this.txFromJSON<Result<void>>,
-        create_escrow: this.txFromJSON<Result<void>>,
-        deposit_funds: this.txFromJSON<Result<void>>,
-        raise_dispute: this.txFromJSON<Result<void>>,
-        set_token_fee: this.txFromJSON<Result<void>>,
-        refund_expired: this.txFromJSON<Result<void>>,
-        set_escrow_fee: this.txFromJSON<Result<void>>,
-        complete_escrow: this.txFromJSON<Result<void>>,
-        resolve_dispute: this.txFromJSON<Result<void>>,
-        confirm_delivery: this.txFromJSON<Result<void>>,
-        collect_signature: this.txFromJSON<Result<void>>,
-        release_milestone: this.txFromJSON<Result<void>>,
-        configure_multisig: this.txFromJSON<Result<void>>,
-        create_escrows_batch: this.txFromJSON<Result<void>>
+    init: (json: string) => (this as any).txFromJSON(json),
+        get_state: (json: string) => (this as any).txFromJSON(json),
+        get_config: (json: string) => (this as any).txFromJSON(json),
+        get_escrow: (json: string) => (this as any).txFromJSON(json),
+        initialize: (json: string) => (this as any).txFromJSON(json),
+        set_paused: (json: string) => (this as any).txFromJSON(json),
+        update_fee: (json: string) => (this as any).txFromJSON(json),
+        cancel_escrow: (json: string) => (this as any).txFromJSON(json),
+        create_escrow: (json: string) => (this as any).txFromJSON(json),
+        deposit_funds: (json: string) => (this as any).txFromJSON(json),
+        raise_dispute: (json: string) => (this as any).txFromJSON(json),
+        set_token_fee: (json: string) => (this as any).txFromJSON(json),
+        refund_expired: (json: string) => (this as any).txFromJSON(json),
+        set_escrow_fee: (json: string) => (this as any).txFromJSON(json),
+        complete_escrow: (json: string) => (this as any).txFromJSON(json),
+        resolve_dispute: (json: string) => (this as any).txFromJSON(json),
+        confirm_delivery: (json: string) => (this as any).txFromJSON(json),
+        collect_signature: (json: string) => (this as any).txFromJSON(json),
+        release_milestone: (json: string) => (this as any).txFromJSON(json),
+        configure_multisig: (json: string) => (this as any).txFromJSON(json),
+        create_escrows_batch: (json: string) => (this as any).txFromJSON(json)
   }
 }

@@ -184,10 +184,11 @@ export class EscrowStellarIntegrationService {
       );
 
       // Create milestone release operations
-      const operations = await this.escrowOperationsService.createMilestoneReleaseOps(
-        escrowId,
-        milestoneId,
-      );
+      const operations =
+        await this.escrowOperationsService.createMilestoneReleaseOps(
+          escrowId,
+          milestoneId,
+        );
 
       // Build the transaction
       const transaction = await this.stellarService.buildTransaction(
@@ -229,11 +230,12 @@ export class EscrowStellarIntegrationService {
       );
 
       // Create confirmation operations
-      const operations = await this.escrowOperationsService.createConfirmationOps(
-        escrowId,
-        confirmerPublicKey,
-        milestoneId,
-      );
+      const operations =
+        await this.escrowOperationsService.createConfirmationOps(
+          escrowId,
+          confirmerPublicKey,
+          milestoneId,
+        );
 
       // Build the transaction
       const transaction = await this.stellarService.buildTransaction(
@@ -274,7 +276,8 @@ export class EscrowStellarIntegrationService {
       this.logger.log(`Canceling on-chain escrow ${escrowId}`);
 
       // Create cancel operations
-      const operations = await this.escrowOperationsService.createCancelOps(escrowId);
+      const operations =
+        await this.escrowOperationsService.createCancelOps(escrowId);
 
       // Build the transaction
       const transaction = await this.stellarService.buildTransaction(

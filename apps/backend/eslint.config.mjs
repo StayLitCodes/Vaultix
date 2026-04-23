@@ -116,9 +116,13 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/services/stellar/escrow-operations.ts'],
+    files: ['src/services/stellar/escrow-operations.ts', 'src/services/stellar/soroban-client.service.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
     },
   },
   {

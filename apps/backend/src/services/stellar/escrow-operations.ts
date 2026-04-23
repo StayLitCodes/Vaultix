@@ -1,6 +1,6 @@
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { Injectable, Logger } from '@nestjs/common';
-import { Client as ContractClient } from 'contract-bindings';
+import { Client as ContractClient, MilestoneStatus } from 'contract-bindings';
 
 @Injectable()
 export class EscrowOperationsService {
@@ -45,7 +45,7 @@ export class EscrowOperationsService {
       const milestoneList = milestones.map((m) => ({
         amount: BigInt(m.amount),
         description: m.description.replace(/\s+/g, '_'),
-        status: { tag: 'Pending', values: undefined } as any,
+        status: { tag: 'Pending', values: undefined } as MilestoneStatus,
       }));
 
       const tx = await this.client.create_escrow({
@@ -73,7 +73,9 @@ export class EscrowOperationsService {
   /**
    * Creates operations for funding an escrow
    */
-  async createFundingOps(escrowId: string): Promise<StellarSdk.xdr.Operation[]> {
+  async createFundingOps(
+    escrowId: string,
+  ): Promise<StellarSdk.xdr.Operation[]> {
     try {
       this.logger.log(`Creating funding ops for escrow ID: ${escrowId}`);
 
@@ -226,7 +228,9 @@ export class EscrowOperationsService {
       const tx = await this.client.resolve_dispute({
         escrow_id: BigInt(escrowId),
         winner: winnerPublicKey,
-        split_winner_amount: splitWinnerAmount ? BigInt(splitWinnerAmount) : undefined,
+        split_winner_amount: splitWinnerAmount
+          ? BigInt(splitWinnerAmount)
+          : undefined,
       });
 
       return [tx.asOperation()];
@@ -246,7 +250,7 @@ export class EscrowOperationsService {
       return error.message;
     }
     if (typeof error === 'object' && error !== null && 'message' in error) {
-      return String((error as any).message);
+      return String((error as Record<string, unknown>).message);
     }
     return 'Unknown error';
   }

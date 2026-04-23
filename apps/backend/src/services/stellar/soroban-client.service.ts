@@ -1,15 +1,25 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import * as StellarSdk from '@stellar/stellar-sdk';
-import { Client as ContractClient, Escrow as OnchainEscrowRaw, Errors as ContractErrors } from 'contract-bindings';
+import {
+  Client as ContractClient,
+  Escrow as OnchainEscrowRaw,
+  Errors as ContractErrors,
+} from 'contract-bindings';
 import stellarConfig from '../../config/stellar.config';
+
+export interface OnchainMilestone {
+  amount: string;
+  description: string;
+  status: string;
+}
 
 export interface OnchainEscrow {
   status: string;
   amount: string;
   depositor: string;
   recipient: string;
-  milestones?: any[];
+  milestones?: OnchainMilestone[];
   totalReleased?: string;
 }
 
@@ -93,7 +103,8 @@ export class SorobanClientService {
    * Decodes contract-specific error codes from Soroban XDR
    */
   decodeContractError(errorCode: number): string {
-    const errorEntry = (ContractErrors as any)[errorCode];
+    const errors = ContractErrors as Record<number, { message: string }>;
+    const errorEntry = errors[errorCode];
     return errorEntry ? errorEntry.message : `UnknownError(${errorCode})`;
   }
 }
