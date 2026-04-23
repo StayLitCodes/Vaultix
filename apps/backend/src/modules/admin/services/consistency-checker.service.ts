@@ -180,7 +180,8 @@ export class ConsistencyCheckerService {
       Completed: 'completed',
       Cancelled: 'cancelled',
       Disputed: 'disputed',
-      ArbiterResolved: 'completed',
+      Resolved: 'completed',
+      Expired: 'cancelled',
     };
     return statusMap[contractStatus] || contractStatus.toLowerCase();
   }

@@ -41,3 +41,39 @@ jobs:
 
       - name: Run tests
         run: cargo test
+
+  bindings:
+    name: Check Bindings
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Install Stellar CLI
+        uses: stellar/stellar-cli@v26.0.0
+
+      - name: Build Contract
+        run: |
+          cd apps/onchain
+          cargo build --target wasm32-unknown-unknown --release
+
+      - name: Generate Bindings
+        run: |
+          stellar contract bindings typescript --wasm apps/onchain/target/wasm32-unknown-unknown/release/onchain.wasm --output-dir apps/contract-bindings --overwrite
+
+      - name: Check for drift
+        run: |
+          if [ -n "$(git status --porcelain apps/contract-bindings)" ]; then
+            echo "Error: Contract bindings are out of sync with contract source."
+            echo "Please run 'npm run generate-bindings' and commit the changes."
+            git status apps/contract-bindings
+            git diff apps/contract-bindings
+            exit 1
+          fi

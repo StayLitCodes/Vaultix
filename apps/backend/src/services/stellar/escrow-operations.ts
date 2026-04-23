@@ -1,77 +1,67 @@
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { Injectable, Logger } from '@nestjs/common';
+import { Client as ContractClient } from 'contract-bindings';
 
 @Injectable()
 export class EscrowOperationsService {
   private readonly logger = new Logger(EscrowOperationsService.name);
-
   private readonly contractId: string;
+  private readonly networkPassphrase: string;
+  private readonly rpcUrl: string;
+  private client: ContractClient;
 
   constructor() {
     this.contractId = process.env.STELLAR_CONTRACT_ID || '';
+    this.networkPassphrase =
+      process.env.STELLAR_NETWORK_PASSPHRASE ||
+      'Test SDF Network ; September 2015';
+    this.rpcUrl =
+      process.env.STELLAR_RPC_URL || 'https://soroban-testnet.stellar.org';
+
+    this.client = new ContractClient({
+      rpcUrl: this.rpcUrl,
+      networkPassphrase: this.networkPassphrase,
+      contractId: this.contractId,
+      allowHttp: true,
+    });
   }
 
   /**
    * Creates operations for initializing an escrow contract
    */
-  createEscrowInitializationOps(
+  async createEscrowInitializationOps(
     escrowId: string,
     depositorPublicKey: string,
     recipientPublicKey: string,
     tokenAddress: string,
     milestones: Array<{ id: number; amount: string; description: string }>,
     deadline: number,
-  ): StellarSdk.xdr.Operation[] {
+  ): Promise<StellarSdk.xdr.Operation[]> {
     try {
       this.logger.log(
         `Creating escrow initialization ops for escrow ID: ${escrowId}`,
       );
 
-      const contract = new StellarSdk.Contract(this.contractId);
+      const milestoneList = milestones.map((m) => ({
+        amount: BigInt(m.amount),
+        description: m.description.replace(/\s+/g, '_'),
+        status: { tag: 'Pending', values: undefined } as any,
+      }));
 
-      const milestoneVec = StellarSdk.xdr.ScVal.scvVec(
-        milestones.map((m) =>
-          StellarSdk.xdr.ScVal.scvMap([
-            new StellarSdk.xdr.ScMapEntry({
-              key: StellarSdk.xdr.ScVal.scvSymbol('amount'),
-              val: StellarSdk.xdr.ScVal.scvI128(
-                new StellarSdk.xdr.Int128Parts({
-                  lo: new StellarSdk.xdr.Uint64(m.amount),
-                  hi: new StellarSdk.xdr.Int64('0'),
-                }),
-              ),
-            }),
-            new StellarSdk.xdr.ScMapEntry({
-              key: StellarSdk.xdr.ScVal.scvSymbol('description'),
-              val: StellarSdk.xdr.ScVal.scvSymbol(
-                m.description.replace(/\s+/g, '_'),
-              ),
-            }),
-            new StellarSdk.xdr.ScMapEntry({
-              key: StellarSdk.xdr.ScVal.scvSymbol('status'),
-              val: StellarSdk.xdr.ScVal.scvSymbol('Pending'),
-            }),
-          ]),
-        ),
-      );
-
-      const op = contract.call(
-        'create_escrow',
-        StellarSdk.xdr.ScVal.scvU64(new StellarSdk.xdr.Uint64(escrowId)),
-        new StellarSdk.Address(depositorPublicKey).toScVal(),
-        new StellarSdk.Address(recipientPublicKey).toScVal(),
-        new StellarSdk.Address(
+      const tx = await this.client.create_escrow({
+        escrow_id: BigInt(escrowId),
+        depositor: depositorPublicKey,
+        recipient: recipientPublicKey,
+        token_address:
           tokenAddress === 'native'
-            ? 'CDLZFC3SYJYDZT7K67VZ75YJFCGSN5W4B77T2YI2EHCWH6I6D6LNCU6B' /* Native XLM Token Contract in Testnet */
+            ? 'CDLZFC3SYJYDZT7K67VZ75YJFCGSN5W4B77T2YI2EHCWH6I6D6LNCU6B'
             : tokenAddress,
-        ).toScVal(),
-        milestoneVec,
-        StellarSdk.xdr.ScVal.scvU64(
-          new StellarSdk.xdr.Uint64(deadline.toString()),
-        ),
-      );
+        milestones: milestoneList,
+        deadline: BigInt(deadline),
+        metadata_hash: Buffer.alloc(32), // Placeholder if not provided
+      });
 
-      return [op];
+      return [tx.asOperation()];
     } catch (error) {
       this.logger.error(
         `Failed to create escrow initialization ops: ${this.getErrorMessage(error)}`,
@@ -83,21 +73,15 @@ export class EscrowOperationsService {
   /**
    * Creates operations for funding an escrow
    */
-  createFundingOps(
-    escrowId: string,
-    // amount: string, // Not used in contract call directly as it's part of escrow creation
-    // asset: StellarSdk.Asset,
-  ): StellarSdk.xdr.Operation[] {
+  async createFundingOps(escrowId: string): Promise<StellarSdk.xdr.Operation[]> {
     try {
       this.logger.log(`Creating funding ops for escrow ID: ${escrowId}`);
 
-      const contract = new StellarSdk.Contract(this.contractId);
-      const op = contract.call(
-        'deposit_funds',
-        StellarSdk.xdr.ScVal.scvU64(new StellarSdk.xdr.Uint64(escrowId)),
-      );
+      const tx = await this.client.deposit_funds({
+        escrow_id: BigInt(escrowId),
+      });
 
-      return [op];
+      return [tx.asOperation()];
     } catch (error) {
       this.logger.error(
         `Failed to create funding ops: ${this.getErrorMessage(error)}`,
@@ -109,27 +93,21 @@ export class EscrowOperationsService {
   /**
    * Creates operations for releasing a milestone payment
    */
-  createMilestoneReleaseOps(
+  async createMilestoneReleaseOps(
     escrowId: string,
     milestoneId: number,
-    // releaserPublicKey: string,
-    // recipientPublicKey: string,
-    // amount: string,
-    // asset: StellarSdk.Asset,
-  ): StellarSdk.xdr.Operation[] {
+  ): Promise<StellarSdk.xdr.Operation[]> {
     try {
       this.logger.log(
         `Creating milestone release ops for escrow ID: ${escrowId}, milestone: ${milestoneId}`,
       );
 
-      const contract = new StellarSdk.Contract(this.contractId);
-      const op = contract.call(
-        'release_milestone',
-        StellarSdk.xdr.ScVal.scvU64(new StellarSdk.xdr.Uint64(escrowId)),
-        StellarSdk.xdr.ScVal.scvU32(milestoneId),
-      );
+      const tx = await this.client.release_milestone({
+        escrow_id: BigInt(escrowId),
+        milestone_index: milestoneId,
+      });
 
-      return [op];
+      return [tx.asOperation()];
     } catch (error) {
       this.logger.error(
         `Failed to create milestone release ops: ${this.getErrorMessage(error)}`,
@@ -141,25 +119,23 @@ export class EscrowOperationsService {
   /**
    * Creates operations for confirming delivery/acceptance
    */
-  createConfirmationOps(
+  async createConfirmationOps(
     escrowId: string,
     confirmerPublicKey: string,
     milestoneId: number,
-  ): StellarSdk.xdr.Operation[] {
+  ): Promise<StellarSdk.xdr.Operation[]> {
     try {
       this.logger.log(
         `Creating confirmation ops for escrow ID: ${escrowId}, milestone: ${milestoneId}`,
       );
 
-      const contract = new StellarSdk.Contract(this.contractId);
-      const op = contract.call(
-        'confirm_delivery',
-        StellarSdk.xdr.ScVal.scvU64(new StellarSdk.xdr.Uint64(escrowId)),
-        StellarSdk.xdr.ScVal.scvU32(milestoneId),
-        new StellarSdk.Address(confirmerPublicKey).toScVal(),
-      );
+      const tx = await this.client.confirm_delivery({
+        escrow_id: BigInt(escrowId),
+        milestone_index: milestoneId,
+        buyer: confirmerPublicKey,
+      });
 
-      return [op];
+      return [tx.asOperation()];
     } catch (error) {
       this.logger.error(
         `Failed to create confirmation ops: ${this.getErrorMessage(error)}`,
@@ -171,20 +147,15 @@ export class EscrowOperationsService {
   /**
    * Creates operations for canceling an escrow
    */
-  createCancelOps(
-    escrowId: string,
-    // cancellerPublicKey: string,
-  ): StellarSdk.xdr.Operation[] {
+  async createCancelOps(escrowId: string): Promise<StellarSdk.xdr.Operation[]> {
     try {
       this.logger.log(`Creating cancel ops for escrow ID: ${escrowId}`);
 
-      const contract = new StellarSdk.Contract(this.contractId);
-      const op = contract.call(
-        'cancel_escrow',
-        StellarSdk.xdr.ScVal.scvU64(new StellarSdk.xdr.Uint64(escrowId)),
-      );
+      const tx = await this.client.cancel_escrow({
+        escrow_id: BigInt(escrowId),
+      });
 
-      return [op];
+      return [tx.asOperation()];
     } catch (error) {
       this.logger.error(
         `Failed to create cancel ops: ${this.getErrorMessage(error)}`,
@@ -196,20 +167,17 @@ export class EscrowOperationsService {
   /**
    * Creates operations for completing an escrow
    */
-  createCompletionOps(
+  async createCompletionOps(
     escrowId: string,
-    // completerPublicKey: string,
-  ): StellarSdk.xdr.Operation[] {
+  ): Promise<StellarSdk.xdr.Operation[]> {
     try {
       this.logger.log(`Creating completion ops for escrow ID: ${escrowId}`);
 
-      const contract = new StellarSdk.Contract(this.contractId);
-      const op = contract.call(
-        'complete_escrow',
-        StellarSdk.xdr.ScVal.scvU64(new StellarSdk.xdr.Uint64(escrowId)),
-      );
+      const tx = await this.client.complete_escrow({
+        escrow_id: BigInt(escrowId),
+      });
 
-      return [op];
+      return [tx.asOperation()];
     } catch (error) {
       this.logger.error(
         `Failed to create completion ops: ${this.getErrorMessage(error)}`,
@@ -221,21 +189,19 @@ export class EscrowOperationsService {
   /**
    * Creates operations for raising a dispute
    */
-  createDisputeOps(
+  async createDisputeOps(
     escrowId: string,
     callerPublicKey: string,
-  ): StellarSdk.xdr.Operation[] {
+  ): Promise<StellarSdk.xdr.Operation[]> {
     try {
       this.logger.log(`Creating dispute ops for escrow ID: ${escrowId}`);
 
-      const contract = new StellarSdk.Contract(this.contractId);
-      const op = contract.call(
-        'raise_dispute',
-        StellarSdk.xdr.ScVal.scvU64(new StellarSdk.xdr.Uint64(escrowId)),
-        new StellarSdk.Address(callerPublicKey).toScVal(),
-      );
+      const tx = await this.client.raise_dispute({
+        escrow_id: BigInt(escrowId),
+        caller: callerPublicKey,
+      });
 
-      return [op];
+      return [tx.asOperation()];
     } catch (error) {
       this.logger.error(
         `Failed to create dispute ops: ${this.getErrorMessage(error)}`,
@@ -247,34 +213,23 @@ export class EscrowOperationsService {
   /**
    * Creates operations for resolving a dispute
    */
-  createResolveDisputeOps(
+  async createResolveDisputeOps(
     escrowId: string,
     winnerPublicKey: string,
     splitWinnerAmount?: string,
-  ): StellarSdk.xdr.Operation[] {
+  ): Promise<StellarSdk.xdr.Operation[]> {
     try {
       this.logger.log(
         `Creating resolve dispute ops for escrow ID: ${escrowId}`,
       );
 
-      const contract = new StellarSdk.Contract(this.contractId);
-      const op = contract.call(
-        'resolve_dispute',
-        StellarSdk.xdr.ScVal.scvU64(new StellarSdk.xdr.Uint64(escrowId)),
-        new StellarSdk.Address(winnerPublicKey).toScVal(),
-        splitWinnerAmount
-          ? StellarSdk.xdr.ScVal.scvVec([
-              StellarSdk.xdr.ScVal.scvI128(
-                new StellarSdk.xdr.Int128Parts({
-                  lo: new StellarSdk.xdr.Uint64(splitWinnerAmount),
-                  hi: new StellarSdk.xdr.Int64('0'),
-                }),
-              ),
-            ])
-          : StellarSdk.xdr.ScVal.scvVec([]), // Option::None
-      );
+      const tx = await this.client.resolve_dispute({
+        escrow_id: BigInt(escrowId),
+        winner: winnerPublicKey,
+        split_winner_amount: splitWinnerAmount ? BigInt(splitWinnerAmount) : undefined,
+      });
 
-      return [op];
+      return [tx.asOperation()];
     } catch (error) {
       this.logger.error(
         `Failed to create resolve dispute ops: ${this.getErrorMessage(error)}`,
@@ -291,7 +246,6 @@ export class EscrowOperationsService {
       return error.message;
     }
     if (typeof error === 'object' && error !== null && 'message' in error) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       return String((error as any).message);
     }
     return 'Unknown error';

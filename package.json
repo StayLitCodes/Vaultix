@@ -4,7 +4,8 @@
     "axios": "^1.13.5"
   },
   "scripts": {
-    "lint": "eslint . --ext .ts,.tsx"
+    "lint": "eslint . --ext .ts,.tsx",
+    "generate-bindings": "powershell ./scripts/generate-bindings.ps1"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.56.1",

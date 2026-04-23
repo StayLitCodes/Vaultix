@@ -76,7 +76,7 @@ export class EscrowStellarIntegrationService {
 
       // Create operations for escrow initialization
       const operations =
-        this.escrowOperationsService.createEscrowInitializationOps(
+        await this.escrowOperationsService.createEscrowInitializationOps(
           escrowId,
           depositor.user.walletAddress, // User's Stellar wallet address
           recipient.user.walletAddress, // User's Stellar wallet address
@@ -136,7 +136,7 @@ export class EscrowStellarIntegrationService {
 
       // Create funding operations
       const operations =
-        this.escrowOperationsService.createFundingOps(escrowId);
+        await this.escrowOperationsService.createFundingOps(escrowId);
 
       // Build the transaction
       const transaction = await this.stellarService.buildTransaction(
@@ -184,7 +184,7 @@ export class EscrowStellarIntegrationService {
       );
 
       // Create milestone release operations
-      const operations = this.escrowOperationsService.createMilestoneReleaseOps(
+      const operations = await this.escrowOperationsService.createMilestoneReleaseOps(
         escrowId,
         milestoneId,
       );
@@ -229,7 +229,7 @@ export class EscrowStellarIntegrationService {
       );
 
       // Create confirmation operations
-      const operations = this.escrowOperationsService.createConfirmationOps(
+      const operations = await this.escrowOperationsService.createConfirmationOps(
         escrowId,
         confirmerPublicKey,
         milestoneId,
@@ -274,7 +274,7 @@ export class EscrowStellarIntegrationService {
       this.logger.log(`Canceling on-chain escrow ${escrowId}`);
 
       // Create cancel operations
-      const operations = this.escrowOperationsService.createCancelOps(escrowId);
+      const operations = await this.escrowOperationsService.createCancelOps(escrowId);
 
       // Build the transaction
       const transaction = await this.stellarService.buildTransaction(
@@ -313,7 +313,7 @@ export class EscrowStellarIntegrationService {
 
       // Create completion operations
       const operations =
-        this.escrowOperationsService.createCompletionOps(escrowId);
+        await this.escrowOperationsService.createCompletionOps(escrowId);
 
       // Build the transaction
       const transaction = await this.stellarService.buildTransaction(
