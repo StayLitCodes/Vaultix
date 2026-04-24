@@ -7,6 +7,11 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
+    "lint": "eslint .",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:e2e": "playwright test",
     "lint": "eslint"
   },
   "dependencies": {
@@ -28,18 +33,30 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@shadcn/ui": "^0.0.4",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^8.57.1",
+    "eslint-config-next": "^15.5.9",
+    "jest": "^30.3.0",
+    "jest-environment-jsdom": "^30.3.0",
+    "msw": "^2.12.14",
     "eslint-plugin-prettier": "^5.5.5",
     "prettier": "^3.8.1",
     "shadcn": "^3.8.5",
     "tailwindcss": "^4",
+    "ts-node": "^10.9.2",
     "tw-animate-css": "^1.4.0",
     "typescript": "^5",
+    "whatwg-fetch": "^3.6.20",
     "typescript-eslint": "^8.57.2"
   }
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, ExternalLink, Check } from 'lucide-react';
+import { X, ExternalLink, Check, Loader2 } from 'lucide-react';
 import { useWallet } from '@/app/contexts/WalletContext';
 
 interface ConnectWalletModalProps {
@@ -9,49 +9,49 @@ interface ConnectWalletModalProps {
   onClose: () => void;
 }
 
-const WalletType = {
-  FREIGHTER: 'freighter',
-  ALBEDO: 'albedo',
-};
-
 const WALLET_INFO = {
-  [WalletType.FREIGHTER]: {
+  freighter: {
     name: 'Freighter',
     description: 'Browser extension wallet',
     icon: '🚀',
     installUrl: 'https://www.freighter.app/',
+    alwaysAvailable: false,
   },
-  [WalletType.ALBEDO]: {
+  albedo: {
     name: 'Albedo',
-    description: 'Web-based wallet',
+    description: 'Web-based wallet — no extension needed',
     icon: '✨',
     installUrl: 'https://albedo.link/',
+    alwaysAvailable: true,
   },
-};
+  lobstr: {
+    name: 'Lobstr',
+    description: 'Browser extension wallet',
+    icon: '🦞',
+    installUrl: 'https://lobstr.co/vault/',
+    alwaysAvailable: false,
+  },
+} as const;
+
+type WalletKey = keyof typeof WALLET_INFO;
 
 export const ConnectWalletModal: React.FC<ConnectWalletModalProps> = ({ isOpen, onClose }) => {
   const { connect, getAvailableWallets, isConnecting, error } = useWallet();
-  const [availableWallets, setAvailableWallets] = useState<any[]>([]);
-  const [selectedWallet, setSelectedWallet] = useState<any | null>(null);
+  const [availableWallets, setAvailableWallets] = useState<string[]>([]);
+  const [selectedWallet, setSelectedWallet] = useState<string | null>(null);
 
   useEffect(() => {
-    const loadAvailableWallets = async () => {
-      const wallets = await getAvailableWallets();
-      setAvailableWallets(wallets);
-    };
-
-    if (isOpen) {
-      loadAvailableWallets();
-    }
+    if (!isOpen) return;
+    getAvailableWallets().then((wallets) => setAvailableWallets(wallets));
   }, [isOpen, getAvailableWallets]);
 
-  const handleConnect = async (walletType: any) => {
+  const handleConnect = async (walletType: string) => {
     try {
       setSelectedWallet(walletType);
-      await connect(walletType);
+      await connect(walletType as any);
       onClose();
-    } catch (err) {
-      // Error is handled by context
+    } catch {
+      // Error surfaced via context
     } finally {
       setSelectedWallet(null);
     }
@@ -66,14 +66,9 @@ export const ConnectWalletModal: React.FC<ConnectWalletModalProps> = ({ isOpen, 
         <div className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-2xl font-bold text-white">Connect Wallet</h2>
-            <p className="text-gray-400 text-sm mt-1">
-              Choose a wallet to connect to Vaultix
-            </p>
+            <p className="text-gray-400 text-sm mt-1">Choose a wallet to connect to Vaultix</p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-lg hover:bg-gray-700 transition-colors"
-          >
+          <button onClick={onClose} className="p-2 rounded-lg hover:bg-gray-700 transition-colors">
             <X className="w-5 h-5 text-gray-400" />
           </button>
         </div>
@@ -87,31 +82,34 @@ export const ConnectWalletModal: React.FC<ConnectWalletModalProps> = ({ isOpen, 
 
         {/* Wallet Options */}
         <div className="space-y-3">
-          {Object.entries(WALLET_INFO).map(([type, info]) => {
-            const walletType = type as any;
-            const isAvailable = availableWallets.includes(walletType);
-            const isInstalling = selectedWallet === walletType && isConnecting;
+          {(Object.entries(WALLET_INFO) as [WalletKey, typeof WALLET_INFO[WalletKey]][]).map(([type, info]) => {
+            const isAvailable = info.alwaysAvailable || availableWallets.includes(type);
+            const isConnectingThis = selectedWallet === type && isConnecting;
 
             return (
               <button
-                key={walletType}
-                onClick={() => isAvailable && handleConnect(walletType)}
+                key={type}
+                onClick={() => isAvailable && handleConnect(type)}
                 disabled={!isAvailable || isConnecting}
-                className={`w-full flex items-center justify-between p-4 rounded-xl transition-all duration-200 ${isAvailable
+                className={`w-full flex items-center justify-between p-4 rounded-xl transition-all duration-200 border border-gray-700 ${
+                  isAvailable
                     ? 'bg-gray-800 hover:bg-gray-700 hover:scale-[1.02] active:scale-[0.98]'
                     : 'bg-gray-900/50 opacity-60 cursor-not-allowed'
-                  } border border-gray-700`}
+                }`}
               >
                 <div className="flex items-center space-x-4">
                   <div className="text-2xl">{info.icon}</div>
                   <div className="text-left">
                     <div className="flex items-center space-x-2">
-                      <span className="font-semibold text-white">
-                        {info.name}
-                      </span>
-                      {!isAvailable && walletType === WalletType.FREIGHTER && (
-                        <span className="text-xs px-2 py-1 bg-yellow-500/20 text-yellow-400 rounded-full">
+                      <span className="font-semibold text-white">{info.name}</span>
+                      {!isAvailable && (
+                        <span className="text-xs px-2 py-0.5 bg-yellow-500/20 text-yellow-400 rounded-full">
                           Not installed
+                        </span>
+                      )}
+                      {isAvailable && !isConnectingThis && (
+                        <span className="text-xs px-2 py-0.5 bg-green-500/20 text-green-400 rounded-full">
+                          Ready
                         </span>
                       )}
                     </div>
@@ -119,17 +117,17 @@ export const ConnectWalletModal: React.FC<ConnectWalletModalProps> = ({ isOpen, 
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-2">
-                  {isInstalling && (
-                    <div className="flex items-center space-x-2">
-                      <div className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" />
-                      <span className="text-sm text-blue-400">Connecting...</span>
+                <div className="flex items-center space-x-2 flex-shrink-0">
+                  {isConnectingThis && (
+                    <div className="flex items-center space-x-1 text-blue-400">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm">Connecting…</span>
                     </div>
                   )}
-                  {isAvailable && !isInstalling && (
+                  {isAvailable && !isConnectingThis && (
                     <Check className="w-5 h-5 text-green-400" />
                   )}
-                  {!isAvailable && walletType === WalletType.FREIGHTER && (
+                  {!isAvailable && (
                     <a
                       href={info.installUrl}
                       target="_blank"

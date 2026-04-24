@@ -29,6 +29,8 @@ import {
 } from '../dto/escrow-overview.dto';
 import { CreateEscrowDto } from '../dto/create-escrow.dto';
 import { User, UserRole } from '../../user/entities/user.entity';
+import { IpfsService } from '../../ipfs/ipfs.service';
+import { AllowedAsset } from '../../assets/entities/allowed-asset.entity';
 
 describe('EscrowService', () => {
   let service: EscrowService;
@@ -38,6 +40,8 @@ describe('EscrowService', () => {
   let eventRepository: jest.Mocked<Repository<EscrowEvent>>;
   let disputeRepository: jest.Mocked<Repository<Dispute>>;
   let userRepository: jest.Mocked<Repository<User>>;
+  let assetRepository: jest.Mocked<Repository<AllowedAsset>>;
+  let ipfsService: { uploadFile: jest.Mock; getGatewayUrl: jest.Mock };
   let webhookService: { dispatchEvent: jest.Mock };
 
   const mockEscrow: Partial<Escrow> = {
@@ -45,7 +49,8 @@ describe('EscrowService', () => {
     title: 'Test Escrow',
     description: 'Test description',
     amount: 100,
-    asset: 'XLM',
+    assetCode: 'XLM',
+    assetIssuer: null,
     status: EscrowStatus.PENDING,
     type: EscrowType.STANDARD,
     creatorId: 'user-123',
@@ -112,6 +117,16 @@ describe('EscrowService', () => {
       findOne: jest.fn(),
     };
 
+    const mockAssetRepo = {
+      findOne: jest.fn(),
+      find: jest.fn(),
+    };
+
+    const mockIpfsService = {
+      uploadFile: jest.fn().mockResolvedValue('mock-cid'),
+      getGatewayUrl: jest.fn().mockReturnValue('https://ipfs.io/ipfs/mock-cid'),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EscrowService,
@@ -121,6 +136,8 @@ describe('EscrowService', () => {
         { provide: getRepositoryToken(EscrowEvent), useValue: mockEventRepo },
         { provide: getRepositoryToken(Dispute), useValue: mockDisputeRepo },
         { provide: getRepositoryToken(User), useValue: mockUserRepo },
+        { provide: getRepositoryToken(AllowedAsset), useValue: mockAssetRepo },
+        { provide: IpfsService, useValue: mockIpfsService },
         {
           provide: EscrowStellarIntegrationService,
           useValue: {
@@ -144,6 +161,8 @@ describe('EscrowService', () => {
     eventRepository = module.get(getRepositoryToken(EscrowEvent));
     disputeRepository = module.get(getRepositoryToken(Dispute));
     userRepository = module.get(getRepositoryToken(User));
+    assetRepository = module.get(getRepositoryToken(AllowedAsset));
+    ipfsService = module.get(IpfsService);
     webhookService = module.get(WebhookService);
   });
 
@@ -612,6 +631,7 @@ describe('EscrowService', () => {
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
         orWhere: jest.fn().mockReturnThis(),
+        leftJoin: jest.fn().mockReturnThis(),
         orderBy: jest.fn().mockReturnThis(),
         offset: jest.fn().mockReturnThis(),
         limit: jest.fn().mockReturnThis(),
@@ -622,6 +642,8 @@ describe('EscrowService', () => {
             depositor: 'user-123',
             recipient: 'user-456',
             token: 'XLM',
+            tokenIssuer: null,
+            tokenDecimals: 7,
             totalAmount: '100',
             totalReleased: '0',
             remainingAmount: '100',

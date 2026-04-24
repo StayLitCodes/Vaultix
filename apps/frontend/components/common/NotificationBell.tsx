@@ -142,6 +142,17 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ className = '' }) =
               </div>
             </div>
 
+            {/* Footer — see all */}
+            <div className="px-4 py-2 border-b border-gray-700">
+              <Link
+                href="/notifications"
+                onClick={() => setIsOpen(false)}
+                className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+              >
+                See all notifications →
+              </Link>
+            </div>
+
             {/* Content */}
             <div className="max-h-[70vh] overflow-y-auto">
               {isLoading ? (

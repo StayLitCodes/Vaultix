@@ -15,7 +15,9 @@ import { EscrowExpireGuard } from './guards/escrow-expire.guard';
 import { AuthModule } from '../auth/auth.module';
 import { EscrowStellarIntegrationService } from './services/escrow-stellar-integration.service';
 import { WebhookModule } from '../webhook/webhook.module';
+import { IpfsModule } from '../ipfs/ipfs.module';
 import { User } from '../user/entities/user.entity';
+import { AllowedAsset } from '../assets/entities/allowed-asset.entity';
 
 @Module({
   imports: [
@@ -26,9 +28,11 @@ import { User } from '../user/entities/user.entity';
       EscrowEvent,
       Dispute,
       User,
+      AllowedAsset,
     ]),
     AuthModule,
     WebhookModule,
+    IpfsModule,
   ],
   controllers: [EscrowController, EscrowSchedulerController, EventsController],
   providers: [

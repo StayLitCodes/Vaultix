@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Loader2 } from "lucide-react";
 import { IDispute } from "@/types/escrow";
+import { DisputeEvidenceUpload, UploadedFile } from './DisputeEvidenceUpload';
 
 interface FileDisputeModalProps {
   open: boolean;
@@ -44,6 +45,7 @@ export default function FileDisputeModal({
   const [severity, setSeverity] = useState("");
   const [evidenceUrls, setEvidenceUrls] = useState<string[]>([]);
   const [evidenceLink, setEvidenceLink] = useState("");
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
 
@@ -184,6 +186,16 @@ export default function FileDisputeModal({
               onChange={(e) => setDescription(e.target.value)}
               disabled={!canFileDispute}
               rows={4}
+            />
+          </div>
+
+          {/* Evidence File Upload */}
+          <div className="mt-4">
+            <label className="text-sm font-medium">Evidence Files (Optional)</label>
+            <p className="text-xs text-gray-500 mb-2">Images, PDFs, or text files up to 10 MB each</p>
+            <DisputeEvidenceUpload
+              files={uploadedFiles}
+              onChange={setUploadedFiles as any}
             />
           </div>
 
