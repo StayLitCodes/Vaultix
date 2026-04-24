@@ -34,12 +34,38 @@ export const termsSchema = z.object({
   }),
 });
 
+export const milestoneItemSchema = z.object({
+  description: z.string().min(3, 'Description must be at least 3 characters'),
+  amount: z.string().refine((val) => {
+    const num = parseFloat(val);
+    return !isNaN(num) && num > 0;
+  }, { message: 'Amount must be a positive number' }),
+});
+
+export const milestonesSchema = z.object({
+  milestones: z.array(milestoneItemSchema),
+});
+
+export const conditionItemSchema = z.object({
+  type: z.enum(['manual', 'time', 'oracle']),
+  description: z.string().optional(),
+  releaseDate: z.string().optional(),
+});
+
+export const conditionsSchema = z.object({
+  conditions: z.array(conditionItemSchema),
+});
+
 // Combined schema for the full form state
 export const createEscrowSchema = basicInfoSchema
   .merge(partiesSchema)
-  .merge(termsSchema);
+  .merge(termsSchema)
+  .merge(milestonesSchema)
+  .merge(conditionsSchema);
 
 export type CreateEscrowFormData = z.infer<typeof createEscrowSchema>;
 export type BasicInfoFormData = z.infer<typeof basicInfoSchema>;
 export type PartiesFormData = z.infer<typeof partiesSchema>;
 export type TermsFormData = z.infer<typeof termsSchema>;
+export type MilestoneItem = z.infer<typeof milestoneItemSchema>;
+export type ConditionItem = z.infer<typeof conditionItemSchema>;

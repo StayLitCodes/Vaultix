@@ -32,7 +32,7 @@ export enum EscrowType {
 @Entity('escrows')
 @Index('idx_escrows_creator', ['creatorId'])
 @Index('idx_escrows_status', ['status'])
-@Index('idx_escrows_asset', ['asset'])
+@Index('idx_escrows_asset', ['assetCode', 'assetIssuer'])
 @Index('idx_escrows_created_at', ['createdAt'])
 @Index('idx_escrows_expires_at', ['expiresAt'])
 @Index('idx_escrows_creator_status_created', [
@@ -53,8 +53,11 @@ export class Escrow {
   @Column({ type: 'decimal', precision: 18, scale: 7 })
   amount: number;
 
-  @Column({ default: 'XLM' })
-  asset: string;
+  @Column({ default: 'XLM', name: 'asset_code' })
+  assetCode: string;
+
+  @Column({ nullable: true, name: 'asset_issuer' })
+  assetIssuer?: string;
 
   @Column({
     type: 'varchar',
@@ -107,8 +110,8 @@ export class Escrow {
   @OneToMany(() => EscrowEvent, (event) => event.escrow, { cascade: true })
   events: EscrowEvent[];
 
-  // @OneToMany(() => Milestone, (m) => m.escrow)
-  // milestones: Milestone[];
+  @Column({ nullable: true })
+  metadataHash?: string;
 
   @CreateDateColumn()
   createdAt: Date;

@@ -9,6 +9,8 @@ import { createEscrowSchema, CreateEscrowFormData } from '@/lib/escrow-schema';
 import BasicInfoStep from './create/BasicInfoStep';
 import PartiesStep from './create/PartiesStep';
 import TermsStep from './create/TermsStep';
+import MilestonesStep from './create/MilestonesStep';
+import ConditionsStep from './create/ConditionsStep';
 import ReviewStep from './create/ReviewStep';
 import { CheckCircle2, ChevronRight, ChevronLeft, Loader2, AlertCircle } from 'lucide-react';
 import { isConnected, signTransaction, getAddress } from '@stellar/freighter-api';
@@ -18,6 +20,8 @@ const STEPS = [
   { id: 'basic', title: 'Basic Info', fields: ['title', 'description', 'category'] },
   { id: 'parties', title: 'Parties', fields: ['counterpartyAddress'] },
   { id: 'terms', title: 'Terms', fields: ['amount', 'deadline', 'asset'] },
+  { id: 'milestones', title: 'Milestones', fields: [] },
+  { id: 'conditions', title: 'Conditions', fields: [] },
   { id: 'review', title: 'Review', fields: [] },
 ];
 
@@ -32,6 +36,8 @@ export default function CreateEscrowWizard() {
     mode: 'onChange',
     defaultValues: {
       asset: 'XLM',
+      milestones: [],
+      conditions: [],
     }
   });
 
@@ -182,7 +188,9 @@ export default function CreateEscrowWizard() {
               {currentStep === 0 && <BasicInfoStep />}
               {currentStep === 1 && <PartiesStep />}
               {currentStep === 2 && <TermsStep />}
-              {currentStep === 3 && <ReviewStep />}
+              {currentStep === 3 && <MilestonesStep />}
+              {currentStep === 4 && <ConditionsStep />}
+              {currentStep === 5 && <ReviewStep />}
             </div>
 
             {/* Error Message */}

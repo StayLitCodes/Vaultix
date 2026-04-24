@@ -22,6 +22,7 @@ const ADMIN_WALLET_ADDRESSES = [
 
 const navItems = [
   { href: '/admin', label: 'Overview', icon: LayoutDashboard },
+  { href: '/admin/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/admin/escrows', label: 'Escrows', icon: Shield },
   { href: '/admin/users', label: 'Users', icon: Users },
   { href: '/admin/audit-logs', label: 'Audit Logs', icon: FileText },

@@ -277,7 +277,8 @@ export class StellarEventListenerService
       rawPayload: event,
       extractedFields,
       amount: extractedFields.amount,
-      asset: extractedFields.asset,
+      assetCode: extractedFields.assetCode,
+      assetIssuer: extractedFields.assetIssuer,
       milestoneIndex: extractedFields.milestoneIndex,
       fromAddress: extractedFields.fromAddress,
       toAddress: extractedFields.toAddress,
@@ -425,25 +426,26 @@ export class StellarEventListenerService
 
   private async handleEscrowCreated(event: StellarEvent) {
     // Check if escrow already exists
-    let escrow = await this.escrowRepository.findOne({
+    const escrow = await this.escrowRepository.findOne({
       where: { id: event.escrowId },
     });
 
     if (!escrow) {
       // Create new escrow from event data
-      escrow = this.escrowRepository.create({
+      const newEscrow = this.escrowRepository.create({
         id: event.escrowId,
         title: `Escrow ${event.escrowId}`, // Extract from event if available
         amount: event.amount || 0,
-        asset: event.asset || 'XLM',
+        assetCode: event.assetCode || 'XLM',
+        assetIssuer: event.assetIssuer || null,
         status: EscrowStatus.PENDING,
         creatorId: event.fromAddress, // This would need to be mapped to user ID
         isActive: true,
         createdAt: event.timestamp,
         updatedAt: event.timestamp,
-      });
+      } as any);
 
-      await this.escrowRepository.save(escrow);
+      await this.escrowRepository.save(newEscrow);
       this.logger.log(`Created new escrow from blockchain: ${event.escrowId}`);
     }
   }

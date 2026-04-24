@@ -10,7 +10,13 @@ import {
   Request,
   Req,
   ForbiddenException,
+  UseInterceptors,
+  UploadedFile,
+  ParseFilePipe,
+  MaxFileSizeValidator,
+  FileTypeValidator,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { Request as ExpressRequest } from 'express';
 import {
@@ -298,5 +304,26 @@ export class EscrowController {
       dto,
       ipAddress,
     );
+  }
+  @Post(':id/evidence')
+  @UseGuards(EscrowAccessGuard)
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadEvidence(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB
+          new FileTypeValidator({
+            fileType: /(jpg|jpeg|png|pdf|txt|doc|docx)$/,
+          }),
+        ],
+      }),
+    )
+    file: { buffer: Buffer; originalname: string },
+  ) {
+    const userId = this.getAuthenticatedUserId(req);
+    return this.escrowService.uploadEvidence(id, userId, file);
   }
 }

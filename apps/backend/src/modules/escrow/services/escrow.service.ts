@@ -40,6 +40,8 @@ import { validateTransition, isTerminalStatus } from '../escrow-state-machine';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
 import { WebhookService } from '../../../services/webhook/webhook.service';
 import { User, UserRole } from '../../user/entities/user.entity';
+import { IpfsService } from '../../ipfs/ipfs.service';
+import { AllowedAsset } from '../../assets/entities/allowed-asset.entity';
 
 @Injectable()
 export class EscrowService {
@@ -56,9 +58,12 @@ export class EscrowService {
     private disputeRepository: Repository<Dispute>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(AllowedAsset)
+    private assetRepository: Repository<AllowedAsset>,
 
     private readonly stellarIntegrationService: EscrowStellarIntegrationService,
     private readonly webhookService: WebhookService,
+    private readonly ipfsService: IpfsService,
   ) {}
 
   async create(
@@ -70,13 +75,17 @@ export class EscrowService {
       title: dto.title,
       description: dto.description,
       amount: dto.amount,
-      asset: dto.asset || 'XLM',
+      assetCode: dto.asset?.code || 'XLM',
+      assetIssuer: dto.asset?.issuer || undefined,
       type: dto.type,
       creatorId,
       expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
-    });
+      metadataHash: dto.metadataHash,
+    } as Partial<Escrow>);
 
-    const savedEscrow = await this.escrowRepository.save(escrow);
+    const savedEscrow = (await this.escrowRepository.save(
+      escrow,
+    )) as unknown as Escrow;
 
     const parties = dto.parties.map((partyDto) =>
       this.partyRepository.create({
@@ -131,7 +140,8 @@ export class EscrowService {
     qb.select([
       'escrow.id AS escrowId',
       'escrow.creatorId AS depositor',
-      'escrow.asset AS token',
+      'escrow.assetCode AS token',
+      'escrow.assetIssuer AS tokenIssuer',
       'escrow.amount AS totalAmount',
       'escrow.status AS status',
       'escrow.expiresAt AS deadline',
@@ -156,6 +166,12 @@ export class EscrowService {
             .limit(1),
         'recipient',
       )
+      .leftJoin(
+        AllowedAsset,
+        'assetInfo',
+        'assetInfo.code = escrow.assetCode AND (assetInfo.issuer = escrow.assetIssuer OR (assetInfo.issuer IS NULL AND escrow.assetIssuer IS NULL))',
+      )
+      .addSelect('COALESCE(assetInfo.decimals, 7)', 'tokenDecimals')
       .setParameter('completedStatus', EscrowStatus.COMPLETED)
       .setParameter('recipientRole', PartyRole.SELLER);
 
@@ -199,7 +215,7 @@ export class EscrowService {
     }
 
     if (query.token) {
-      qb.andWhere('escrow.asset = :asset', { asset: query.token });
+      qb.andWhere('escrow.assetCode = :asset', { asset: query.token });
     }
 
     if (query.from) {
@@ -229,6 +245,8 @@ export class EscrowService {
         depositor: string;
         recipient: string | null;
         token: string;
+        tokenIssuer: string | null;
+        tokenDecimals: number;
         totalAmount: string | number;
         totalReleased: string | number;
         remainingAmount: string | number;
@@ -244,16 +262,18 @@ export class EscrowService {
         depositor: row.depositor,
         recipient: row.recipient,
         token: row.token,
-        totalAmount: Number(row.totalAmount),
-        totalReleased: Number(row.totalReleased),
-        remainingAmount: Number(row.remainingAmount),
+        tokenIssuer: row.tokenIssuer || undefined,
+        tokenDecimals: row.tokenDecimals,
+        totalAmount: parseFloat(row.totalAmount.toString()),
+        totalReleased: parseFloat(row.totalReleased.toString()),
+        remainingAmount: parseFloat(row.remainingAmount.toString()),
         status: row.status,
         deadline: row.deadline,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       })),
       totalItems,
-      totalPages: totalItems > 0 ? Math.ceil(totalItems / pageSize) : 0,
+      totalPages: Math.ceil(totalItems / pageSize),
       page,
       pageSize,
     };
@@ -468,7 +488,7 @@ export class EscrowService {
         id,
         walletAddress,
         String(dto.amount),
-        escrow.asset ?? 'XLM',
+        escrow.assetCode ?? 'XLM',
       );
 
     const fundedAt = new Date();
@@ -836,7 +856,8 @@ export class EscrowService {
             id: event.escrow.id,
             title: event.escrow.title,
             amount: event.escrow.amount,
-            asset: event.escrow.asset,
+            assetCode: event.escrow.assetCode,
+            assetIssuer: event.escrow.assetIssuer,
             status: event.escrow.status,
           }
         : undefined,
@@ -1215,5 +1236,43 @@ export class EscrowService {
     });
 
     return this.findOne(escrow.id);
+  }
+
+  async uploadEvidence(
+    escrowId: string,
+    userId: string,
+    file: { buffer: Buffer; originalname: string },
+  ): Promise<{ cid: string; url: string }> {
+    const escrow = await this.findOne(escrowId);
+
+    if (escrow.status !== EscrowStatus.DISPUTED) {
+      throw new BadRequestException('Escrow is not in disputed status');
+    }
+
+    const dispute = await this.disputeRepository.findOne({
+      where: { escrowId },
+    });
+
+    if (!dispute) {
+      throw new NotFoundException('Dispute record not found');
+    }
+
+    // Upload to IPFS
+    const cid = await this.ipfsService.uploadFile(
+      file.buffer,
+      file.originalname,
+    );
+
+    // Update dispute evidence list
+    const evidence = dispute.evidence || [];
+    evidence.push(cid);
+    dispute.evidence = evidence;
+
+    await this.disputeRepository.save(dispute);
+
+    return {
+      cid,
+      url: this.ipfsService.getGatewayUrl(cid),
+    };
   }
 }

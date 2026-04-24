@@ -74,6 +74,8 @@ describe('EscrowStellarIntegrationService', () => {
       { role: 'seller', user: { walletAddress: 'seller-addr' } },
     ],
     conditions: [{ description: 'c1' }],
+    assetCode: 'XLM',
+    assetIssuer: null,
     expiresAt: new Date(),
   };
 

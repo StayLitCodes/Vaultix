@@ -38,12 +38,11 @@ export class StellarService {
     try {
       this.logger.log(`Fetching account info for: ${publicKey}`);
 
-      /* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
-      const account: StellarAccountResponse = (await this.server
+      const account = (await this.server
         .accounts()
         .accountId(publicKey)
-        .call()) as StellarAccountResponse;
-      /* eslint-enable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+        .call()) as unknown as StellarAccountResponse;
+
       this.logger.log(`Successfully retrieved account info for: ${publicKey}`);
 
       return account;
@@ -52,6 +51,28 @@ export class StellarService {
         `Failed to fetch account ${publicKey}: ${this.getErrorMessage(error)}`,
       );
       throw this.mapStellarError(error, `Error fetching account ${publicKey}`);
+    }
+  }
+
+  /**
+   * Validates an asset against the Stellar Horizon API
+   * @param code Asset code
+   * @param issuer Asset issuer
+   */
+  async validateAsset(code: string, issuer: string): Promise<boolean> {
+    try {
+      this.logger.log(`Validating asset: ${code} from ${issuer}`);
+      const assets = await this.server
+        .assets()
+        .forCode(code)
+        .forIssuer(issuer)
+        .call();
+      return assets.records.length > 0;
+    } catch (error) {
+      this.logger.error(
+        `Failed to validate asset ${code}: ${this.getErrorMessage(error)}`,
+      );
+      return false;
     }
   }
 
@@ -122,7 +143,6 @@ export class StellarService {
     try {
       this.logger.log('Submitting transaction with retry logic');
 
-      /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
       const result = await retryWithBackoff(
         async () => {
           const res = await this.server.submitTransaction(transaction, {
@@ -136,7 +156,6 @@ export class StellarService {
 
       this.logger.log(`Successfully submitted transaction: ${result.hash}`);
       return result;
-      /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
     } catch (error) {
       this.logger.error(
         `Failed to submit transaction after ${this.config.maxRetries + 1} attempts: ${this.getErrorMessage(error)}`,
@@ -160,15 +179,16 @@ export class StellarService {
   ): any {
     this.logger.log(`Starting transaction stream for account: ${accountId}`);
 
-    const handler = (transaction: StellarTransactionResponse) => {
+    const handler = (transaction: any) => {
+      const typedTransaction = transaction as unknown as StellarTransactionResponse;
       this.logger.log(
-        `Received transaction: ${transaction.id} for account: ${accountId}`,
+        `Received transaction: ${typedTransaction.id} for account: ${accountId}`,
       );
-      callback(transaction);
+      callback(typedTransaction);
     };
 
     // Create event stream for account transactions
-    /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+
     const eventSource = this.server
       .transactions()
       .forAccount(accountId)
@@ -176,7 +196,6 @@ export class StellarService {
       .stream({
         onmessage: handler,
       });
-    /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
 
     this.logger.log(`Transaction stream established for account: ${accountId}`);
     return eventSource;
@@ -193,12 +212,10 @@ export class StellarService {
     try {
       this.logger.log(`Checking status for transaction: ${transactionHash}`);
 
-      /* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
-      const transaction: StellarTransactionResponse = (await this.server
+      const transaction = (await this.server
         .transactions()
         .transaction(transactionHash)
-        .call()) as StellarTransactionResponse;
-      /* eslint-enable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+        .call()) as unknown as StellarTransactionResponse;
 
       this.logger.log(
         `Transaction ${transactionHash} status: ${transaction.successful ? 'SUCCESS' : 'FAILED'}`,

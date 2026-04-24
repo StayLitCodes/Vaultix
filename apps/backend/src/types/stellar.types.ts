@@ -75,4 +75,4 @@ export interface StellarHorizonError {
   };
 }
 
-export type StellarServer = any; // For now, keep as any but we'll use this alias for future typing
+export type StellarServer = StellarSdk.Horizon.Server;

@@ -14,7 +14,8 @@ export class EventResponseDto {
     id: string;
     title: string;
     amount: number;
-    asset: string;
+    assetCode: string;
+    assetIssuer?: string;
     status: string;
   };
 

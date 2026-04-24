@@ -61,8 +61,11 @@ export class StellarEvent {
   @Column({ type: 'decimal', precision: 18, scale: 7, nullable: true })
   amount?: number;
 
-  @Column({ type: 'varchar', nullable: true })
-  asset?: string;
+  @Column({ type: 'varchar', nullable: true, name: 'asset_code' })
+  assetCode?: string;
+
+  @Column({ type: 'varchar', nullable: true, name: 'asset_issuer' })
+  assetIssuer?: string;
 
   @Column({ type: 'int', nullable: true })
   milestoneIndex?: number;

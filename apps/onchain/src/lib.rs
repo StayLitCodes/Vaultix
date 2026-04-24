@@ -149,6 +149,183 @@ pub struct EscrowCreatedBatchItem {
     pub deadline: u64,
 }
 
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Role {
+    Admin,
+    Operator,
+    Arbitrator,
+    Treasury,
+}
+
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FeeScope {
+    Global,
+    Token,
+    Escrow,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoleUpdatedEvent {
+    pub role: Role,
+    pub had_old_address: bool,
+    pub old_address: Address,
+    pub new_address: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct FeeUpdatedEvent {
+    pub scope: FeeScope,
+    pub has_escrow_id: bool,
+    pub escrow_id: u64,
+    pub has_token_address: bool,
+    pub token_address: Address,
+    pub old_fee_bps: i128,
+    pub new_fee_bps: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct PausedToggledEvent {
+    pub paused: bool,
+    pub operator: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct EscrowCreatedEvent {
+    pub escrow_id: u64,
+    pub depositor: Address,
+    pub recipient: Address,
+    pub token_address: Address,
+    pub total_amount: i128,
+    pub deadline: u64,
+    pub metadata_hash: BytesN<32>,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct EscrowCreatedBatchEventItem {
+    pub escrow_id: u64,
+    pub depositor: Address,
+    pub recipient: Address,
+    pub token_address: Address,
+    pub total_amount: i128,
+    pub deadline: u64,
+    pub metadata_hash: BytesN<32>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct EscrowCreatedBatchEvent {
+    pub batch_size: u32,
+    pub items: Vec<EscrowCreatedBatchEventItem>,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct FundsDepositedEvent {
+    pub escrow_id: u64,
+    pub depositor: Address,
+    pub recipient: Address,
+    pub token_address: Address,
+    pub total_amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct MilestoneReleasedEvent {
+    pub escrow_id: u64,
+    pub milestone_index: u32,
+    pub depositor: Address,
+    pub recipient: Address,
+    pub token_address: Address,
+    pub milestone_amount: i128,
+    pub payout_amount: i128,
+    pub fee_amount: i128,
+    pub total_released: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct DeliveryConfirmedEvent {
+    pub escrow_id: u64,
+    pub milestone_index: u32,
+    pub confirmed_by: Address,
+    pub depositor: Address,
+    pub recipient: Address,
+    pub token_address: Address,
+    pub milestone_amount: i128,
+    pub payout_amount: i128,
+    pub fee_amount: i128,
+    pub total_released: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct DisputeRaisedEvent {
+    pub escrow_id: u64,
+    pub raised_by: Address,
+    pub depositor: Address,
+    pub recipient: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct DisputeResolvedEvent {
+    pub escrow_id: u64,
+    pub winner: Address,
+    pub other_party: Address,
+    pub winner_amount: i128,
+    pub other_amount: i128,
+    pub resolution: Resolution,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct EscrowCancelledEvent {
+    pub escrow_id: u64,
+    pub cancelled_by: Address,
+    pub depositor: Address,
+    pub token_address: Address,
+    pub refund_amount: i128,
+    pub fee_amount: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct EscrowCompletedEvent {
+    pub escrow_id: u64,
+    pub completed_by: Address,
+    pub total_released: i128,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct EscrowExpiredRefundedEvent {
+    pub escrow_id: u64,
+    pub refunded_to: Address,
+    pub token_address: Address,
+    pub refund_amount: i128,
+    pub fee_amount: i128,
+    pub timestamp: u64,
+}
+
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
@@ -221,25 +398,31 @@ impl VaultixEscrow {
             .instance()
             .set(&symbol_short!("fee_bps"), &fee);
 
-        let vaultix_topic = Symbol::new(&env, "Vaultix");
+        let timestamp = current_timestamp(&env);
 
         env.events().publish(
-            (
-                vaultix_topic.clone(),
-                Symbol::new(&env, "RoleUpdated"),
-                Symbol::new(&env, "Treasury"),
-            ),
-            (Option::<Address>::None, treasury.clone()),
+            event_topic(&env, "RoleUpdated"),
+            RoleUpdatedEvent {
+                role: Role::Treasury,
+                had_old_address: false,
+                old_address: treasury.clone(),
+                new_address: treasury.clone(),
+                timestamp,
+            },
         );
 
         env.events().publish(
-            (vaultix_topic, Symbol::new(&env, "FeeUpdated")),
-            (
-                Symbol::new(&env, "Global"),
-                Symbol::new(&env, "PlatformFee"),
-                0i128,
-                fee,
-            ),
+            event_topic(&env, "FeeUpdated"),
+            FeeUpdatedEvent {
+                scope: FeeScope::Global,
+                has_escrow_id: false,
+                escrow_id: 0,
+                has_token_address: false,
+                token_address: treasury.clone(),
+                old_fee_bps: 0,
+                new_fee_bps: fee,
+                timestamp,
+            },
         );
 
         Ok(())
@@ -264,16 +447,17 @@ impl VaultixEscrow {
             .set(&symbol_short!("fee_bps"), &new_fee_bps);
 
         env.events().publish(
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "FeeUpdated"),
-            ),
-            (
-                Symbol::new(&env, "Global"),
-                Symbol::new(&env, "PlatformFee"),
-                old_fee,
+            event_topic(&env, "FeeUpdated"),
+            FeeUpdatedEvent {
+                scope: FeeScope::Global,
+                has_escrow_id: false,
+                escrow_id: 0,
+                has_token_address: false,
+                token_address: operator.clone(),
+                old_fee_bps: old_fee,
                 new_fee_bps,
-            ),
+                timestamp: current_timestamp(&env),
+            },
         );
 
         Ok(())
@@ -300,16 +484,17 @@ impl VaultixEscrow {
             .extend_ttl(&token_fee_key, 100, 2_000_000);
 
         env.events().publish(
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "FeeUpdated"),
-            ),
-            (
-                Symbol::new(&env, "Token"),
-                token_address.clone(),
-                old_fee.unwrap_or(DEFAULT_FEE_BPS),
-                fee_bps,
-            ),
+            event_topic(&env, "FeeUpdated"),
+            FeeUpdatedEvent {
+                scope: FeeScope::Token,
+                has_escrow_id: false,
+                escrow_id: 0,
+                has_token_address: true,
+                token_address,
+                old_fee_bps: old_fee.unwrap_or(DEFAULT_FEE_BPS),
+                new_fee_bps: fee_bps,
+                timestamp: current_timestamp(&env),
+            },
         );
 
         Ok(())
@@ -333,11 +518,17 @@ impl VaultixEscrow {
             store_escrow_entry_v2(&env, escrow_id, &escrow);
 
             env.events().publish(
-                (
-                    Symbol::new(&env, "Vaultix"),
-                    Symbol::new(&env, "FeeUpdated"),
-                ),
-                (Symbol::new(&env, "Escrow"), escrow_id, old_fee, fee_bps),
+                event_topic(&env, "FeeUpdated"),
+                FeeUpdatedEvent {
+                    scope: FeeScope::Escrow,
+                    has_escrow_id: true,
+                    escrow_id,
+                    has_token_address: false,
+                    token_address: escrow.token_address.clone(),
+                    old_fee_bps: old_fee,
+                    new_fee_bps: fee_bps,
+                    timestamp: current_timestamp(&env),
+                },
             );
 
             return Ok(());
@@ -352,16 +543,17 @@ impl VaultixEscrow {
             .extend_ttl(&escrow_fee_key, 100, 500_000);
 
         env.events().publish(
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "FeeUpdated"),
-            ),
-            (
-                Symbol::new(&env, "Escrow"),
+            event_topic(&env, "FeeUpdated"),
+            FeeUpdatedEvent {
+                scope: FeeScope::Escrow,
+                has_escrow_id: true,
                 escrow_id,
-                old_fee.unwrap_or(DEFAULT_FEE_BPS),
-                fee_bps,
-            ),
+                has_token_address: false,
+                token_address: treasury.clone(),
+                old_fee_bps: old_fee.unwrap_or(DEFAULT_FEE_BPS),
+                new_fee_bps: fee_bps,
+                timestamp: current_timestamp(&env),
+            },
         );
 
         Ok(())
@@ -395,11 +587,12 @@ impl VaultixEscrow {
             .set(&symbol_short!("state"), &state);
 
         env.events().publish(
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "PausedStateChanged"),
-            ),
-            (paused, operator),
+            event_topic(&env, "PausedToggled"),
+            PausedToggledEvent {
+                paused,
+                operator,
+                timestamp: current_timestamp(&env),
+            },
         );
 
         Ok(())
@@ -426,31 +619,37 @@ impl VaultixEscrow {
             .set(&arbitrator_storage_key(), &arbitrator);
         extend_roles_ttl(&env);
 
-        let vaultix_topic = Symbol::new(&env, "Vaultix");
+        let timestamp = current_timestamp(&env);
 
         env.events().publish(
-            (
-                vaultix_topic.clone(),
-                Symbol::new(&env, "RoleUpdated"),
-                Symbol::new(&env, "Admin"),
-            ),
-            (Option::<Address>::None, admin),
+            event_topic(&env, "RoleUpdated"),
+            RoleUpdatedEvent {
+                role: Role::Admin,
+                had_old_address: false,
+                old_address: admin.clone(),
+                new_address: admin,
+                timestamp,
+            },
         );
         env.events().publish(
-            (
-                vaultix_topic.clone(),
-                Symbol::new(&env, "RoleUpdated"),
-                Symbol::new(&env, "Operator"),
-            ),
-            (Option::<Address>::None, operator),
+            event_topic(&env, "RoleUpdated"),
+            RoleUpdatedEvent {
+                role: Role::Operator,
+                had_old_address: false,
+                old_address: operator.clone(),
+                new_address: operator,
+                timestamp,
+            },
         );
         env.events().publish(
-            (
-                vaultix_topic,
-                Symbol::new(&env, "RoleUpdated"),
-                Symbol::new(&env, "Arbitrator"),
-            ),
-            (Option::<Address>::None, arbitrator),
+            event_topic(&env, "RoleUpdated"),
+            RoleUpdatedEvent {
+                role: Role::Arbitrator,
+                had_old_address: false,
+                old_address: arbitrator.clone(),
+                new_address: arbitrator,
+                timestamp,
+            },
         );
 
         Ok(())
@@ -574,19 +773,17 @@ impl VaultixEscrow {
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
         env.events().publish(
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "EscrowCreated"),
+            event_topic(&env, "EscrowCreated"),
+            EscrowCreatedEvent {
                 escrow_id,
-            ),
-            (
                 depositor,
                 recipient,
                 token_address,
                 total_amount,
                 deadline,
                 metadata_hash,
-            ),
+                timestamp: current_timestamp(&env),
+            },
         );
 
         Ok(())
@@ -595,11 +792,11 @@ impl VaultixEscrow {
     pub fn create_escrows_batch(env: Env, requests: Vec<CreateEscrowRequest>) -> Result<(), Error> {
         ensure_not_paused(&env)?;
 
-        if requests.len() > 20 {
+        if requests.len() > MAX_BATCH_SIZE {
             return Err(Error::VectorTooLarge);
         }
 
-        let mut created_items: Vec<EscrowCreatedBatchItem> = Vec::new(&env);
+        let mut created_items: Vec<EscrowCreatedBatchEventItem> = Vec::new(&env);
         let mut pending_entries: Vec<(u64, EscrowEntryV2, bool)> = Vec::new(&env);
         let mut escrow_ids: Vec<u64> = Vec::new(&env);
         let mut authed: Vec<Address> = Vec::new(&env);
@@ -684,13 +881,14 @@ impl VaultixEscrow {
 
             pending_entries.push_back((escrow_id, escrow, fee_override_bps >= 0));
 
-            created_items.push_back(EscrowCreatedBatchItem {
+            created_items.push_back(EscrowCreatedBatchEventItem {
                 escrow_id,
                 depositor,
                 recipient,
                 token_address,
                 total_amount,
                 deadline,
+                metadata_hash: request.metadata_hash.clone(),
             });
         }
 
@@ -710,11 +908,12 @@ impl VaultixEscrow {
 
         if !created_items.is_empty() {
             env.events().publish(
-                (
-                    Symbol::new(&env, "Vaultix"),
-                    Symbol::new(&env, "EscrowsCreatedBatch"),
-                ),
-                created_items,
+                event_topic(&env, "EscrowCreatedBatch"),
+                EscrowCreatedBatchEvent {
+                    batch_size: created_items.len(),
+                    items: created_items,
+                    timestamp: current_timestamp(&env),
+                },
             );
         }
 
@@ -752,12 +951,15 @@ impl VaultixEscrow {
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
         env.events().publish(
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "EscrowFunded"),
+            event_topic(&env, "FundsDeposited"),
+            FundsDepositedEvent {
                 escrow_id,
-            ),
-            escrow.total_amount,
+                depositor: escrow.depositor.clone(),
+                recipient: escrow.recipient.clone(),
+                token_address: escrow.token_address.clone(),
+                total_amount: escrow.total_amount,
+                timestamp: current_timestamp(&env),
+            },
         );
 
         Ok(())
@@ -846,7 +1048,7 @@ impl VaultixEscrow {
             return Err(Error::MilestoneNotFound);
         }
 
-        let mut milestone = escrow
+        let milestone = escrow
             .milestones
             .get(milestone_index)
             .ok_or(Error::MilestoneNotFound)?;
@@ -900,13 +1102,19 @@ impl VaultixEscrow {
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
         env.events().publish(
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "MilestoneReleased"),
+            event_topic(&env, "MilestoneReleased"),
+            MilestoneReleasedEvent {
                 escrow_id,
                 milestone_index,
-            ),
-            (payout, fee),
+                depositor: escrow.depositor.clone(),
+                recipient: escrow.recipient.clone(),
+                token_address: escrow.token_address.clone(),
+                milestone_amount: release.milestone_amount,
+                payout_amount: release.payout_amount,
+                fee_amount: release.fee_amount,
+                total_released: release.total_released,
+                timestamp: current_timestamp(&env),
+            },
         );
 
         Ok(())
@@ -938,7 +1146,7 @@ impl VaultixEscrow {
             return Err(Error::MilestoneNotFound);
         }
 
-        let mut milestone = escrow
+        let milestone = escrow
             .milestones
             .get(milestone_index)
             .ok_or(Error::MilestoneNotFound)?;
@@ -976,13 +1184,20 @@ impl VaultixEscrow {
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
         env.events().publish(
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "MilestoneReleased"),
+            event_topic(&env, "DeliveryConfirmed"),
+            DeliveryConfirmedEvent {
                 escrow_id,
                 milestone_index,
-            ),
-            (milestone.amount, 0i128),
+                confirmed_by: buyer,
+                depositor: escrow.depositor.clone(),
+                recipient: escrow.recipient.clone(),
+                token_address: escrow.token_address.clone(),
+                milestone_amount: release.milestone_amount,
+                payout_amount: release.payout_amount,
+                fee_amount: release.fee_amount,
+                total_released: release.total_released,
+                timestamp: current_timestamp(&env),
+            },
         );
 
         Ok(())
@@ -1036,12 +1251,14 @@ impl VaultixEscrow {
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
         env.events().publish(
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "DisputeRaised"),
+            event_topic(&env, "DisputeRaised"),
+            DisputeRaisedEvent {
                 escrow_id,
-            ),
-            caller,
+                raised_by: caller,
+                depositor: escrow.depositor.clone(),
+                recipient: escrow.recipient.clone(),
+                timestamp: current_timestamp(&env),
+            },
         );
 
         Ok(())
@@ -1186,12 +1403,16 @@ impl VaultixEscrow {
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
         env.events().publish(
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "DisputeResolved"),
+            event_topic(&env, "DisputeResolved"),
+            DisputeResolvedEvent {
                 escrow_id,
-            ),
-            (winner, amount_to_winner, amount_to_other),
+                winner,
+                other_party: other,
+                winner_amount: amount_to_winner,
+                other_amount: amount_to_other,
+                resolution,
+                timestamp: current_timestamp(&env),
+            },
         );
 
         Ok(())
@@ -1230,9 +1451,12 @@ impl VaultixEscrow {
             return Err(Error::MilestoneAlreadyReleased);
         }
 
+        let mut refund_amount = 0i128;
+        let mut fee_amount = 0i128;
+
         if escrow_status(&escrow) == EscrowStatus::Active {
             let token_client = token::Client::new(&env, &escrow.token_address);
-            let refund_amount = if let Ok((treasury, _)) = Self::get_config(env.clone()) {
+            refund_amount = if let Ok((treasury, _)) = Self::get_config(env.clone()) {
                 let fee_bps = resolve_fee_with_escrow_override(
                     &env,
                     &escrow.token_address,
@@ -1260,22 +1484,13 @@ impl VaultixEscrow {
                         &token_client,
                         &env.current_contract_address(),
                         &treasury,
-                        fee,
+                        fee_amount,
                     )?;
                 }
-                let refund = escrow
+                escrow
                     .total_amount
-                    .checked_sub(fee)
-                    .ok_or(Error::InvalidMilestoneAmount)?;
-                env.events().publish(
-                    (
-                        Symbol::new(&env, "Vaultix"),
-                        Symbol::new(&env, "RefundAmountComputed"),
-                        escrow_id,
-                    ),
-                    (refund,),
-                );
-                refund
+                    .checked_sub(fee_amount)
+                    .ok_or(Error::InvalidMilestoneAmount)?
             } else {
                 escrow.total_amount
             };
@@ -1301,12 +1516,16 @@ impl VaultixEscrow {
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
         env.events().publish(
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "EscrowCancelled"),
+            event_topic(&env, "EscrowCancelled"),
+            EscrowCancelledEvent {
                 escrow_id,
-            ),
-            escrow.depositor.clone(),
+                cancelled_by: escrow.depositor.clone(),
+                depositor: escrow.depositor.clone(),
+                token_address: escrow.token_address.clone(),
+                refund_amount,
+                fee_amount,
+                timestamp: current_timestamp(&env),
+            },
         );
 
         Ok(())
@@ -1333,12 +1552,13 @@ impl VaultixEscrow {
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
         env.events().publish(
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "EscrowCompleted"),
+            event_topic(&env, "EscrowCompleted"),
+            EscrowCompletedEvent {
                 escrow_id,
-            ),
-            (),
+                completed_by: escrow.depositor.clone(),
+                total_released: escrow.total_released,
+                timestamp: current_timestamp(&env),
+            },
         );
 
         Ok(())
@@ -1421,12 +1641,15 @@ impl VaultixEscrow {
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
         env.events().publish(
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "RefundExpired"),
+            event_topic(&env, "EscrowExpiredRefunded"),
+            EscrowExpiredRefundedEvent {
                 escrow_id,
-            ),
-            (escrow.depositor.clone(), refund_amount, current_time),
+                refunded_to: escrow.depositor.clone(),
+                token_address: escrow.token_address.clone(),
+                refund_amount,
+                fee_amount: platform_fee,
+                timestamp: current_time,
+            },
         );
 
         Ok(())
@@ -1439,6 +1662,18 @@ impl VaultixEscrow {
 
 fn get_storage_key_legacy(escrow_id: u64) -> (Symbol, u64) {
     (symbol_short!("escrow"), escrow_id)
+}
+
+fn event_topic(env: &Env, event_name: &str) -> (Symbol, Symbol, Symbol) {
+    (
+        Symbol::new(env, EVENT_NAMESPACE),
+        Symbol::new(env, EVENT_SCHEMA_VERSION),
+        Symbol::new(env, event_name),
+    )
+}
+
+fn current_timestamp(env: &Env) -> u64 {
+    env.ledger().timestamp()
 }
 
 fn get_storage_key_v2(escrow_id: u64) -> (Symbol, u64) {

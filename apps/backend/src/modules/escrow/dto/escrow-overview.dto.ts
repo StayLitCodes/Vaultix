@@ -119,6 +119,12 @@ export class EscrowOverviewItemDto {
   @ApiProperty()
   token: string;
 
+  @ApiPropertyOptional()
+  tokenIssuer?: string;
+
+  @ApiProperty()
+  tokenDecimals: number;
+
   @ApiProperty()
   totalAmount: number;
 

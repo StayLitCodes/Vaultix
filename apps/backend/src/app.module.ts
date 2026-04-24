@@ -26,11 +26,17 @@ import { Webhook } from './modules/webhook/webhook.entity';
 import { StellarEvent } from './modules/stellar/entities/stellar-event.entity';
 import { AdminModule } from './modules/admin/admin.module';
 import { StellarEventModule } from './modules/stellar/stellar-event.module';
+import { AssetsModule } from './modules/assets/assets.module';
+import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
+import { IpfsModule } from './modules/ipfs/ipfs.module';
+import stellarConfig from './config/stellar.config';
+import ipfsConfig from './config/ipfs.config';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      load: [stellarConfig, ipfsConfig],
     }),
     ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
@@ -55,6 +61,7 @@ import { StellarEventModule } from './modules/stellar/stellar-event.module';
           AdminAuditLog,
           Webhook,
           StellarEvent,
+          AllowedAsset,
         ],
         synchronize: process.env.NODE_ENV === 'test',
         migrations: [__dirname + '/migrations/*.ts'],
@@ -71,6 +78,8 @@ import { StellarEventModule } from './modules/stellar/stellar-event.module';
     NotificationsModule,
     ApiKeyModule,
     forwardRef(() => StellarEventModule),
+    AssetsModule,
+    IpfsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

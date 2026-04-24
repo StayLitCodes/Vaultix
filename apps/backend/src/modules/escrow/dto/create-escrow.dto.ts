@@ -10,11 +10,23 @@ import {
   IsDateString,
   MaxLength,
   ArrayMinSize,
+  ValidateIf,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { EscrowType } from '../entities/escrow.entity';
 import { PartyRole } from '../entities/party.entity';
 import { ConditionType } from '../entities/condition.entity';
+
+export class EscrowAssetDto {
+  @IsString()
+  @IsNotEmpty()
+  code: string;
+
+  @ValidateIf((o: EscrowAssetDto) => o.code !== 'XLM')
+  @IsString()
+  @IsNotEmpty()
+  issuer: string;
+}
 
 export class CreatePartyDto {
   @IsString()
@@ -54,9 +66,10 @@ export class CreateEscrowDto {
   @IsPositive()
   amount: number;
 
-  @IsString()
   @IsOptional()
-  asset?: string;
+  @ValidateNested()
+  @Type(() => EscrowAssetDto)
+  asset?: EscrowAssetDto;
 
   @IsEnum(EscrowType)
   @IsOptional()
@@ -77,4 +90,8 @@ export class CreateEscrowDto {
   @IsDateString()
   @IsOptional()
   expiresAt?: string;
+
+  @IsString()
+  @IsOptional()
+  metadataHash?: string;
 }
