@@ -40,4 +40,22 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
+Write-Host "Building contract-bindings package..." -ForegroundColor Cyan
+Set-Location -Path "apps/contract-bindings"
+
+if (-not (Test-Path "node_modules")) {
+    npm ci
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Failed to install contract-bindings dependencies" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+}
+
+npm run build
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Failed to build contract-bindings package" -ForegroundColor Red
+    exit $LASTEXITCODE
+}
+
+Set-Location -Path $RepoRoot
 Write-Host "Bindings generated successfully in $OutputDir" -ForegroundColor Green
