@@ -31,6 +31,7 @@ import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
 import { IpfsModule } from './modules/ipfs/ipfs.module';
 import stellarConfig from './config/stellar.config';
 import ipfsConfig from './config/ipfs.config';
+import { TransactionModule } from './modules/transaction/transaction.module';
 
 @Module({
   imports: [
@@ -80,6 +81,7 @@ import ipfsConfig from './config/ipfs.config';
     forwardRef(() => StellarEventModule),
     AssetsModule,
     IpfsModule,
+    TransactionModule,
   ],
   controllers: [AppController],
   providers: [AppService],

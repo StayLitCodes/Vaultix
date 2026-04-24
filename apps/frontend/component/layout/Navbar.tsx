@@ -56,6 +56,12 @@ export default function Navbar(): JSX.Element {
               Dashboard
             </Link>
             <Link
+              href="/transactions"
+              className="text-gray-300 hover:text-white transition-colors"
+            >
+              Transactions
+            </Link>
+            <Link
               href="/escrow/create"
               className="text-gray-300 hover:text-white transition-colors"
             >
@@ -101,6 +107,13 @@ export default function Navbar(): JSX.Element {
               className="block text-gray-300 hover:text-white transition-colors"
             >
               Dashboard
+            </Link>
+            <Link
+              href="/transactions"
+              onClick={() => setIsMenuOpen(false)}
+              className="block text-gray-300 hover:text-white transition-colors"
+            >
+              Transactions
             </Link>
             <Link
               href="/escrow/create"
