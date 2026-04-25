@@ -433,7 +433,10 @@ fn test_configure_multisig_max_boundary_accepted() {
 
     // required_signatures = 10 (MAX_REQUIRED_SIGNATURES) must be accepted
     let result = client.try_configure_multisig(&escrow_id, &3_000, &10);
-    assert!(result.is_ok(), "MAX_REQUIRED_SIGNATURES boundary should be valid");
+    assert!(
+        result.is_ok(),
+        "MAX_REQUIRED_SIGNATURES boundary should be valid"
+    );
 
     let escrow = client.get_escrow(&escrow_id);
     assert_eq!(escrow.required_signatures, 10);

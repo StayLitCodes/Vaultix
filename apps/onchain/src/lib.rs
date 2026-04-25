@@ -1,4 +1,3 @@
-// lib.rs
 #![no_std]
 #![allow(unexpected_cfgs)]
 use soroban_sdk::{
@@ -166,8 +165,8 @@ pub enum Error {
     OperatorNotInitialized = 28,
     ArbitratorNotInitialized = 29,
     // #211 — multi-sig hardening
-    DuplicateSignature = 30,       // Signer has already signed this release window
-    InvalidSignatureConfig = 31,   // required_signatures is zero or exceeds max
+    DuplicateSignature = 30, // Signer has already signed this release window
+    InvalidSignatureConfig = 31, // required_signatures is zero or exceeds max
 }
 
 const DEFAULT_FEE_BPS: i128 = 50;
