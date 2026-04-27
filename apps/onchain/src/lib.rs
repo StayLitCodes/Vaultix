@@ -343,6 +343,7 @@ pub enum Error {
     OperatorNotInitialized = 28,
     ArbitratorNotInitialized = 29,
     InvalidMetadataHash = 30,
+    InvalidSplitBps = 31,
 }
 
 const DEFAULT_FEE_BPS: i128 = 50;
@@ -1029,6 +1030,9 @@ impl VaultixEscrow {
         if escrow_status(&escrow) != EscrowStatus::Active {
             return Err(Error::EscrowNotActive);
         }
+        if escrow_status(&escrow) == EscrowStatus::Resolved {
+            return Err(Error::InvalidEscrowStatus);
+        }
         if milestone_index >= escrow.milestones.len() {
             return Err(Error::MilestoneNotFound);
         }
@@ -1079,6 +1083,9 @@ impl VaultixEscrow {
         }
         if escrow_status(&escrow) != EscrowStatus::Active {
             return Err(Error::EscrowNotActive);
+        }
+        if escrow_status(&escrow) == EscrowStatus::Resolved {
+            return Err(Error::InvalidEscrowStatus);
         }
         if milestone_index >= escrow.milestones.len() {
             return Err(Error::MilestoneNotFound);
@@ -1173,7 +1180,7 @@ impl VaultixEscrow {
         env: Env,
         escrow_id: u64,
         winner: Address,
-        split_winner_amount: Option<i128>,
+        split_recipient_bps: Option<i128>,
     ) -> Result<(), Error> {
         let arbitrator = get_arbitrator(&env)?;
         arbitrator.require_auth();
@@ -1202,18 +1209,44 @@ impl VaultixEscrow {
             escrow.depositor.clone()
         };
 
-        let (amount_to_winner, amount_to_other) = match split_winner_amount {
-            None => (outstanding, 0i128),
-            Some(winner_amount) => {
-                if winner_amount < 0 || winner_amount > outstanding {
-                    return Err(Error::InvalidMilestoneAmount);
+        let amount_to_winner: i128;
+        let amount_to_other: i128;
+
+        match split_recipient_bps {
+            None => {
+                amount_to_winner = outstanding;
+                amount_to_other = 0;
+            }
+            Some(bps) => {
+                if bps < 0 || bps > BPS_DENOMINATOR {
+                    return Err(Error::InvalidSplitBps);
                 }
-                let other_amount = outstanding
-                    .checked_sub(winner_amount)
+                let winner_share = outstanding
+                    .checked_mul(bps)
+                    .ok_or(Error::InvalidMilestoneAmount)?
+                    .checked_div(BPS_DENOMINATOR)
                     .ok_or(Error::InvalidMilestoneAmount)?;
-                (winner_amount, other_amount)
+                
+                let other_share = outstanding
+                    .checked_sub(winner_share)
+                    .ok_or(Error::InvalidMilestoneAmount)?;
+
+                if winner == escrow.recipient {
+                    amount_to_winner = winner_share;
+                    amount_to_other = other_share;
+                } else {
+                    amount_to_winner = other_share;
+                    amount_to_other = winner_share;
+                }
             }
         };
+
+        let total_distributed = amount_to_winner
+            .checked_add(amount_to_other)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+        if total_distributed > outstanding {
+            return Err(Error::InvalidMilestoneAmount);
+        }
 
         let token_client = token::Client::new(&env, &escrow.token_address);
 
@@ -1235,12 +1268,11 @@ impl VaultixEscrow {
             )?;
         }
 
-        // Update accounting and milestone statuses
-        let (amount_to_recipient, resolution) = if amount_to_winner == outstanding
+        let (_amount_to_recipient, resolution) = if total_distributed == outstanding
+            && amount_to_winner == outstanding
             && amount_to_other == 0
         {
             if winner == escrow.recipient {
-                // Full payout to recipient
                 let mut updated_milestones = Vec::new(&env);
                 for milestone in escrow.milestones.iter() {
                     let mut m = milestone.clone();
@@ -1252,7 +1284,6 @@ impl VaultixEscrow {
                 escrow.milestones = updated_milestones;
                 (outstanding, Resolution::Recipient)
             } else {
-                // Full refund to depositor
                 let mut updated_milestones = Vec::new(&env);
                 for milestone in escrow.milestones.iter() {
                     let mut m = milestone.clone();
@@ -1266,7 +1297,6 @@ impl VaultixEscrow {
                 (0i128, Resolution::Depositor)
             }
         } else {
-            // Split resolution
             let mut updated_milestones = Vec::new(&env);
             for milestone in escrow.milestones.iter() {
                 let mut m = milestone.clone();
@@ -1287,7 +1317,7 @@ impl VaultixEscrow {
 
         escrow.total_released = escrow
             .total_released
-            .checked_add(amount_to_recipient)
+            .checked_add(total_distributed)
             .ok_or(Error::InvalidMilestoneAmount)?;
 
         if escrow.total_released > escrow.total_amount {
@@ -1323,6 +1353,9 @@ impl VaultixEscrow {
         if escrow_status(&escrow) != EscrowStatus::Active
             && escrow_status(&escrow) != EscrowStatus::Created
         {
+            return Err(Error::InvalidEscrowStatus);
+        }
+        if escrow_status(&escrow) == EscrowStatus::Resolved {
             return Err(Error::InvalidEscrowStatus);
         }
         if escrow.total_released > 0 {
@@ -1426,6 +1459,9 @@ impl VaultixEscrow {
 
         // Validate escrow status is Active
         if escrow_status(&escrow) != EscrowStatus::Active {
+            return Err(Error::InvalidStatusForRefund);
+        }
+        if escrow_status(&escrow) == EscrowStatus::Resolved {
             return Err(Error::InvalidStatusForRefund);
         }
 
