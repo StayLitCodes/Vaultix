@@ -10,7 +10,7 @@ import PartiesSection from '@/components/escrow/detail/PartiesSection';
 import TermsSection from '@/components/escrow/detail/TermsSection';
 import TimelineSection from '@/components/escrow/detail/TimelineSection';
 import ActivityFeed from '@/components/common/ActivityFeed';
-import ConditionsList from '@/component/escrow/ConditionsList';
+import ConditionsList from '@/components/escrow/ConditionsList';
 import { IParty } from '@/types/escrow';
 import FileDisputeModal from '@/components/escrow/detail/file-dispute-modal';
 import DisputeSection from '@/components/escrow/detail/DisputeSection';

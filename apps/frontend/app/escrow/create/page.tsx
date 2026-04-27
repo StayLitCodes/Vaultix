@@ -1,4 +1,4 @@
-import CreateEscrowWizard from '@/component/escrow/CreateEscrowWizard';
+import CreateEscrowWizard from '@/components/escrow/CreateEscrowWizard';
 
 export default function CreateEscrowPage() {
   return (

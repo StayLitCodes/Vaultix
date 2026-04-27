@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback } from 'react';
 import ToastContext, { Toast, ToastType } from './ToastContext';
-import ToastContainer from '@/component/ui/ToastContainer';
+import ToastContainer from '@/components/ui/ToastContainer';
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import Providers from "@/component/Providers";
+import Providers from '@/components/Providers';
 import Navbar from "@/component/layout/Navbar";
 import FileDisputeModal from "@/components/escrow/detail/file-dispute-modal";
 
