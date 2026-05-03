@@ -6,90 +6,78 @@ interface TermsSectionProps {
   userRole: 'creator' | 'counterparty' | 'arbitrator' | null;
 }
 
-const TermsSection: React.FC<TermsSectionProps> = ({ escrow, userRole }: TermsSectionProps) => {
+const TermsSection: React.FC<TermsSectionProps> = ({ escrow, userRole }) => {
   const [timeLeft, setTimeLeft] = useState('');
 
   useEffect(() => {
-    if (escrow.expiresAt) {
-      const calculateTimeLeft = () => {
-        const expiryDate = new Date(escrow.expiresAt!);
-        const now = new Date();
-        const difference = expiryDate.getTime() - now.getTime();
-
-        if (difference <= 0) {
-          return 'Expired';
-        }
-
-        const days = Math.floor(difference / (1000 * 60 * 60 * 24));
-        const hours = Math.floor((difference % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-        const minutes = Math.floor((difference % (1000 * 60 * 60)) / (1000 * 60));
-
-        return `${days}d ${hours}h ${minutes}m`;
-      };
-
-      setTimeLeft(calculateTimeLeft());
-      const timer = setInterval(() => {
-        setTimeLeft(calculateTimeLeft());
-      }, 60000); // Update every minute
-
-      return () => clearInterval(timer);
-    }
+    if (!escrow.expiresAt) return;
+    const calc = () => {
+      const diff = new Date(escrow.expiresAt!).getTime() - Date.now();
+      if (diff <= 0) return setTimeLeft('Expired');
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      setTimeLeft(`${d}d ${h}h ${m}m`);
+    };
+    calc();
+    const t = setInterval(calc, 60000);
+    return () => clearInterval(t);
   }, [escrow.expiresAt]);
 
   return (
-    <div className="bg-white rounded-lg shadow p-6 sticky top-8">
-      <h2 className="text-xl font-semibold text-gray-900 mb-4">Terms & Actions</h2>
-      
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-6 lg:sticky lg:top-8">
+      <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-4">Terms & Actions</h2>
+
       <div className="space-y-4">
-        <div className="border border-gray-200 rounded-lg p-4">
-          <h3 className="font-medium text-gray-900 mb-2">Agreement Details</h3>
-          <dl className="space-y-2">
-            <div className="flex justify-between">
-              <dt className="text-sm text-gray-500">Amount</dt>
-              <dd className="text-sm font-medium text-gray-900">{Number(escrow.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 7 })} {escrow.asset}</dd>
+        {/* Agreement details */}
+        <div className="border border-gray-200 rounded-lg p-3 sm:p-4">
+          <h3 className="font-medium text-gray-900 mb-3 text-sm sm:text-base">Agreement Details</h3>
+          <dl className="space-y-2.5">
+            <div className="flex justify-between items-center gap-2">
+              <dt className="text-sm text-gray-500 shrink-0">Amount</dt>
+              <dd className="text-sm font-medium text-gray-900 text-right">
+                {Number(escrow.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 7 })} {escrow.asset}
+              </dd>
             </div>
-            <div className="flex justify-between">
+            <div className="flex justify-between items-center gap-2">
               <dt className="text-sm text-gray-500">Type</dt>
               <dd className="text-sm font-medium text-gray-900 capitalize">{escrow.type}</dd>
             </div>
-            <div className="flex justify-between">
+            <div className="flex justify-between items-center gap-2">
               <dt className="text-sm text-gray-500">Status</dt>
               <dd className="text-sm font-medium text-gray-900 capitalize">{escrow.status}</dd>
             </div>
             {escrow.expiresAt && (
-              <div className="flex justify-between">
-                <dt className="text-sm text-gray-500">Expires</dt>
-                <dd className="text-sm font-medium text-gray-900">
-                  {new Date(escrow.expiresAt).toLocaleDateString()} 
-                  <br />
-                  <span className="text-xs text-gray-500">{timeLeft}</span>
+              <div className="flex justify-between items-start gap-2">
+                <dt className="text-sm text-gray-500 shrink-0">Expires</dt>
+                <dd className="text-sm font-medium text-gray-900 text-right">
+                  {new Date(escrow.expiresAt).toLocaleDateString()}
+                  {timeLeft && <span className="block text-xs text-gray-400 mt-0.5">{timeLeft}</span>}
                 </dd>
               </div>
             )}
           </dl>
         </div>
-        
-        {/* Action buttons based on user role and escrow status */}
-        <div className="space-y-3">
+
+        {/* Action buttons */}
+        <div className="space-y-2.5">
           {userRole === 'creator' && escrow.status === 'PENDING' && (
-            <button className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+            <button className="w-full min-h-[44px] px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors">
               Fund Escrow
             </button>
           )}
-          
           {userRole === 'counterparty' && escrow.status === 'ACTIVE' && (
             <>
-              <button className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+              <button className="w-full min-h-[44px] px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium transition-colors">
                 Confirm Delivery
               </button>
-              <button className="w-full px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2">
+              <button className="w-full min-h-[44px] px-4 py-2.5 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 text-sm font-medium transition-colors">
                 Raise Dispute
               </button>
             </>
           )}
-          
           {(userRole === 'creator' || userRole === 'counterparty') && escrow.status === 'ACTIVE' && (
-            <button className="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+            <button className="w-full min-h-[44px] px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium transition-colors">
               Cancel Escrow
             </button>
           )}

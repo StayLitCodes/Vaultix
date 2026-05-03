@@ -50,6 +50,12 @@ export class EscrowStellarIntegrationService {
         throw new Error(`Escrow with ID ${escrowId} not found`);
       }
 
+      if (!escrow.metadataHash) {
+        throw new Error(
+          `Escrow ${escrowId} is missing metadataHash for on-chain creation`,
+        );
+      }
+
       // Get the depositor (usually the buyer)
       const depositor = escrow.parties.find(
         (party) => party.role === ('buyer' as any),
@@ -91,6 +97,7 @@ export class EscrowStellarIntegrationService {
           escrow.expiresAt
             ? Math.floor(new Date(escrow.expiresAt).getTime() / 1000)
             : Math.floor(Date.now() / 1000) + 86400, // Convert to Unix timestamp or default to 24 hours
+          escrow.metadataHash,
         );
 
       // Build the transaction

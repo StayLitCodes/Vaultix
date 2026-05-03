@@ -1,7 +1,7 @@
-import React from 'react';
-import Link from 'next/link';
-import EscrowCard from './EscrowCard';
-import { EscrowCardSkeleton } from '@/components/ui/EscrowCardSkeleton';
+import React from "react";
+import Link from "next/link";
+import EscrowCard from "./EscrowCard";
+import { EscrowCardSkeleton } from "@/components/ui/EscrowCardSkeleton";
 
 // Define the interface here since we can't import from types yet
 interface IEscrow {
@@ -13,14 +13,21 @@ interface IEscrow {
   creatorAddress: string;
   counterpartyAddress: string;
   deadline: string;
-  status: 'created' | 'funded' | 'confirmed' | 'released' | 'completed' | 'cancelled' | 'disputed';
+  status:
+    | "created"
+    | "funded"
+    | "confirmed"
+    | "released"
+    | "completed"
+    | "cancelled"
+    | "disputed";
   createdAt: string;
   updatedAt: string;
   milestones?: Array<{
     id: string;
     title: string;
     amount: string;
-    status: 'pending' | 'released';
+    status: "pending" | "released";
   }>;
 }
 
@@ -28,7 +35,7 @@ interface EscrowListProps {
   escrows: IEscrow[];
   isLoading: boolean;
   isError: boolean;
-  activeTab: 'all' | 'active' | 'pending' | 'completed' | 'disputed';
+  activeTab: string;
   hasNextPage?: boolean;
   fetchNextPage?: () => void;
   isFetchingNextPage?: boolean;
@@ -59,33 +66,38 @@ const EscrowList: React.FC<EscrowListProps> = ({
   if (isError) {
     return (
       <div className="text-center py-10">
-        <h3 className="text-lg font-medium text-red-600">Error Loading Escrows</h3>
-        <p className="text-gray-500 mt-2">There was an issue retrieving your escrow agreements. Please try again later.</p>
+        <h3 className="text-lg font-medium text-red-600">
+          Error Loading Escrows
+        </h3>
+        <p className="text-gray-500 mt-2">
+          There was an issue retrieving your escrow agreements. Please try again
+          later.
+        </p>
       </div>
     );
   }
 
   // Show empty state based on active tab
   if (escrows.length === 0) {
-    let emptyMessage = '';
+    let emptyMessage = "";
     switch (activeTab) {
-      case 'all':
-        emptyMessage = 'You have no escrow agreements yet.';
+      case "all":
+        emptyMessage = "You have no escrow agreements yet.";
         break;
-      case 'active':
-        emptyMessage = 'You have no active escrow agreements.';
+      case "active":
+        emptyMessage = "You have no active escrow agreements.";
         break;
-      case 'pending':
-        emptyMessage = 'You have no escrows pending confirmation.';
+      case "pending":
+        emptyMessage = "You have no escrows pending confirmation.";
         break;
-      case 'completed':
-        emptyMessage = 'You have no completed escrow agreements.';
+      case "completed":
+        emptyMessage = "You have no completed escrow agreements.";
         break;
-      case 'disputed':
-        emptyMessage = 'You have no disputed escrow agreements.';
+      case "disputed":
+        emptyMessage = "You have no disputed escrow agreements.";
         break;
       default:
-        emptyMessage = 'No escrow agreements found.';
+        emptyMessage = "No escrow agreements found.";
     }
 
     return (
@@ -118,7 +130,7 @@ const EscrowList: React.FC<EscrowListProps> = ({
             disabled={isFetchingNextPage}
             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
           >
-            {isFetchingNextPage ? 'Loading...' : 'Load More'}
+            {isFetchingNextPage ? "Loading..." : "Load More"}
           </button>
         </div>
       )}

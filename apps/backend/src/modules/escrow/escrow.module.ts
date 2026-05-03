@@ -41,6 +41,10 @@ import { AllowedAsset } from '../assets/entities/allowed-asset.entity';
     EscrowStellarIntegrationService,
     EscrowAccessGuard,
     EscrowExpireGuard,
+    EscrowService,
+    EscrowSchedulerService,
+    EscrowStellarIntegrationService,
+    EscrowAccessGuard,
   ],
   exports: [EscrowService, EscrowSchedulerService],
 })

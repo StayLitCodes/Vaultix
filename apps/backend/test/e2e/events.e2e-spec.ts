@@ -2,15 +2,15 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import type { Server } from 'http';
-import { AppModule } from '../src/app.module';
+import { AppModule } from '../../src/app.module';
 import { Keypair } from 'stellar-sdk';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { RefreshToken } from '../src/modules/user/entities/refresh-token.entity';
-import { User } from '../src/modules/user/entities/user.entity';
-import { Escrow } from '../src/modules/escrow/entities/escrow.entity';
-import { Party, PartyRole } from '../src/modules/escrow/entities/party.entity';
-import { Condition } from '../src/modules/escrow/entities/condition.entity';
-import { EscrowEvent } from '../src/modules/escrow/entities/escrow-event.entity';
+import { RefreshToken } from '../../src/modules/user/entities/refresh-token.entity';
+import { User } from '../../src/modules/user/entities/user.entity';
+import { Escrow } from '../../src/modules/escrow/entities/escrow.entity';
+import { Party, PartyRole } from '../../src/modules/escrow/entities/party.entity';
+import { Condition } from '../../src/modules/escrow/entities/condition.entity';
+import { EscrowEvent } from '../../src/modules/escrow/entities/escrow-event.entity';
 
 function createMockKeypair(): Keypair {
   return Keypair.random();

@@ -155,3 +155,30 @@
     animation: toast-exit 0.3s ease-in;
   }
 }
+
+/* ─── Mobile global fixes ─────────────────────────────────────────── */
+@layer base {
+  html, body {
+    /* Prevent horizontal scroll globally */
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  /* Hide scrollbar for overflow-x tabs/filters while keeping scroll */
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Ensure mono text can wrap / truncate safely on mobile */
+  .font-mono {
+    word-break: break-all;
+  }
+
+  /* Minimum touch target size on all interactive elements */
+  button, a, [role="button"] {
+    touch-action: manipulation;
+  }
+}
