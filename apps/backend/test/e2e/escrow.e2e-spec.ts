@@ -4,14 +4,14 @@ import request from 'supertest';
 import type { Server } from 'http';
 import { DataSource, Repository } from 'typeorm';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { AppModule } from '../src/app.module';
+import { AppModule } from '../../src/app.module';
 import { Keypair } from 'stellar-sdk';
 import {
   Escrow,
   EscrowStatus,
   EscrowType,
-} from '../src/modules/escrow/entities/escrow.entity';
-import { PartyRole } from '../src/modules/escrow/entities/party.entity';
+} from '../../src/modules/escrow/entities/escrow.entity';
+import { PartyRole } from '../../src/modules/escrow/entities/party.entity';
 
 // No mock needed, using real Keypair
 

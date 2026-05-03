@@ -77,6 +77,7 @@ describe('EscrowStellarIntegrationService', () => {
     assetCode: 'XLM',
     assetIssuer: null,
     expiresAt: new Date(),
+    metadataHash: '0'.repeat(64),
   };
 
   describe('createOnChainEscrow', () => {

@@ -39,3 +39,13 @@ The contract defines several key roles, each with specific permissions:
 - **Arbitrator**: A trusted third party authorized to resolve disputes between the depositor and recipient, deciding how funds are distributed.
 - **Depositor**: The user who creates the escrow, funds it with tokens, and has the authority to release milestones (or confirm delivery) to the recipient.
 - **Recipient**: The user designated to receive the funds upon the completion of milestones.
+
+## Metadata Hash Interop
+
+`create_escrow` stores a `metadata_hash` as `BytesN<32>`. The canonical meaning of that field is the raw 32-byte `sha2-256` digest of the escrow metadata reference.
+
+- On-chain form: raw 32 bytes.
+- API/client form: lowercase 64-character hex string of those same 32 bytes.
+- Display form: prefer `ipfs://<cid>` for users.
+- CID mapping: when metadata is pinned to IPFS, decode the CID multihash and extract the `sha2-256` digest bytes. New writes should prefer CIDv1 base32.
+- Validation: the contract rejects the all-zero digest, and off-chain clients reject malformed hex/CID inputs.

@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
+import { JwtModule } from '@nestjs/jwt';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
@@ -29,6 +30,7 @@ import { StellarEventModule } from './modules/stellar/stellar-event.module';
 import { AssetsModule } from './modules/assets/assets.module';
 import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
 import { IpfsModule } from './modules/ipfs/ipfs.module';
+import { EscrowGateway } from './gateways/escrow.gateway';
 import stellarConfig from './config/stellar.config';
 import ipfsConfig from './config/ipfs.config';
 
@@ -80,8 +82,20 @@ import ipfsConfig from './config/ipfs.config';
     forwardRef(() => StellarEventModule),
     AssetsModule,
     IpfsModule,
+    JwtModule.registerAsync({
+      useFactory: (configService: ConfigService) => ({
+        secret:
+          configService.get<string>('JWT_SECRET') ||
+          'your-secret-key-change-in-production',
+        signOptions: { expiresIn: '15m' },
+      }),
+      inject: [ConfigService],
+    }),
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    EscrowGateway, // WebSocket Gateway for real-time updates
+  ],
 })
 export class AppModule {}

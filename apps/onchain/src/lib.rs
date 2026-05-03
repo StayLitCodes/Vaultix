@@ -11,7 +11,7 @@ impl VaultixEscrow {
     /// WARNING: Future upgrades MUST preserve storage layout (structs, enums, keys) to avoid corrupting state.
     /// Only admin can call. Emits ContractUpgraded event before upgrade.
     pub fn upgrade(env: Env, new_wasm_hash: [u8; 32]) -> Result<(), Error> {
-        let admin = get_admin(&env)?;
+        let admin = get_admin_internal(&env)?;
         admin.require_auth();
 
         let hash_bytes = soroban_sdk::BytesN::<32>::from_array(&env, &new_wasm_hash);
@@ -358,6 +358,10 @@ pub struct VaultixEscrow;
 #[contractimpl]
 impl VaultixEscrow {
     pub fn initialize(env: Env, treasury: Address, fee_bps: Option<i128>) -> Result<(), Error> {
+        if env.storage().instance().has(&symbol_short!("treasury")) {
+            return Err(Error::AlreadyInitialized);
+        }
+
         treasury.require_auth();
 
         let fee = fee_bps.unwrap_or(DEFAULT_FEE_BPS);
@@ -375,16 +379,7 @@ impl VaultixEscrow {
 
         let timestamp = current_timestamp(&env);
 
-        env.events().publish(
-            event_topic(&env, "RoleUpdated"),
-            RoleUpdatedEvent {
-                role: Role::Treasury,
-                had_old_address: false,
-                old_address: treasury.clone(),
-                new_address: treasury.clone(),
-                timestamp,
-            },
-        );
+        emit_role_updated(&env, Role::Treasury, None, treasury.clone(), timestamp);
 
         env.events().publish(
             event_topic(&env, "FeeUpdated"),
@@ -404,7 +399,7 @@ impl VaultixEscrow {
     }
 
     pub fn update_fee(env: Env, new_fee_bps: i128) -> Result<(), Error> {
-        let operator = get_operator(&env)?;
+        let operator = get_operator_internal(&env)?;
         operator.require_auth();
 
         if !(0..=BPS_DENOMINATOR).contains(&new_fee_bps) {
@@ -549,7 +544,7 @@ impl VaultixEscrow {
     }
 
     pub fn set_paused(env: Env, paused: bool) -> Result<(), Error> {
-        let operator = get_operator(&env)?;
+        let operator = get_operator_internal(&env)?;
         operator.require_auth();
 
         let state = if paused {
@@ -569,6 +564,98 @@ impl VaultixEscrow {
                 timestamp: current_timestamp(&env),
             },
         );
+
+        Ok(())
+    }
+
+    pub fn get_admin(env: Env) -> Result<Address, Error> {
+        let admin = get_admin_internal(&env)?;
+        Ok(admin)
+    }
+
+    pub fn get_operator(env: Env) -> Result<Address, Error> {
+        let operator = get_operator_internal(&env)?;
+        Ok(operator)
+    }
+
+    pub fn get_arbitrator(env: Env) -> Result<Address, Error> {
+        let arbitrator = get_arbitrator_internal(&env)?;
+        Ok(arbitrator)
+    }
+
+    pub fn get_treasury(env: Env) -> Result<Address, Error> {
+        let treasury = get_treasury_internal(&env)?;
+        Ok(treasury)
+    }
+
+    pub fn set_admin(env: Env, new_admin: Address) -> Result<(), Error> {
+        let current_admin = get_admin_internal(&env)?;
+        current_admin.require_auth();
+
+        let timestamp = current_timestamp(&env);
+
+        env.storage()
+            .persistent()
+            .set(&admin_storage_key(), &new_admin);
+        extend_roles_ttl(&env);
+        emit_role_updated(&env, Role::Admin, Some(current_admin), new_admin, timestamp);
+
+        Ok(())
+    }
+
+    pub fn set_operator(env: Env, new_operator: Address) -> Result<(), Error> {
+        let admin = get_admin_internal(&env)?;
+        admin.require_auth();
+
+        let old_operator = get_operator_internal(&env).ok();
+
+        let timestamp = current_timestamp(&env);
+
+        env.storage()
+            .persistent()
+            .set(&operator_storage_key(), &new_operator);
+        extend_roles_ttl(&env);
+        emit_role_updated(&env, Role::Operator, old_operator, new_operator, timestamp);
+
+        Ok(())
+    }
+
+    pub fn set_arbitrator(env: Env, new_arbitrator: Address) -> Result<(), Error> {
+        let admin = get_admin_internal(&env)?;
+        admin.require_auth();
+
+        let old_arbitrator = get_arbitrator_internal(&env).ok();
+
+        let timestamp = current_timestamp(&env);
+
+        env.storage()
+            .persistent()
+            .set(&arbitrator_storage_key(), &new_arbitrator);
+        extend_roles_ttl(&env);
+        emit_role_updated(
+            &env,
+            Role::Arbitrator,
+            old_arbitrator,
+            new_arbitrator,
+            timestamp,
+        );
+
+        Ok(())
+    }
+
+    pub fn set_treasury(env: Env, new_treasury: Address) -> Result<(), Error> {
+        let admin = get_admin_internal(&env)?;
+        admin.require_auth();
+
+        let old_treasury = get_treasury_internal(&env).ok();
+
+        let timestamp = current_timestamp(&env);
+
+        env.storage()
+            .instance()
+            .set(&symbol_short!("treasury"), &new_treasury);
+
+        emit_role_updated(&env, Role::Treasury, old_treasury, new_treasury, timestamp);
 
         Ok(())
     }
@@ -596,36 +683,9 @@ impl VaultixEscrow {
 
         let timestamp = current_timestamp(&env);
 
-        env.events().publish(
-            event_topic(&env, "RoleUpdated"),
-            RoleUpdatedEvent {
-                role: Role::Admin,
-                had_old_address: false,
-                old_address: admin.clone(),
-                new_address: admin,
-                timestamp,
-            },
-        );
-        env.events().publish(
-            event_topic(&env, "RoleUpdated"),
-            RoleUpdatedEvent {
-                role: Role::Operator,
-                had_old_address: false,
-                old_address: operator.clone(),
-                new_address: operator,
-                timestamp,
-            },
-        );
-        env.events().publish(
-            event_topic(&env, "RoleUpdated"),
-            RoleUpdatedEvent {
-                role: Role::Arbitrator,
-                had_old_address: false,
-                old_address: arbitrator.clone(),
-                new_address: arbitrator,
-                timestamp,
-            },
-        );
+        emit_role_updated(&env, Role::Admin, None, admin, timestamp);
+        emit_role_updated(&env, Role::Operator, None, operator, timestamp);
+        emit_role_updated(&env, Role::Arbitrator, None, arbitrator, timestamp);
 
         Ok(())
     }
@@ -692,6 +752,8 @@ impl VaultixEscrow {
         if depositor == recipient {
             return Err(Error::SelfDealing);
         }
+
+        validate_metadata_hash(&metadata_hash)?;
 
         if env
             .storage()
@@ -784,6 +846,8 @@ impl VaultixEscrow {
             if depositor == recipient {
                 return Err(Error::SelfDealing);
             }
+
+            validate_metadata_hash(&metadata_hash)?;
 
             for existing_id in escrow_ids.iter() {
                 if existing_id == escrow_id {
@@ -1229,7 +1293,7 @@ impl VaultixEscrow {
         winner: Address,
         split_winner_amount: Option<i128>,
     ) -> Result<(), Error> {
-        let arbitrator = get_arbitrator(&env)?;
+        let arbitrator = get_arbitrator_internal(&env)?;
         arbitrator.require_auth();
 
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
@@ -1509,6 +1573,12 @@ impl VaultixEscrow {
     }
 
     pub fn refund_expired(env: Env, escrow_id: u64, caller: Address) -> Result<(), Error> {
+        // Pause-mode: refund_expired is blocked when the contract is paused.
+        // Rationale: a paused contract is under platform review/incident response;
+        // allowing fund drains during that window would undermine the safety guarantee.
+        // Depositors can call refund_expired once the contract is unpaused.
+        ensure_not_paused(&env)?;
+
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
 
         let current_time = env.ledger().timestamp();
@@ -1698,7 +1768,7 @@ fn extend_roles_ttl(env: &Env) {
         .extend_ttl(&arbitrator_storage_key(), 100, 2_000_000);
 }
 
-fn get_admin(env: &Env) -> Result<Address, Error> {
+fn get_admin_internal(env: &Env) -> Result<Address, Error> {
     let admin = env
         .storage()
         .persistent()
@@ -1706,6 +1776,13 @@ fn get_admin(env: &Env) -> Result<Address, Error> {
         .ok_or(Error::AdminNotInitialized)?;
     extend_roles_ttl(env);
     Ok(admin)
+}
+
+fn get_treasury_internal(env: &Env) -> Result<Address, Error> {
+    env.storage()
+        .instance()
+        .get::<Symbol, Address>(&symbol_short!("treasury"))
+        .ok_or(Error::TreasuryNotInitialized)
 }
 
 fn validate_milestones(milestones: &Vec<Milestone>) -> Result<i128, Error> {
@@ -1722,6 +1799,14 @@ fn validate_milestones(milestones: &Vec<Milestone>) -> Result<i128, Error> {
             .ok_or(Error::InvalidMilestoneAmount)?;
     }
     Ok(total)
+}
+
+fn validate_metadata_hash(metadata_hash: &BytesN<32>) -> Result<(), Error> {
+    if metadata_hash.to_array() == [0u8; 32] {
+        return Err(Error::InvalidMetadataHash);
+    }
+
+    Ok(())
 }
 
 fn verify_all_released(milestones: &Vec<Milestone>) -> bool {
@@ -1745,7 +1830,7 @@ fn calculate_fee(amount: i128, fee_bps: i128) -> Result<i128, Error> {
     Ok(fee)
 }
 
-fn get_operator(env: &Env) -> Result<Address, Error> {
+fn get_operator_internal(env: &Env) -> Result<Address, Error> {
     if let Some(op) = env
         .storage()
         .persistent()
@@ -1767,7 +1852,7 @@ fn get_operator(env: &Env) -> Result<Address, Error> {
     Ok(op)
 }
 
-fn get_arbitrator(env: &Env) -> Result<Address, Error> {
+fn get_arbitrator_internal(env: &Env) -> Result<Address, Error> {
     if let Some(a) = env
         .storage()
         .persistent()
@@ -1789,6 +1874,28 @@ fn get_arbitrator(env: &Env) -> Result<Address, Error> {
     env.storage().persistent().remove(&legacy_key);
     extend_roles_ttl(env);
     Ok(a)
+}
+
+fn emit_role_updated(
+    env: &Env,
+    role: Role,
+    old_address: Option<Address>,
+    new_address: Address,
+    timestamp: u64,
+) {
+    let had_old_address = old_address.is_some();
+    let prior_address = old_address.unwrap_or(new_address.clone());
+
+    env.events().publish(
+        event_topic(env, "RoleUpdated"),
+        RoleUpdatedEvent {
+            role,
+            had_old_address,
+            old_address: prior_address,
+            new_address,
+            timestamp,
+        },
+    );
 }
 
 fn escrow_fee_override_opt(escrow: &EscrowEntryV2) -> Option<i128> {

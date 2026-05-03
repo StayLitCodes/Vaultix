@@ -33,3 +33,4 @@ Below is a complete reference of the `Error` enum variants returned by the `Vaul
 | `Unauthorized` | 27 | Similar to (5), unauthorized function caller specifically for expiration refund. | Check who you are logging in with. |
 | `OperatorNotInitialized` | 28 | `operator` address missing in persistent storage. | Contact Admin to supply this config. |
 | `ArbitratorNotInitialized` | 29 | `arbitrator` address missing in persistent storage. | Contact Admin to supply this config. |
+| `InvalidMetadataHash` | 30 | `metadata_hash` was the all-zero 32-byte value or otherwise failed metadata validation. | Pass a real 32-byte SHA-256 digest derived from the metadata CID or payload. |

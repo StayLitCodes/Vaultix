@@ -1,10 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { AppModule } from '../src/app.module';
+import { AppModule } from '../../src/app.module';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { User, UserRole } from '../src/modules/user/entities/user.entity';
-import { AuthGuard } from '../src/modules/auth/middleware/auth.guard';
+import { User, UserRole } from 'src/modules/user/entities/user.entity';
+import { AuthGuard } from '../../src/modules/auth/middleware/auth.guard';
 import { Repository } from 'typeorm';
 
 describe('Admin API (e2e)', () => {

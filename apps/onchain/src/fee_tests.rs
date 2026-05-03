@@ -30,6 +30,10 @@ fn create_token_contract<'a>(
     (token_client, token_admin, token_address)
 }
 
+fn valid_metadata_hash(env: &Env) -> BytesN<32> {
+    BytesN::from_array(env, &[7u8; 32])
+}
+
 #[test]
 fn test_set_token_fee_valid() {
     let env = Env::default();
@@ -139,7 +143,7 @@ fn test_release_milestone_uses_global_fee_by_default() {
         &token_address,
         &milestones,
         &(env.ledger().timestamp() + 3600),
-        &BytesN::from_array(&env, &[0u8; 32]),
+        &valid_metadata_hash(&env),
     );
 
     token_client.approve(&depositor, &contract_id, &10_000, &200);
@@ -196,7 +200,7 @@ fn test_release_milestone_uses_token_fee_override() {
         &token_address,
         &milestones,
         &(env.ledger().timestamp() + 3600),
-        &BytesN::from_array(&env, &[0u8; 32]),
+        &valid_metadata_hash(&env),
     );
 
     token_client.approve(&depositor, &contract_id, &10_000, &200);
@@ -257,7 +261,7 @@ fn test_release_milestone_uses_escrow_fee_override() {
         &token_address,
         &milestones,
         &(env.ledger().timestamp() + 3600),
-        &BytesN::from_array(&env, &[0u8; 32]),
+        &valid_metadata_hash(&env),
     );
 
     token_client.approve(&depositor, &contract_id, &10_000, &200);
@@ -317,7 +321,7 @@ fn test_fee_precedence_escrow_over_token_and_global() {
         &token_address,
         &milestones,
         &(env.ledger().timestamp() + 3600),
-        &BytesN::from_array(&env, &[0u8; 32]),
+        &valid_metadata_hash(&env),
     );
 
     token_client.approve(&depositor, &contract_id, &10_000, &200);
@@ -371,7 +375,7 @@ fn test_cancel_escrow_uses_token_fee_override() {
         &token_address,
         &milestones,
         &(env.ledger().timestamp() + 3600),
-        &BytesN::from_array(&env, &[0u8; 32]),
+        &valid_metadata_hash(&env),
     );
 
     token_client.approve(&depositor, &contract_id, &10_000, &200);
@@ -428,7 +432,7 @@ fn test_refund_expired_uses_escrow_fee_override() {
         &token_address,
         &milestones,
         &deadline,
-        &BytesN::from_array(&env, &[0u8; 32]),
+        &valid_metadata_hash(&env),
     );
 
     token_client.approve(&depositor, &contract_id, &10_000, &200);
@@ -488,7 +492,7 @@ fn test_zero_fee_valid() {
         &token_address,
         &milestones,
         &(env.ledger().timestamp() + 3600),
-        &BytesN::from_array(&env, &[0u8; 32]),
+        &valid_metadata_hash(&env),
     );
 
     // Approve contract to transfer depositor's tokens, then deposit
