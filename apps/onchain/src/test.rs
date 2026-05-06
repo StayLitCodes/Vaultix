@@ -1,8 +1,24 @@
-// ===============================================================================
-// Multi-sig hardening tests (#211)
-// Covers: duplicate signer rejection, signature reset semantics, replay
-// prevention across milestones, and required_signatures bounds validation.
-// ===============================================================================
+#![cfg(test)]
+extern crate std;
+
+use soroban_sdk::{
+    testutils::Address as _,
+    Address, BytesN, Env,
+};
+use soroban_sdk::token;
+
+use crate::{
+    VaultixEscrow, VaultixEscrowClient,
+    types::{Error, EscrowStatus, MilestoneStatus},
+};
+
+use crate::fee_tests::create_token_contract;
+
+use super::*;
+use soroban_sdk::{
+    testutils::{Address as _, Events, Ledger},
+    token, vec, Address, Env, IntoVal,
+};
 
 /// Helper: sets up a funded escrow with a configurable multisig threshold.
 /// Returns (client, contract_id, depositor, recipient, token_client, escrow_id).

@@ -21,7 +21,7 @@ fn create_test_token<'a>(env: &Env, admin: &Address) -> (token::StellarAssetClie
 }
 
 /// Helper function to create token client + admin + address
-fn create_token_contract<'a>(
+pub(crate) fn create_token_contract<'a>(
     env: &Env,
     admin: &Address,
 ) -> (token::Client<'a>, token::StellarAssetClient<'a>, Address) {
