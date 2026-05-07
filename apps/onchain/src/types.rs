@@ -15,7 +15,7 @@ pub enum EscrowStatus {
 }
 
 /// Core escrow data structure holding all transaction details
-/// 
+///
 /// This struct represents a single escrow instance containing:
 /// - Participant addresses (buyer and seller)
 /// - Asset information (token address and amount)
@@ -25,19 +25,19 @@ pub enum EscrowStatus {
 pub struct Escrow {
     /// Address of the buyer depositing funds
     pub buyer: Address,
-    
+
     /// Address of the seller receiving funds upon completion
     pub seller: Address,
-    
+
     /// Amount of tokens being held in escrow
     pub amount: i128,
-    
+
     /// Address of the token contract (e.g., XLM or custom token)
     pub token_address: Address,
-    
+
     /// Current state of the escrow transaction
     pub status: EscrowStatus,
-    
+
     /// Unix timestamp deadline for escrow completion
     /// After this time, funds may be refundable
     pub deadline: u64,

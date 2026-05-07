@@ -1,7 +1,6 @@
 #![no_std]
 #![allow(unexpected_cfgs)]
-mod types;       // declares types.rs as a module
-mod events;      // if event helpers live in a separate file, otherwise define inline
+mod types; // declares types.rs as a module
 
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, BytesN, Env,
@@ -9,12 +8,12 @@ use soroban_sdk::{
 };
 
 use types::{
-    Role,
-    RoleUpdatedEvent,
-    EscrowStatus,
-    MilestoneStatus,
     Error,
     // ...any other types from types.rs
+    EscrowStatus,
+    MilestoneStatus,
+    Role,
+    RoleUpdatedEvent,
 };
 
 impl VaultixEscrow {
