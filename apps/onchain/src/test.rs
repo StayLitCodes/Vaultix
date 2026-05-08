@@ -1,15 +1,12 @@
 #![cfg(test)]
 extern crate std;
 
-use soroban_sdk::{
-    testutils::Address as _,
-    Address, BytesN, Env,
-};
 use soroban_sdk::token;
+use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
 
 use crate::{
-    VaultixEscrow, VaultixEscrowClient,
     types::{Error, EscrowStatus, MilestoneStatus},
+    VaultixEscrow, VaultixEscrowClient,
 };
 
 use crate::fee_tests::create_token_contract;
