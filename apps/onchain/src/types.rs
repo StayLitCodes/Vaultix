@@ -1,4 +1,31 @@
-use soroban_sdk::{contracttype, Address, Env};
+use soroban_sdk::{contracttype, Address, BytesN, Symbol, Vec};
+
+#[contracttype]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MilestoneStatus {
+    Pending,
+    Released,
+    Disputed,
+}
+
+#[contracttype]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Role {
+    Admin,
+    Operator,
+    Arbitrator,
+    Treasury,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct RoleUpdatedEvent {
+    pub role: Role,
+    pub had_old_address: bool,
+    pub old_address: Address,
+    pub new_address: Address,
+    pub timestamp: u64,
+}
 
 /// Represents the current state of an escrow transaction
 #[derive(Clone, PartialEq, Debug)]
@@ -12,6 +39,10 @@ pub enum EscrowStatus {
     Completed,
     /// Dispute raised, awaiting resolution
     Disputed,
+    /// Escrow cancelled, funds refunded
+    Cancelled,
+    /// Escrow expired and refunded to depositor
+    Expired,
 }
 
 /// Core escrow data structure holding all transaction details

@@ -7,14 +7,7 @@ use soroban_sdk::{
     Symbol, Vec,
 };
 
-use types::{
-    Error,
-    // ...any other types from types.rs
-    EscrowStatus,
-    MilestoneStatus,
-    Role,
-    RoleUpdatedEvent,
-};
+use types::{MilestoneStatus, Role, RoleUpdatedEvent};
 
 impl VaultixEscrow {
     /// Secure contract upgrade function (Admin Proxy).
@@ -178,6 +171,7 @@ pub enum Error {
     // #211 — multi-sig hardening
     DuplicateSignature = 30, // Signer has already signed this release window
     InvalidSignatureConfig = 31, // required_signatures is zero or exceeds max
+    InvalidMetadataHash = 32,
 }
 
 const DEFAULT_FEE_BPS: i128 = 50;
@@ -1481,6 +1475,14 @@ impl VaultixEscrow {
 
         Ok(())
     }
+}
+
+fn current_timestamp(env: &Env) -> u64 {
+    env.ledger().timestamp()
+}
+
+fn event_topic(env: &Env, topic: &str) -> (Symbol, Symbol) {
+    (Symbol::new(env, "Vaultix"), Symbol::new(env, topic))
 }
 
 fn get_storage_key_legacy(escrow_id: u64) -> (Symbol, u64) {

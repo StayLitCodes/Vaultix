@@ -1,21 +1,17 @@
 #![cfg(test)]
 extern crate std;
 
-use soroban_sdk::token;
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env};
-
-use crate::{
-    types::{Error, EscrowStatus, MilestoneStatus},
-    VaultixEscrow, VaultixEscrowClient,
+use soroban_sdk::{
+    testutils::{Address as _, Ledger},
+    token, vec, BytesN, Address, Env,
 };
+
+use crate::{Error, EscrowStatus, MilestoneStatus};
+use crate::{VaultixEscrow, VaultixEscrowClient};
 
 use crate::fee_tests::create_token_contract;
 
-use super::*;
-use soroban_sdk::{
-    testutils::{Address as _, Events, Ledger},
-    token, vec, Address, Env, IntoVal,
-};
+
 
 /// Helper: sets up a funded escrow with a configurable multisig threshold.
 /// Returns (client, contract_id, depositor, recipient, token_client, escrow_id).
