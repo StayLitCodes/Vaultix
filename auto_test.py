@@ -1,0 +1,1 @@
+print('vaultix test OK')
