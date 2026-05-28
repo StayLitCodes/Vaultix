@@ -96,10 +96,14 @@ export class Escrow {
   @Column({ type: 'datetime', nullable: true })
   expirationNotifiedAt?: Date;
 
+  @Column({ type: 'datetime', nullable: true, name: 'dispute_deadline' })
+  disputeDeadline?: Date;
+
   @Column({ default: true })
   isActive: boolean;
 
   @OneToMany(() => Party, (party) => party.escrow, { cascade: true })
+
   parties: Party[];
 
   @OneToMany(() => Condition, (condition) => condition.escrow, {

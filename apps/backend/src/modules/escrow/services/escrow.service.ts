@@ -1056,10 +1056,24 @@ export class EscrowService {
       );
     }
 
+    // Set dispute resolution deadline (backend-enforced)
+    // Default: 7 days from dispute filing time.
+    // Default: 7 days from dispute filing time.
+    // NOTE: We keep this deterministic and backend-only for the DB-driven scheduler.
+    const defaultDisputeDeadlineDays = 7;
+
+    const disputeDeadline = new Date();
+    disputeDeadline.setDate(
+      disputeDeadline.getDate() + defaultDisputeDeadlineDays,
+    );
+
+
     validateTransition(escrow.status, EscrowStatus.DISPUTED);
     await this.escrowRepository.update(escrowId, {
       status: EscrowStatus.DISPUTED,
+      disputeDeadline,
     });
+
 
     const dispute = this.disputeRepository.create({
       escrowId,
@@ -1103,12 +1117,77 @@ export class EscrowService {
     return dispute;
   }
 
+  async trigger_default_resolution(
+    escrowId: string,
+    fallback: DisputeOutcome,
+    ipAddress?: string,
+  ): Promise<Dispute | null> {
+    // Apply default outcome if dispute not resolved by disputeDeadline.
+    const escrow = await this.findOne(escrowId);
+    if (escrow.status !== EscrowStatus.DISPUTED) {
+      return null;
+    }
+
+    if (!escrow.disputeDeadline || escrow.disputeDeadline > new Date()) {
+      return null;
+    }
+
+    const dispute = await this.getDispute(escrowId);
+    if (dispute.status === DisputeStatus.RESOLVED) {
+      return null;
+    }
+
+    // Fallback only supports refund-to-buyer or split(50/50)
+    if (fallback !== DisputeOutcome.REFUNDED_TO_BUYER && fallback !== DisputeOutcome.SPLIT) {
+      throw new BadRequestException('Unsupported default dispute outcome');
+    }
+
+    if (fallback === DisputeOutcome.REFUNDED_TO_BUYER) {
+      const arbitratorUserId = escrow.parties?.find(
+        (p) => p.role === PartyRole.ARBITRATOR,
+      )?.userId;
+
+      // We allow default resolution to proceed even if arbitratorUserId is not present in DB,
+      // but the on-chain resolve requires an arbitrator authorization.
+      if (!arbitratorUserId) {
+        throw new BadRequestException('No arbitrator assigned for default resolution');
+      }
+
+      const dto: ResolveDisputeDto = {
+        outcome: DisputeOutcome.REFUNDED_TO_BUYER,
+        sellerPercent: null as any,
+        buyerPercent: null as any,
+        resolutionNotes: 'Default resolution (refund depositor)',
+      };
+
+      return this.resolveDispute(escrowId, arbitratorUserId, dto, ipAddress);
+    }
+
+    // SPLIT 50/50
+    const arbitratorUserId = escrow.parties?.find(
+      (p) => p.role === PartyRole.ARBITRATOR,
+    )?.userId;
+    if (!arbitratorUserId) {
+      throw new BadRequestException('No arbitrator assigned for default resolution');
+    }
+
+    const dto: ResolveDisputeDto = {
+      outcome: DisputeOutcome.SPLIT,
+      sellerPercent: 50,
+      buyerPercent: 50,
+      resolutionNotes: 'Default resolution (split 50/50)',
+    };
+
+    return this.resolveDispute(escrowId, arbitratorUserId, dto, ipAddress);
+  }
+
   async resolveDispute(
     escrowId: string,
     arbitratorUserId: string,
     dto: ResolveDisputeDto,
     ipAddress?: string,
   ): Promise<Dispute> {
+
     const escrow = await this.findOne(escrowId);
 
     if (escrow.status !== EscrowStatus.DISPUTED) {

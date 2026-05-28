@@ -7,12 +7,16 @@ import { EscrowEvent, EscrowEventType } from '../entities/escrow-event.entity';
 import { EscrowService } from './escrow.service';
 
 @Injectable()
+import { DisputeDefaultResolutionService } from './dispute-default-resolution.service';
+
 export class EscrowSchedulerService {
+
   private readonly logger = new Logger(EscrowSchedulerService.name);
 
   constructor(
     @InjectRepository(Escrow)
     private escrowRepository: Repository<Escrow>,
+
     @InjectRepository(EscrowEvent)
     private escrowEventRepository: Repository<EscrowEvent>,
     private escrowService: EscrowService,
