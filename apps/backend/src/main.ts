@@ -23,9 +23,22 @@ async function bootstrap() {
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Vaultix Backend API')
-    .setDescription('Vaultix backend endpoints')
+    .setDescription(
+      'Vaultix backend endpoints\n\n' +
+        '### Authentication Flow\n' +
+        '1. **Request Challenge**: Call `POST /v1/auth/challenge` with your wallet address.\n' +
+        '2. **Sign Challenge**: Sign the received challenge string with your Stellar wallet.\n' +
+        '3. **Verify Signature**: Call `POST /v1/auth/verify` with the wallet address, signature, and public key.\n' +
+        '4. **Authenticate**: Use the received `accessToken` as a Bearer token.\n\n' +
+        'To authenticate in Swagger UI, click **Authorize** and enter your `accessToken`.'
+    )
     .setVersion('1.0')
-    .addBearerAuth()
+    .addBearerAuth({
+      type: 'http',
+      scheme: 'bearer',
+      bearerFormat: 'JWT',
+      description: 'Enter your JWT access token from the verify step',
+    })
     .build();
 
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);

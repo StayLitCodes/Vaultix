@@ -24,6 +24,10 @@ import {
   ApiOkResponse,
   ApiOperation,
   ApiTags,
+  ApiBadRequestResponse,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiConsumes,
 } from '@nestjs/swagger';
 import { AuthGuard } from '../../auth/middleware/auth.guard';
 import { EscrowAccessGuard } from '../guards/escrow-access.guard';
@@ -49,7 +53,7 @@ interface AuthenticatedRequest extends ExpressRequest {
 }
 
 @Controller('escrows')
-@ApiTags('escrows')
+@ApiTags('Escrows')
 @ApiBearerAuth()
 @UseGuards(ThrottlerGuard, AuthGuard)
 export class EscrowController {
@@ -65,6 +69,13 @@ export class EscrowController {
   }
 
   @Post()
+  @ApiOperation({
+    summary: 'Create a new escrow',
+    description: 'Creates a new escrow with parties and conditions. Returns the created escrow details.',
+  })
+  @ApiOkResponse({ description: 'Escrow created successfully' })
+  @ApiBadRequestResponse({ description: 'Invalid input data' })
+  @ApiForbiddenResponse({ description: 'Not authenticated' })
   async create(
     @Body() dto: CreateEscrowDto,
     @Request() req: AuthenticatedRequest,
@@ -75,6 +86,12 @@ export class EscrowController {
   }
 
   @Get()
+  @ApiOperation({
+    summary: 'List escrows',
+    description: 'Retrieves a paginated list of escrows for the authenticated user.',
+  })
+  @ApiOkResponse({ description: 'List of escrows retrieved' })
+  @ApiForbiddenResponse({ description: 'Not authenticated' })
   async findAll(
     @Query() query: ListEscrowsDto,
     @Request() req: AuthenticatedRequest,
@@ -97,12 +114,26 @@ export class EscrowController {
   }
 
   @Get(':id')
+  @ApiOperation({
+    summary: 'Get escrow details',
+    description: 'Retrieves detailed information about a specific escrow by ID.',
+  })
+  @ApiOkResponse({ description: 'Escrow details retrieved' })
+  @ApiNotFoundResponse({ description: 'Escrow not found' })
+  @ApiForbiddenResponse({ description: 'Access denied' })
   @UseGuards(EscrowAccessGuard)
   async findOne(@Param('id') id: string) {
     return this.escrowService.findOne(id);
   }
 
   @Patch(':id')
+  @ApiOperation({
+    summary: 'Update escrow',
+    description: 'Updates mutable fields of a pending escrow.',
+  })
+  @ApiOkResponse({ description: 'Escrow updated successfully' })
+  @ApiNotFoundResponse({ description: 'Escrow not found' })
+  @ApiForbiddenResponse({ description: 'Access denied' })
   @UseGuards(EscrowAccessGuard)
   async update(
     @Param('id') id: string,
@@ -115,6 +146,13 @@ export class EscrowController {
   }
 
   @Post(':id/cancel')
+  @ApiOperation({
+    summary: 'Cancel escrow',
+    description: 'Cancels an escrow before it is funded.',
+  })
+  @ApiOkResponse({ description: 'Escrow cancelled' })
+  @ApiNotFoundResponse({ description: 'Escrow not found' })
+  @ApiForbiddenResponse({ description: 'Access denied' })
   @UseGuards(EscrowAccessGuard)
   async cancel(
     @Param('id') id: string,
@@ -151,6 +189,14 @@ export class EscrowController {
   }
 
   @Post(':id/fund')
+  @ApiOperation({
+    summary: 'Fund an escrow',
+    description: 'Records the funding of an escrow on-chain.',
+  })
+  @ApiOkResponse({ description: 'Escrow funded successfully' })
+  @ApiBadRequestResponse({ description: 'Invalid amount or escrow state' })
+  @ApiNotFoundResponse({ description: 'Escrow not found' })
+  @ApiForbiddenResponse({ description: 'Access denied' })
   @UseGuards(EscrowAccessGuard)
   async fund(
     @Param('id') id: string,
@@ -260,6 +306,14 @@ export class EscrowController {
    * Transitions the escrow from ACTIVE → DISPUTED and freezes fund release.
    */
   @Post(':id/dispute')
+  @ApiOperation({
+    summary: 'File a dispute',
+    description: 'Files a dispute against an active escrow. Transitions it to DISPUTED state.',
+  })
+  @ApiOkResponse({ description: 'Dispute filed successfully' })
+  @ApiBadRequestResponse({ description: 'Invalid input data or escrow state' })
+  @ApiNotFoundResponse({ description: 'Escrow not found' })
+  @ApiForbiddenResponse({ description: 'Access denied' })
   @UseGuards(EscrowAccessGuard)
   async fileDispute(
     @Param('id') id: string,
@@ -291,6 +345,14 @@ export class EscrowController {
    * Transitions the escrow from DISPUTED → COMPLETED (release/split) or CANCELLED (refund).
    */
   @Post(':id/dispute/resolve')
+  @ApiOperation({
+    summary: 'Resolve a dispute',
+    description: 'Resolves an open dispute. Transitions it to COMPLETED or CANCELLED state.',
+  })
+  @ApiOkResponse({ description: 'Dispute resolved successfully' })
+  @ApiBadRequestResponse({ description: 'Invalid input data or escrow state' })
+  @ApiNotFoundResponse({ description: 'Escrow not found' })
+  @ApiForbiddenResponse({ description: 'Access denied' })
   @UseGuards(EscrowAccessGuard)
   async resolveDispute(
     @Param('id') id: string,
