@@ -13,6 +13,7 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="index" options={{ title: 'Vaultix' }} />
+        <Stack.Screen name="wallet/connect" options={{ title: 'Connect Wallet' }} />
         <Stack.Screen name="dashboard" options={{ title: 'Dashboard' }} />
         <Stack.Screen name="escrow/[id]" options={{ title: 'Escrow Detail' }} />
         <Stack.Screen name="escrow/create" options={{ title: 'Create Escrow' }} />
