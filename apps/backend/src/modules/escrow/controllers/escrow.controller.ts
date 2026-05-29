@@ -26,6 +26,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AuthGuard } from '../../auth/middleware/auth.guard';
+import { AdminGuard } from '../../auth/middleware/admin.guard';
 import { EscrowAccessGuard } from '../guards/escrow-access.guard';
 import { EscrowExpireGuard } from '../guards/escrow-expire.guard';
 import { EscrowService } from '../services/escrow.service';
@@ -305,6 +306,7 @@ export class EscrowController {
       ipAddress,
     );
   }
+<<<<<<< HEAD
   @Post(':id/evidence')
   @UseGuards(EscrowAccessGuard)
   @UseInterceptors(FileInterceptor('file'))
@@ -326,4 +328,17 @@ export class EscrowController {
     const userId = this.getAuthenticatedUserId(req);
     return this.escrowService.uploadEvidence(id, userId, file);
   }
+=======
+
+  /**
+   * POST /escrows/:id/dispute/default-resolve
+   * Trigger default resolution for overdue disputes (scheduler/admin only).
+   */
+  @Post(':id/dispute/default-resolve')
+  @UseGuards(AdminGuard) // Add AdminGuard import/use
+  async triggerDefaultResolution(@Param('id') id: string) {
+    return this.escrowService.triggerDefaultResolution(id);
+  }
+
+>>>>>>> 589aa69adea7ff0b1b7706d1c0e19a7ffa6ba997
 }

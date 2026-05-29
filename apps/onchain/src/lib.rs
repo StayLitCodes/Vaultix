@@ -85,6 +85,7 @@ pub struct Escrow {
     pub milestones: Vec<Milestone>,
     pub status: EscrowStatus,
     pub deadline: u64,
+    pub dispute_deadline: u64,
     pub resolution: Resolution,
     pub threshold_amount: i128, // Threshold amount for multi-sig requirement
     pub required_signatures: u32, // Number of signatures required for release
@@ -103,6 +104,7 @@ struct EscrowEntryV2 {
     milestones: Vec<Milestone>,
     packed_state: u32,
     deadline: u64,
+    dispute_deadline: u64,
     threshold_amount: i128,
     required_signatures: u32,
     collected_signatures: Vec<Address>,
@@ -806,15 +808,14 @@ impl VaultixEscrow {
                 .remove(&get_escrow_fee_key(escrow_id));
         }
 
-        let escrow = EscrowEntryV2 {
-            depositor: depositor.clone(),
-            recipient: recipient.clone(),
+
             token_address: token_address.clone(),
             total_amount,
             total_released: 0,
             milestones: initialized_milestones,
             packed_state: pack_escrow_state(EscrowStatus::Created, Resolution::None),
             deadline,
+            dispute_deadline: 0,
             threshold_amount: 10000,
             required_signatures: 1,
             collected_signatures: Vec::new(&env),

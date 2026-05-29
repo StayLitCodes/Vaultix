@@ -7,12 +7,14 @@ import {
   UpdateDateColumn,
   ManyToOne,
   OneToMany,
+  OneToOne,
   JoinColumn,
 } from 'typeorm';
 import { User } from '../../user/entities/user.entity';
 import { Party } from './party.entity';
 import { Condition } from './condition.entity';
 import { EscrowEvent } from './escrow-event.entity';
+import { Dispute } from './dispute.entity';
 
 export enum EscrowStatus {
   PENDING = 'pending',
@@ -40,6 +42,7 @@ export enum EscrowType {
   'status',
   'createdAt',
 ])
+@Index('idx_escrows_dispute_deadline', ['disputeDeadline'])
 export class Escrow {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -114,8 +117,32 @@ export class Escrow {
   @OneToMany(() => EscrowEvent, (event) => event.escrow, { cascade: true })
   events: EscrowEvent[];
 
+  @Column({ type: 'datetime', nullable: true })
+  disputeDeadline?: Date;
+
+  @OneToOne(() => Dispute, (dispute) => dispute.escrow)
+  dispute?: Dispute;
+
+  // @OneToMany(() => Milestone, (m) => m.escrow)
+  // milestones: Milestone[];
+>>>>>>> 589aa69adea7ff0b1b7706d1c0e19a7ffa6ba997
+=======
   @Column({ nullable: true })
   metadataHash?: string;
+
+  @OneToOne(() => Dispute, (dispute) => dispute.escrow)
+  dispute?: Dispute;
+
+=======
+  @Column({ type: 'datetime', nullable: true })
+  disputeDeadline?: Date;
+
+  @OneToOne(() => Dispute, (dispute) => dispute.escrow)
+  dispute?: Dispute;
+
+  // @OneToMany(() => Milestone, (m) => m.escrow)
+  // milestones: Milestone[];
+>>>>>>> 589aa69adea7ff0b1b7706d1c0e19a7ffa6ba997
 
   @CreateDateColumn()
   createdAt: Date;

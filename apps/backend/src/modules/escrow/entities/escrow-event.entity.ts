@@ -23,6 +23,7 @@ export enum EscrowEventType {
   DISPUTED = 'disputed',
   DISPUTE_FILED = 'dispute_filed',
   DISPUTE_RESOLVED = 'dispute_resolved',
+  DISPUTE_TIMEOUT = 'dispute_timeout',
   EXPIRED = 'expired',
   EXPIRATION_WARNING_SENT = 'expiration_warning_sent',
 }

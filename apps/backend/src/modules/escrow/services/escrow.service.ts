@@ -1071,7 +1071,11 @@ export class EscrowService {
     validateTransition(escrow.status, EscrowStatus.DISPUTED);
     await this.escrowRepository.update(escrowId, {
       status: EscrowStatus.DISPUTED,
+<<<<<<< HEAD
       disputeDeadline,
+=======
+      disputeDeadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+>>>>>>> 589aa69adea7ff0b1b7706d1c0e19a7ffa6ba997
     });
 
 
@@ -1342,6 +1346,7 @@ export class EscrowService {
     }) as Promise<Dispute>;
   }
 
+<<<<<<< HEAD
   async proposeMilestoneChange(
     escrowId: string,
     conditionId: string,
@@ -1464,6 +1469,63 @@ export class EscrowService {
 
     await this.conditionRepository.save(condition);
     return condition;
+=======
+  async triggerDefaultResolution(escrowId: string): Promise<Escrow> {
+    const escrow = await this.escrowRepository.findOne({
+      where: { id: escrowId },
+      relations: ['parties', 'creator', 'dispute'] // Assume relation added or load separately
+    });
+
+    if (!escrow) {
+      throw new NotFoundException('Escrow not found');
+    }
+
+    if (escrow.status !== EscrowStatus.DISPUTED) {
+      throw new BadRequestException('Escrow must be in disputed status');
+    }
+
+    const dispute = await this.disputeRepository.findOne({
+      where: { escrowId },
+    });
+
+    if (!dispute || dispute.status !== DisputeStatus.OPEN) {
+      throw new BadRequestException('No open dispute found');
+    }
+
+    if (!escrow.disputeDeadline || escrow.disputeDeadline > new Date()) {
+      throw new BadRequestException('Dispute deadline not exceeded');
+    }
+
+    // Auto-resolve with 50/50 split
+    dispute.status = DisputeStatus.RESOLVED;
+    dispute.resolutionNotes = 'Auto-resolved due to arbitrator deadline timeout (7 days exceeded). Funds split 50/50.';
+    dispute.outcome = DisputeOutcome.SPLIT;
+    dispute.sellerPercent = 50;
+    dispute.buyerPercent = 50;
+    dispute.resolvedByUserId = 'system';
+    dispute.resolvedAt = new Date();
+    await this.disputeRepository.save(dispute);
+
+    // Update escrow to completed
+    escrow.status = EscrowStatus.COMPLETED;
+    await this.escrowRepository.save(escrow);
+
+    // TODO: Call onchain resolve_dispute with split (requires Stellar service update)
+
+    await this.logEvent(
+      escrowId,
+      EscrowEventType.DISPUTE_TIMEOUT,
+      'system',
+      { outcome: 'split_50_50' },
+    );
+
+    await this.webhookService.dispatchEvent('dispute.auto_resolved', {
+      escrowId,
+      outcome: 'split_50_50',
+    });
+
+    return this.findOne(escrowId);
+>>>>>>> 589aa69adea7ff0b1b7706d1c0e19a7ffa6ba997
   }
 
   private async logEvent(

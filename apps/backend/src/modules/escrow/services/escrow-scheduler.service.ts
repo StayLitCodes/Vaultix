@@ -36,6 +36,39 @@ export class EscrowSchedulerService {
     }
   }
 
+  @Cron('*/5 * * * *')
+  async handleOverdueDisputes() {
+    this.logger.log('Checking for overdue disputes...');
+
+    try {
+      const now = new Date();
+      const overdueEscrows = await this.escrowRepository.find({
+        where: {
+          status: EscrowStatus.DISPUTED,
+          disputeDeadline: LessThan(now),
+        },
+        relations: ['dispute'],
+      });
+
+      const overdueWithOpenDispute = overdueEscrows.filter(escrow => 
+        escrow.dispute && escrow.dispute.status === 'open'
+      );
+
+      this.logger.log(`Found ${overdueWithOpenDispute.length} overdue disputes`);
+
+      for (const escrow of overdueWithOpenDispute) {
+        try {
+          await this.escrowService.triggerDefaultResolution(escrow.id);
+          this.logger.log(`Auto-resolved overdue dispute: ${escrow.id}`);
+        } catch (error) {
+          this.logger.error(`Failed auto-resolve ${escrow.id}:`, error);
+        }
+      }
+    } catch (error) {
+      this.logger.error('Error checking overdue disputes:', error);
+    }
+  }
+
   @Cron(CronExpression.EVERY_DAY_AT_9AM)
   async sendExpirationWarnings() {
     this.logger.log('Sending 24-hour expiration warnings...');
