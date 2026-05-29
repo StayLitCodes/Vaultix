@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useEscrow } from "@/hooks/useEscrow";
-import { useWallet } from "@/hooks/useWallet";
+import { useWalletConnection } from "@/app/hooks/useWallet";
 import EscrowHeader from "@/components/escrow/detail/EscrowHeader";
 import PartiesSection from "@/components/escrow/detail/PartiesSection";
 import TermsSection from "@/components/escrow/detail/TermsSection";
@@ -19,8 +19,10 @@ import { EscrowDetailSkeleton } from "@/components/ui/EscrowDetailSkeleton";
 
 const EscrowDetailPage = () => {
   const { id } = useParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const { escrow, error, loading, refetch } = useEscrow(id as string);
-  const { connected, publicKey, connect } = useWallet();
+  const { isConnected, publicKey } = useWalletConnection();
   const [userRole, setUserRole] = useState<
     "creator" | "counterparty" | "arbitrator" | null
   >(null);
@@ -49,6 +51,16 @@ const EscrowDetailPage = () => {
     }
   }, [escrow, publicKey]);
 
+  const handleConnect = () => {
+    router.push(`/login?redirect=${encodeURIComponent(pathname)}`);
+  };
+
+  useEffect(() => {
+    if (!isConnected) {
+      router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
+    }
+  }, [isConnected, pathname, router]);
+
   // Fetch dispute data when escrow is in DISPUTED status
   useEffect(() => {
     const fetchDispute = async () => {
@@ -70,6 +82,19 @@ const EscrowDetailPage = () => {
 
     fetchDispute();
   }, [escrow?.id, escrow?.status]);
+
+  if (!isConnected) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background text-foreground p-4">
+        <div className="bg-card text-card-foreground p-6 rounded-xl shadow-sm border border-border max-w-md w-full text-center">
+          <h2 className="text-xl font-bold text-foreground mb-3">Connecting Wallet</h2>
+          <p className="text-muted-foreground text-sm mb-4">
+            Redirecting you to connect your wallet before loading the escrow detail.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) return <EscrowDetailSkeleton />;
 
@@ -103,10 +128,10 @@ const EscrowDetailPage = () => {
             The requested escrow agreement could not be found.
           </p>
           <Link
-            href="/escrow"
+            href="/dashboard"
             className="min-h-11 inline-flex items-center px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors cursor-pointer"
           >
-            Back to Escrows
+            Back to Dashboard
           </Link>
         </div>
       </div>
@@ -119,8 +144,8 @@ const EscrowDetailPage = () => {
         <EscrowHeader
           escrow={escrow}
           userRole={userRole}
-          connected={connected}
-          connect={connect}
+          connected={isConnected}
+          connect={handleConnect}
           publicKey={publicKey}
           onFileDispute={() => setDisputeOpen(true)}
         />
