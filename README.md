@@ -94,7 +94,10 @@ Before you begin, ensure you have the following installed:
 - **Rust** latest stable ([Download](https://rustup.rs)) - For Soroban smart contracts
 - **Soroban CLI** (`cargo install --locked soroban-cli`) - For contract deployment
 - **Git** - Version control
-- **Stellar Wallet** - Freighter or Lobster wallet browser extension ([Install Freighter](https://freighter.app))
+- **Stellar Wallet** - Mobile users should use Albedo in a supported mobile browser for external signing. Desktop users can use Freighter or Lobstr browser extensions.
+  - **Recommended for mobile:** Albedo (browser-based, no extension required)
+  - **Desktop only:** Freighter and Lobstr extensions
+  - **Limitations:** Mobile browsers cannot reliably use extension-wallet deep links; use browser-based signing instead.
 
 **Optional:**
 - **Docker** - For containerized PostgreSQL

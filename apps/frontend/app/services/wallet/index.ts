@@ -1,6 +1,7 @@
 import { FreighterService } from './freighter';
 import { AlbedoService } from './albedo';
 import { LobstrService } from './lobstr';
+import { getWalletPlatformInfo } from '@/lib/wallet-platform';
 
 export enum WalletType {
   FREIGHTER = 'freighter',
@@ -62,6 +63,7 @@ export class WalletServiceFactory {
       // Lobstr not available
     }
 
-    return availableWallets;
+    const { orderedWallets } = getWalletPlatformInfo(availableWallets);
+    return orderedWallets;
   }
 }

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, ExternalLink, Check, Loader2 } from 'lucide-react';
 import { useWallet } from '@/app/contexts/WalletContext';
+import { getWalletPlatformInfo } from '@/lib/wallet-platform';
 
 interface ConnectWalletModalProps {
   isOpen: boolean;
@@ -12,21 +13,21 @@ interface ConnectWalletModalProps {
 const WALLET_INFO = {
   freighter: {
     name: 'Freighter',
-    description: 'Browser extension wallet',
+    description: 'Desktop extension wallet',
     icon: '🚀',
     installUrl: 'https://www.freighter.app/',
     alwaysAvailable: false,
   },
   albedo: {
     name: 'Albedo',
-    description: 'Web-based wallet — no extension needed',
+    description: 'Browser-based wallet for mobile signing',
     icon: '✨',
     installUrl: 'https://albedo.link/',
     alwaysAvailable: true,
   },
   lobstr: {
     name: 'Lobstr',
-    description: 'Browser extension wallet',
+    description: 'Desktop extension wallet',
     icon: '🦞',
     installUrl: 'https://lobstr.co/vault/',
     alwaysAvailable: false,
@@ -39,22 +40,45 @@ export const ConnectWalletModal: React.FC<ConnectWalletModalProps> = ({ isOpen, 
   const { connect, getAvailableWallets, isConnecting, error } = useWallet();
   const [availableWallets, setAvailableWallets] = useState<string[]>([]);
   const [selectedWallet, setSelectedWallet] = useState<string | null>(null);
+  const [failedWallet, setFailedWallet] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setFailedWallet(null);
+      setSelectedWallet(null);
+      return;
+    }
+
     getAvailableWallets().then((wallets) => setAvailableWallets(wallets));
   }, [isOpen, getAvailableWallets]);
 
+  const platformInfo = getWalletPlatformInfo(availableWallets);
+  const walletOrder = platformInfo.orderedWallets.filter((walletType) => walletType in WALLET_INFO) as WalletKey[];
+  const displayedError = failedWallet ? error : null;
+
   const handleConnect = async (walletType: string) => {
+    setFailedWallet(null);
+    setSelectedWallet(walletType);
+
     try {
-      setSelectedWallet(walletType);
       await connect(walletType as any);
+      setFailedWallet(null);
       onClose();
     } catch {
-      // Error surfaced via context
+      setFailedWallet(walletType);
     } finally {
       setSelectedWallet(null);
     }
+  };
+
+  const handleRetry = async () => {
+    if (failedWallet) {
+      await handleConnect(failedWallet);
+    }
+  };
+
+  const handleSwitchWallet = () => {
+    setFailedWallet(null);
   };
 
   if (!isOpen) return null;
@@ -73,28 +97,67 @@ export const ConnectWalletModal: React.FC<ConnectWalletModalProps> = ({ isOpen, 
           </button>
         </div>
 
+        {platformInfo.platform === 'mobile' && (
+          <div className="mb-4 rounded-xl border border-blue-500/30 bg-blue-500/10 p-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-blue-200">{platformInfo.recommendationCopy}</p>
+              <span className="rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-200">
+                Recommended
+              </span>
+            </div>
+            <p className="mt-2 text-xs text-blue-100/90">
+              {platformInfo.limitations[0]}
+            </p>
+            <p className="mt-1 text-xs text-blue-100/80">
+              {platformInfo.limitations[1]}
+            </p>
+          </div>
+        )}
+
         {/* Error Message */}
-        {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-            <p className="text-red-400 text-sm">{error}</p>
+        {displayedError && failedWallet && (
+          <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3">
+            <p className="text-sm font-semibold text-red-200">Connection failed</p>
+            <p className="mt-1 text-sm text-red-100">{displayedError}</p>
+            <div className="mt-3 flex gap-2">
+              <button
+                onClick={handleRetry}
+                className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-400"
+              >
+                Retry connection
+              </button>
+              <button
+                onClick={handleSwitchWallet}
+                className="rounded-lg border border-red-300/40 px-3 py-1.5 text-xs font-semibold text-red-100 hover:bg-red-500/20"
+              >
+                Switch wallet
+              </button>
+            </div>
           </div>
         )}
 
         {/* Wallet Options */}
         <div className="space-y-3">
-          {(Object.entries(WALLET_INFO) as [WalletKey, typeof WALLET_INFO[WalletKey]][]).map(([type, info]) => {
+          {walletOrder.map((type) => {
+            const info = WALLET_INFO[type];
+            const isMobileOnly = platformInfo.platform === 'mobile' && type !== 'albedo';
+            const isRecommended = platformInfo.recommendedWallet === type;
             const isAvailable = info.alwaysAvailable || availableWallets.includes(type);
+            const isSupportedOnPlatform = !isMobileOnly;
             const isConnectingThis = selectedWallet === type && isConnecting;
+            const isEnabled = isAvailable && isSupportedOnPlatform && !isConnecting;
 
             return (
               <button
                 key={type}
-                onClick={() => isAvailable && handleConnect(type)}
-                disabled={!isAvailable || isConnecting}
-                className={`w-full flex items-center justify-between p-4 rounded-xl transition-all duration-200 border border-gray-700 ${
-                  isAvailable
-                    ? 'bg-gray-800 hover:bg-gray-700 hover:scale-[1.02] active:scale-[0.98]'
-                    : 'bg-gray-900/50 opacity-60 cursor-not-allowed'
+                onClick={() => isEnabled && handleConnect(type)}
+                disabled={!isEnabled}
+                className={`w-full flex items-center justify-between p-4 rounded-xl transition-all duration-200 border ${
+                  isRecommended
+                    ? 'border-blue-500/50 bg-blue-500/5 hover:bg-blue-500/10'
+                    : 'border-gray-700 bg-gray-800 hover:bg-gray-700'
+                } ${
+                  isEnabled ? 'hover:scale-[1.02] active:scale-[0.98]' : 'opacity-70 cursor-not-allowed'
                 }`}
               >
                 <div className="flex items-center space-x-4">
@@ -102,18 +165,25 @@ export const ConnectWalletModal: React.FC<ConnectWalletModalProps> = ({ isOpen, 
                   <div className="text-left">
                     <div className="flex items-center space-x-2">
                       <span className="font-semibold text-white">{info.name}</span>
-                      {!isAvailable && (
-                        <span className="text-xs px-2 py-0.5 bg-yellow-500/20 text-yellow-400 rounded-full">
+                      {isRecommended && (
+                        <span className="rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-200">
+                          Mobile-first
+                        </span>
+                      )}
+                      {isMobileOnly && (
+                        <span className="rounded-full bg-gray-700 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-200">
+                          Desktop only
+                        </span>
+                      )}
+                      {!isAvailable && !isMobileOnly && (
+                        <span className="rounded-full bg-yellow-500/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-yellow-200">
                           Not installed
                         </span>
                       )}
-                      {isAvailable && !isConnectingThis && (
-                        <span className="text-xs px-2 py-0.5 bg-green-500/20 text-green-400 rounded-full">
-                          Ready
-                        </span>
-                      )}
                     </div>
-                    <p className="text-sm text-gray-400">{info.description}</p>
+                    <p className="text-sm text-gray-400">
+                      {isMobileOnly ? 'Desktop extension wallet — switch to a desktop browser or use Albedo' : info.description}
+                    </p>
                   </div>
                 </div>
 
@@ -124,10 +194,13 @@ export const ConnectWalletModal: React.FC<ConnectWalletModalProps> = ({ isOpen, 
                       <span className="text-sm">Connecting…</span>
                     </div>
                   )}
-                  {isAvailable && !isConnectingThis && (
+                  {isEnabled && !isConnectingThis && (
                     <Check className="w-5 h-5 text-green-400" />
                   )}
-                  {!isAvailable && (
+                  {!isEnabled && isMobileOnly && (
+                    <span className="text-xs text-gray-300">Desktop only</span>
+                  )}
+                  {!isEnabled && !isMobileOnly && !info.alwaysAvailable && (
                     <a
                       href={info.installUrl}
                       target="_blank"
@@ -154,7 +227,7 @@ export const ConnectWalletModal: React.FC<ConnectWalletModalProps> = ({ isOpen, 
             </span>
           </div>
           <p className="text-xs text-gray-500 mt-2">
-            Make sure your wallet is connected to the correct network
+            Mobile users should use the browser-based Albedo flow. Desktop extensions work best on desktop browsers.
           </p>
         </div>
       </div>

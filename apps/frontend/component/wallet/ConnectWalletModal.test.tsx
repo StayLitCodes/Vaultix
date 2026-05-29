@@ -22,6 +22,10 @@ describe('ConnectWalletModal', () => {
       error: null,
     });
     mockGetAvailableWallets.mockResolvedValue(['freighter']);
+    Object.defineProperty(window.navigator, 'userAgent', {
+      writable: true,
+      value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36',
+    });
   });
 
   it('does not render when isOpen is false', () => {
@@ -48,16 +52,36 @@ describe('ConnectWalletModal', () => {
     expect(mockConnect).toHaveBeenCalledWith('freighter');
   });
 
-  it('shows error message if there is an error', () => {
+  it('shows mobile-first guidance and recovery actions on wallet connection errors', async () => {
+    mockConnect.mockRejectedValueOnce(new Error('Albedo connection was rejected'));
     (useWallet as jest.Mock).mockReturnValue({
       connect: mockConnect,
       getAvailableWallets: mockGetAvailableWallets,
       isConnecting: false,
-      error: 'Failed to connect',
+      error: 'Albedo connection was rejected',
     });
-    
+
+    Object.defineProperty(window.navigator, 'userAgent', {
+      writable: true,
+      value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+    });
+
     render(<ConnectWalletModal isOpen={true} onClose={mockOnClose} />);
-    expect(screen.getByText('Failed to connect')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(screen.getByText('Mobile-first recommended wallet')).toBeInTheDocument();
+    });
+
+    const albedoButton = screen.getByText('Albedo').closest('button');
+    expect(albedoButton).toBeInTheDocument();
+
+    fireEvent.click(albedoButton!);
+
+    await waitFor(() => {
+      expect(mockConnect).toHaveBeenCalledWith('albedo');
+      expect(screen.getByText('Retry connection')).toBeInTheDocument();
+      expect(screen.getByText('Switch wallet')).toBeInTheDocument();
+    });
   });
 
   it('calls onClose when close button is clicked', () => {
