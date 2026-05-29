@@ -7,6 +7,9 @@ export default function HomeScreen() {
     <View style={styles.container}>
       <Text style={styles.logo}>🔐 Vaultix</Text>
       <Text style={styles.tagline}>Trustless Escrow on Stellar</Text>
+      <TouchableOpacity style={styles.btn} onPress={() => router.push('/wallet/connect')}>
+        <Text style={styles.btnText}>Connect Wallet</Text>
+      </TouchableOpacity>
       <TouchableOpacity style={styles.btn} onPress={() => router.push('/dashboard')}>
         <Text style={styles.btnText}>Open Dashboard</Text>
       </TouchableOpacity>
