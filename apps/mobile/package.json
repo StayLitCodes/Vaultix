@@ -8,7 +8,8 @@
     "ios": "expo start --ios",
     "lint": "eslint . --ext .ts,.tsx",
     "type-check": "tsc --noEmit",
-    "test": "jest"
+    "test": "jest",
+    "validate": "pnpm lint && pnpm type-check && pnpm test"
   },
   "dependencies": {
     "expo": "~52.0.0",
