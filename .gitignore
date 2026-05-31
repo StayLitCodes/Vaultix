@@ -14,3 +14,12 @@ npm-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Vaultix Specific Secrets
+wallet_secrets.json
+auth_tokens.json

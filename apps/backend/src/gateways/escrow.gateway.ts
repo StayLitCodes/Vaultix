@@ -39,16 +39,16 @@ export class EscrowGateway implements OnGatewayConnection, OnGatewayDisconnect {
         (client.handshake.headers.authorization as string)?.split(' ')[1];
 
       if (!token) {
-        this.logger.warn(`Connection rejected: No token provided (${client.id})`);
+        this.logger.warn(
+          `Connection rejected: No token provided (${client.id})`,
+        );
         client.disconnect();
         return;
       }
 
       // Verify JWT
-      const decoded: { sub?: string; userId?: string } = this.jwtService.verify(token) as {
-        sub?: string;
-        userId?: string;
-      };
+      const decoded: { sub?: string; userId?: string } =
+        this.jwtService.verify(token);
       const userId: string | undefined = decoded?.sub || decoded?.userId;
 
       if (!userId) {
@@ -68,7 +68,10 @@ export class EscrowGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Send connection success
       client.emit('connected', { userId, socketId: client.id });
     } catch (error: unknown) {
-      this.logger.error(`Connection rejected: Invalid token (${client.id})`, error);
+      this.logger.error(
+        `Connection rejected: Invalid token (${client.id})`,
+        error,
+      );
       client.disconnect();
     }
   }

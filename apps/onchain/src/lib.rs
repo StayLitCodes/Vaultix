@@ -11,7 +11,7 @@ impl VaultixEscrow {
     /// WARNING: Future upgrades MUST preserve storage layout (structs, enums, keys) to avoid corrupting state.
     /// Only admin can call. Emits ContractUpgraded event before upgrade.
     pub fn upgrade(env: Env, new_wasm_hash: [u8; 32]) -> Result<(), Error> {
-        let admin = get_admin(&env)?;
+        let admin = get_admin_internal(&env)?;
         admin.require_auth();
 
         let hash_bytes = soroban_sdk::BytesN::<32>::from_array(&env, &new_wasm_hash);
@@ -134,6 +134,19 @@ pub struct EscrowCreatedBatchItem {
 }
 
 #[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct EscrowSummary {
+    pub escrow_id: u64,
+    pub depositor: Address,
+    pub recipient: Address,
+    pub token_address: Address,
+    pub total_amount: i128,
+    pub status: EscrowStatus,
+    pub deadline: u64,
+    pub metadata_hash: BytesN<32>,
+}
+
+#[contracttype]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Role {
     Admin,
@@ -189,6 +202,8 @@ pub struct EscrowCreatedEvent {
     pub recipient: Address,
     pub token_address: Address,
     pub total_amount: i128,
+    pub total_released: i128,
+    pub status: EscrowStatus,
     pub deadline: u64,
     pub metadata_hash: BytesN<32>,
     pub timestamp: u64,
@@ -202,6 +217,8 @@ pub struct EscrowCreatedBatchEventItem {
     pub recipient: Address,
     pub token_address: Address,
     pub total_amount: i128,
+    pub total_released: i128,
+    pub status: EscrowStatus,
     pub deadline: u64,
     pub metadata_hash: BytesN<32>,
 }
@@ -222,6 +239,9 @@ pub struct FundsDepositedEvent {
     pub recipient: Address,
     pub token_address: Address,
     pub total_amount: i128,
+    pub status: EscrowStatus,
+    pub total_released: i128,
+    pub deadline: u64,
     pub timestamp: u64,
 }
 
@@ -237,6 +257,9 @@ pub struct MilestoneReleasedEvent {
     pub payout_amount: i128,
     pub fee_amount: i128,
     pub total_released: i128,
+    pub status: EscrowStatus,
+    pub total_amount: i128,
+    pub deadline: u64,
     pub timestamp: u64,
 }
 
@@ -253,6 +276,9 @@ pub struct DeliveryConfirmedEvent {
     pub payout_amount: i128,
     pub fee_amount: i128,
     pub total_released: i128,
+    pub status: EscrowStatus,
+    pub total_amount: i128,
+    pub deadline: u64,
     pub timestamp: u64,
 }
 
@@ -263,6 +289,10 @@ pub struct DisputeRaisedEvent {
     pub raised_by: Address,
     pub depositor: Address,
     pub recipient: Address,
+    pub status: EscrowStatus,
+    pub total_amount: i128,
+    pub total_released: i128,
+    pub deadline: u64,
     pub timestamp: u64,
 }
 
@@ -275,6 +305,10 @@ pub struct DisputeResolvedEvent {
     pub winner_amount: i128,
     pub other_amount: i128,
     pub resolution: Resolution,
+    pub status: EscrowStatus,
+    pub total_amount: i128,
+    pub total_released: i128,
+    pub deadline: u64,
     pub timestamp: u64,
 }
 
@@ -287,6 +321,10 @@ pub struct EscrowCancelledEvent {
     pub token_address: Address,
     pub refund_amount: i128,
     pub fee_amount: i128,
+    pub status: EscrowStatus,
+    pub total_amount: i128,
+    pub total_released: i128,
+    pub deadline: u64,
     pub timestamp: u64,
 }
 
@@ -296,6 +334,9 @@ pub struct EscrowCompletedEvent {
     pub escrow_id: u64,
     pub completed_by: Address,
     pub total_released: i128,
+    pub status: EscrowStatus,
+    pub total_amount: i128,
+    pub deadline: u64,
     pub timestamp: u64,
 }
 
@@ -307,6 +348,10 @@ pub struct EscrowExpiredRefundedEvent {
     pub token_address: Address,
     pub refund_amount: i128,
     pub fee_amount: i128,
+    pub status: EscrowStatus,
+    pub total_amount: i128,
+    pub total_released: i128,
+    pub deadline: u64,
     pub timestamp: u64,
 }
 
@@ -342,13 +387,17 @@ pub enum Error {
     Unauthorized = 27,
     OperatorNotInitialized = 28,
     ArbitratorNotInitialized = 29,
+    InvalidMetadataHash = 30,
+    UnsupportedEscrowVersion = 31,
 }
 
 const DEFAULT_FEE_BPS: i128 = 50;
 const BPS_DENOMINATOR: i128 = 10000;
 const MAX_BATCH_SIZE: u32 = 20;
+const ESCROW_ENTRY_STORAGE_VERSION: i128 = 2;
 const EVENT_NAMESPACE: &str = "Vaultix";
 const EVENT_SCHEMA_VERSION: &str = "v1";
+const MAX_PAGE_SIZE: u32 = 100;
 
 #[derive(Clone, Debug)]
 struct ReleaseOutcome {
@@ -364,6 +413,10 @@ pub struct VaultixEscrow;
 #[contractimpl]
 impl VaultixEscrow {
     pub fn initialize(env: Env, treasury: Address, fee_bps: Option<i128>) -> Result<(), Error> {
+        if env.storage().instance().has(&symbol_short!("treasury")) {
+            return Err(Error::AlreadyInitialized);
+        }
+
         treasury.require_auth();
 
         let fee = fee_bps.unwrap_or(DEFAULT_FEE_BPS);
@@ -381,16 +434,7 @@ impl VaultixEscrow {
 
         let timestamp = current_timestamp(&env);
 
-        env.events().publish(
-            event_topic(&env, "RoleUpdated"),
-            RoleUpdatedEvent {
-                role: Role::Treasury,
-                had_old_address: false,
-                old_address: treasury.clone(),
-                new_address: treasury.clone(),
-                timestamp,
-            },
-        );
+        emit_role_updated(&env, Role::Treasury, None, treasury.clone(), timestamp);
 
         env.events().publish(
             event_topic(&env, "FeeUpdated"),
@@ -410,7 +454,7 @@ impl VaultixEscrow {
     }
 
     pub fn update_fee(env: Env, new_fee_bps: i128) -> Result<(), Error> {
-        let operator = get_operator(&env)?;
+        let operator = get_operator_internal(&env)?;
         operator.require_auth();
 
         if !(0..=BPS_DENOMINATOR).contains(&new_fee_bps) {
@@ -575,7 +619,7 @@ impl VaultixEscrow {
     }
 
     pub fn set_paused(env: Env, paused: bool) -> Result<(), Error> {
-        let operator = get_operator(&env)?;
+        let operator = get_operator_internal(&env)?;
         operator.require_auth();
 
         let state = if paused {
@@ -595,6 +639,98 @@ impl VaultixEscrow {
                 timestamp: current_timestamp(&env),
             },
         );
+
+        Ok(())
+    }
+
+    pub fn get_admin(env: Env) -> Result<Address, Error> {
+        let admin = get_admin_internal(&env)?;
+        Ok(admin)
+    }
+
+    pub fn get_operator(env: Env) -> Result<Address, Error> {
+        let operator = get_operator_internal(&env)?;
+        Ok(operator)
+    }
+
+    pub fn get_arbitrator(env: Env) -> Result<Address, Error> {
+        let arbitrator = get_arbitrator_internal(&env)?;
+        Ok(arbitrator)
+    }
+
+    pub fn get_treasury(env: Env) -> Result<Address, Error> {
+        let treasury = get_treasury_internal(&env)?;
+        Ok(treasury)
+    }
+
+    pub fn set_admin(env: Env, new_admin: Address) -> Result<(), Error> {
+        let current_admin = get_admin_internal(&env)?;
+        current_admin.require_auth();
+
+        let timestamp = current_timestamp(&env);
+
+        env.storage()
+            .persistent()
+            .set(&admin_storage_key(), &new_admin);
+        extend_roles_ttl(&env);
+        emit_role_updated(&env, Role::Admin, Some(current_admin), new_admin, timestamp);
+
+        Ok(())
+    }
+
+    pub fn set_operator(env: Env, new_operator: Address) -> Result<(), Error> {
+        let admin = get_admin_internal(&env)?;
+        admin.require_auth();
+
+        let old_operator = get_operator_internal(&env).ok();
+
+        let timestamp = current_timestamp(&env);
+
+        env.storage()
+            .persistent()
+            .set(&operator_storage_key(), &new_operator);
+        extend_roles_ttl(&env);
+        emit_role_updated(&env, Role::Operator, old_operator, new_operator, timestamp);
+
+        Ok(())
+    }
+
+    pub fn set_arbitrator(env: Env, new_arbitrator: Address) -> Result<(), Error> {
+        let admin = get_admin_internal(&env)?;
+        admin.require_auth();
+
+        let old_arbitrator = get_arbitrator_internal(&env).ok();
+
+        let timestamp = current_timestamp(&env);
+
+        env.storage()
+            .persistent()
+            .set(&arbitrator_storage_key(), &new_arbitrator);
+        extend_roles_ttl(&env);
+        emit_role_updated(
+            &env,
+            Role::Arbitrator,
+            old_arbitrator,
+            new_arbitrator,
+            timestamp,
+        );
+
+        Ok(())
+    }
+
+    pub fn set_treasury(env: Env, new_treasury: Address) -> Result<(), Error> {
+        let admin = get_admin_internal(&env)?;
+        admin.require_auth();
+
+        let old_treasury = get_treasury_internal(&env).ok();
+
+        let timestamp = current_timestamp(&env);
+
+        env.storage()
+            .instance()
+            .set(&symbol_short!("treasury"), &new_treasury);
+
+        emit_role_updated(&env, Role::Treasury, old_treasury, new_treasury, timestamp);
 
         Ok(())
     }
@@ -622,38 +758,54 @@ impl VaultixEscrow {
 
         let timestamp = current_timestamp(&env);
 
-        env.events().publish(
-            event_topic(&env, "RoleUpdated"),
-            RoleUpdatedEvent {
-                role: Role::Admin,
-                had_old_address: false,
-                old_address: admin.clone(),
-                new_address: admin,
-                timestamp,
-            },
-        );
-        env.events().publish(
-            event_topic(&env, "RoleUpdated"),
-            RoleUpdatedEvent {
-                role: Role::Operator,
-                had_old_address: false,
-                old_address: operator.clone(),
-                new_address: operator,
-                timestamp,
-            },
-        );
-        env.events().publish(
-            event_topic(&env, "RoleUpdated"),
-            RoleUpdatedEvent {
-                role: Role::Arbitrator,
-                had_old_address: false,
-                old_address: arbitrator.clone(),
-                new_address: arbitrator,
-                timestamp,
-            },
-        );
+        emit_role_updated(&env, Role::Admin, None, admin, timestamp);
+        emit_role_updated(&env, Role::Operator, None, operator, timestamp);
+        emit_role_updated(&env, Role::Arbitrator, None, arbitrator, timestamp);
 
         Ok(())
+    }
+
+    /// Test-only helper: set a legacy `Escrow` record and optional escrow fee directly into persistent storage.
+    /// Compiled only for test builds to avoid exposing in production.
+    #[cfg(test)]
+    pub fn test_set_legacy_escrow(
+        env: Env,
+        escrow_id: u64,
+        legacy: Escrow,
+        fee_bps: Option<i128>,
+    ) -> Result<(), Error> {
+        // Write legacy escrow under the legacy key within contract execution context
+        env.storage()
+            .persistent()
+            .set(&get_storage_key_legacy(escrow_id), &legacy);
+        if let Some(f) = fee_bps {
+            env.storage()
+                .persistent()
+                .set(&get_escrow_fee_key(escrow_id), &f);
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn test_has_escrow_v2(env: Env, escrow_id: u64) -> bool {
+        env.storage()
+            .persistent()
+            .has(&get_storage_key_v2(escrow_id))
+    }
+
+    #[cfg(test)]
+    pub fn test_has_legacy_escrow(env: Env, escrow_id: u64) -> bool {
+        env.storage()
+            .persistent()
+            .has(&get_storage_key_legacy(escrow_id))
+    }
+
+    #[cfg(test)]
+    pub fn test_get_escrow_version(env: Env, escrow_id: u64) -> i128 {
+        env.storage()
+            .persistent()
+            .get::<(Symbol, u64), i128>(&get_escrow_version_key(escrow_id))
+            .unwrap_or(0)
     }
 
     /// Configure the threshold amount and required signatures for an escrow
@@ -711,6 +863,8 @@ impl VaultixEscrow {
             return Err(Error::SelfDealing);
         }
 
+        validate_metadata_hash(&metadata_hash)?;
+
         if env
             .storage()
             .persistent()
@@ -761,6 +915,30 @@ impl VaultixEscrow {
 
         store_escrow_entry_v2(&env, escrow_id, &escrow);
 
+        // Add to depositor index
+        let depositor_index_key = get_depositor_index_key(&depositor);
+        let mut depositor_escrows: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&depositor_index_key)
+            .unwrap_or_else(|| Vec::new(&env));
+        depositor_escrows.push_back(escrow_id);
+        env.storage()
+            .persistent()
+            .set(&depositor_index_key, &depositor_escrows);
+
+        // Add to recipient index
+        let recipient_index_key = get_recipient_index_key(&recipient);
+        let mut recipient_escrows: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&recipient_index_key)
+            .unwrap_or_else(|| Vec::new(&env));
+        recipient_escrows.push_back(escrow_id);
+        env.storage()
+            .persistent()
+            .set(&recipient_index_key, &recipient_escrows);
+
         env.events().publish(
             event_topic(&env, "EscrowCreated"),
             EscrowCreatedEvent {
@@ -769,6 +947,8 @@ impl VaultixEscrow {
                 recipient,
                 token_address,
                 total_amount,
+                total_released: 0,
+                status: EscrowStatus::Created,
                 deadline,
                 metadata_hash,
                 timestamp: current_timestamp(&env),
@@ -802,6 +982,8 @@ impl VaultixEscrow {
             if depositor == recipient {
                 return Err(Error::SelfDealing);
             }
+
+            validate_metadata_hash(&metadata_hash)?;
 
             for existing_id in escrow_ids.iter() {
                 if existing_id == escrow_id {
@@ -873,6 +1055,8 @@ impl VaultixEscrow {
                 recipient,
                 token_address,
                 total_amount,
+                total_released: 0,
+                status: EscrowStatus::Created,
                 deadline,
                 metadata_hash: request.metadata_hash.clone(),
             });
@@ -890,6 +1074,30 @@ impl VaultixEscrow {
             }
 
             store_escrow_entry_v2(&env, escrow_id, &escrow);
+
+            // Add to depositor index
+            let depositor_index_key = get_depositor_index_key(&escrow.depositor);
+            let mut depositor_escrows: Vec<u64> = env
+                .storage()
+                .persistent()
+                .get(&depositor_index_key)
+                .unwrap_or_else(|| Vec::new(&env));
+            depositor_escrows.push_back(escrow_id);
+            env.storage()
+                .persistent()
+                .set(&depositor_index_key, &depositor_escrows);
+
+            // Add to recipient index
+            let recipient_index_key = get_recipient_index_key(&escrow.recipient);
+            let mut recipient_escrows: Vec<u64> = env
+                .storage()
+                .persistent()
+                .get(&recipient_index_key)
+                .unwrap_or_else(|| Vec::new(&env));
+            recipient_escrows.push_back(escrow_id);
+            env.storage()
+                .persistent()
+                .set(&recipient_index_key, &recipient_escrows);
         }
 
         if !created_items.is_empty() {
@@ -948,6 +1156,9 @@ impl VaultixEscrow {
                 recipient: escrow.recipient.clone(),
                 token_address: escrow.token_address.clone(),
                 total_amount: escrow.total_amount,
+                status: escrow_status(&escrow),
+                total_released: escrow.total_released,
+                deadline: escrow.deadline,
                 timestamp: current_timestamp(&env),
             },
         );
@@ -993,6 +1204,77 @@ impl VaultixEscrow {
     pub fn get_escrow(env: Env, escrow_id: u64) -> Result<Escrow, Error> {
         let escrow = load_escrow_entry_v2(&env, escrow_id)?;
         Ok(escrow_entry_to_public(escrow))
+    }
+
+    /// List escrows by party address (depositor or recipient) with pagination
+    ///
+    /// # Arguments
+    /// * `env` - Soroban environment reference
+    /// * `party` - Address to query (either depositor or recipient)
+    /// * `role` - "depositor" or "recipient" to specify which index to query
+    /// * `page` - Page number (0-indexed)
+    /// * `page_size` - Number of results per page (max MAX_PAGE_SIZE)
+    ///
+    /// # Returns
+    /// Vec<EscrowSummary> - Lightweight escrow summaries for the page
+    pub fn list_escrows_by_party(
+        env: Env,
+        party: Address,
+        role: Symbol,
+        page: u32,
+        page_size: u32,
+    ) -> Result<Vec<EscrowSummary>, Error> {
+        // Enforce page size limit
+        if page_size == 0 || page_size > MAX_PAGE_SIZE {
+            return Err(Error::VectorTooLarge);
+        }
+
+        // Get the appropriate index based on role
+        let index_key = if role == symbol_short!("depositor") {
+            get_depositor_index_key(&party)
+        } else if role == symbol_short!("recipient") {
+            get_recipient_index_key(&party)
+        } else {
+            return Err(Error::Unauthorized);
+        };
+
+        // Get the list of escrow IDs for this party
+        let escrow_ids: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&index_key)
+            .unwrap_or_else(|| Vec::new(&env));
+
+        // Calculate pagination bounds
+        let total = escrow_ids.len();
+        let start_idx = page * page_size;
+        let end_idx = core::cmp::min(start_idx + page_size, total);
+
+        if start_idx >= total {
+            // Page is out of bounds, return empty result
+            return Ok(Vec::new(&env));
+        }
+
+        // Collect escrow summaries for the page
+        let mut summaries = Vec::new(&env);
+        for i in start_idx..end_idx {
+            let escrow_id = escrow_ids.get(i).unwrap();
+            if let Ok(escrow) = load_escrow_entry_v2(&env, escrow_id) {
+                let summary = EscrowSummary {
+                    escrow_id,
+                    depositor: escrow.depositor.clone(),
+                    recipient: escrow.recipient.clone(),
+                    token_address: escrow.token_address.clone(),
+                    total_amount: escrow.total_amount,
+                    status: escrow_status(&escrow),
+                    deadline: escrow.deadline,
+                    metadata_hash: escrow.metadata_hash.clone(),
+                };
+                summaries.push_back(summary);
+            }
+        }
+
+        Ok(summaries)
     }
 
     pub fn get_state(env: Env, escrow_id: u64) -> Result<EscrowStatus, Error> {
@@ -1051,6 +1333,9 @@ impl VaultixEscrow {
                 payout_amount: release.payout_amount,
                 fee_amount: release.fee_amount,
                 total_released: release.total_released,
+                status: escrow_status(&escrow),
+                total_amount: escrow.total_amount,
+                deadline: escrow.deadline,
                 timestamp: current_timestamp(&env),
             },
         );
@@ -1110,6 +1395,9 @@ impl VaultixEscrow {
                 payout_amount: release.payout_amount,
                 fee_amount: release.fee_amount,
                 total_released: release.total_released,
+                status: escrow_status(&escrow),
+                total_amount: escrow.total_amount,
+                deadline: escrow.deadline,
                 timestamp: current_timestamp(&env),
             },
         );
@@ -1157,6 +1445,10 @@ impl VaultixEscrow {
                 raised_by: caller,
                 depositor: escrow.depositor.clone(),
                 recipient: escrow.recipient.clone(),
+                status: escrow_status(&escrow),
+                total_amount: escrow.total_amount,
+                total_released: escrow.total_released,
+                deadline: escrow.deadline,
                 timestamp: current_timestamp(&env),
             },
         );
@@ -1170,7 +1462,7 @@ impl VaultixEscrow {
         winner: Address,
         split_winner_amount: Option<i128>,
     ) -> Result<(), Error> {
-        let arbitrator = get_arbitrator(&env)?;
+        let arbitrator = get_arbitrator_internal(&env)?;
         arbitrator.require_auth();
 
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
@@ -1302,6 +1594,10 @@ impl VaultixEscrow {
                 winner_amount: amount_to_winner,
                 other_amount: amount_to_other,
                 resolution,
+                status: escrow_status(&escrow),
+                total_amount: escrow.total_amount,
+                total_released: escrow.total_released,
+                deadline: escrow.deadline,
                 timestamp: current_timestamp(&env),
             },
         );
@@ -1374,6 +1670,10 @@ impl VaultixEscrow {
                 token_address: escrow.token_address.clone(),
                 refund_amount,
                 fee_amount,
+                status: escrow_status(&escrow),
+                total_amount: escrow.total_amount,
+                total_released: escrow.total_released,
+                deadline: escrow.deadline,
                 timestamp: current_timestamp(&env),
             },
         );
@@ -1403,6 +1703,9 @@ impl VaultixEscrow {
                 escrow_id,
                 completed_by: escrow.depositor.clone(),
                 total_released: escrow.total_released,
+                status: escrow_status(&escrow),
+                total_amount: escrow.total_amount,
+                deadline: escrow.deadline,
                 timestamp: current_timestamp(&env),
             },
         );
@@ -1411,6 +1714,12 @@ impl VaultixEscrow {
     }
 
     pub fn refund_expired(env: Env, escrow_id: u64, caller: Address) -> Result<(), Error> {
+        // Pause-mode: refund_expired is blocked when the contract is paused.
+        // Rationale: a paused contract is under platform review/incident response;
+        // allowing fund drains during that window would undermine the safety guarantee.
+        // Depositors can call refund_expired once the contract is unpaused.
+        ensure_not_paused(&env)?;
+
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
 
         // Validate deadline has passed
@@ -1493,6 +1802,10 @@ impl VaultixEscrow {
                 token_address: escrow.token_address.clone(),
                 refund_amount,
                 fee_amount: platform_fee,
+                status: escrow_status(&escrow),
+                total_amount: escrow.total_amount,
+                total_released: escrow.total_released,
+                deadline: escrow.deadline,
                 timestamp: current_time,
             },
         );
@@ -1503,6 +1816,12 @@ impl VaultixEscrow {
 
 fn get_storage_key_legacy(escrow_id: u64) -> (Symbol, u64) {
     (symbol_short!("escrow"), escrow_id)
+}
+
+/// Generates storage key for escrow version markers.
+/// This companion key is stored alongside the V2 escrow entry for explicit versioning.
+fn get_escrow_version_key(escrow_id: u64) -> (Symbol, u64) {
+    (symbol_short!("escver"), escrow_id)
 }
 
 fn event_topic(env: &Env, event_name: &str) -> (Symbol, Symbol, Symbol) {
@@ -1517,6 +1836,8 @@ fn current_timestamp(env: &Env) -> u64 {
     env.ledger().timestamp()
 }
 
+/// Generates storage key for the current V2 escrow format.
+/// The `esc2` prefix distinguishes current entries from legacy `escrow` storage.
 fn get_storage_key_v2(escrow_id: u64) -> (Symbol, u64) {
     (symbol_short!("esc2"), escrow_id)
 }
@@ -1531,6 +1852,18 @@ fn get_token_fee_key(token_address: &Address) -> (Symbol, Address) {
 /// Returns a tuple of (Symbol, u64) for scoped storage access
 fn get_escrow_fee_key(escrow_id: u64) -> (Symbol, u64) {
     (symbol_short!("escfee"), escrow_id)
+}
+
+/// Generates storage key for depositor index
+/// Returns a tuple of (Symbol, Address) for scoped storage access
+fn get_depositor_index_key(depositor: &Address) -> (Symbol, Address) {
+    (symbol_short!("depidx"), depositor.clone())
+}
+
+/// Generates storage key for recipient index
+/// Returns a tuple of (Symbol, Address) for scoped storage access
+fn get_recipient_index_key(recipient: &Address) -> (Symbol, Address) {
+    (symbol_short!("recidx"), recipient.clone())
 }
 
 fn resolve_fee_with_escrow_override(
@@ -1678,7 +2011,7 @@ fn extend_roles_ttl(env: &Env) {
         .extend_ttl(&arbitrator_storage_key(), 100, 2_000_000);
 }
 
-fn get_admin(env: &Env) -> Result<Address, Error> {
+fn get_admin_internal(env: &Env) -> Result<Address, Error> {
     let admin = env
         .storage()
         .persistent()
@@ -1686,6 +2019,13 @@ fn get_admin(env: &Env) -> Result<Address, Error> {
         .ok_or(Error::AdminNotInitialized)?;
     extend_roles_ttl(env);
     Ok(admin)
+}
+
+fn get_treasury_internal(env: &Env) -> Result<Address, Error> {
+    env.storage()
+        .instance()
+        .get::<Symbol, Address>(&symbol_short!("treasury"))
+        .ok_or(Error::TreasuryNotInitialized)
 }
 
 fn validate_milestones(milestones: &Vec<Milestone>) -> Result<i128, Error> {
@@ -1702,6 +2042,14 @@ fn validate_milestones(milestones: &Vec<Milestone>) -> Result<i128, Error> {
             .ok_or(Error::InvalidMilestoneAmount)?;
     }
     Ok(total)
+}
+
+fn validate_metadata_hash(metadata_hash: &BytesN<32>) -> Result<(), Error> {
+    if metadata_hash.to_array() == [0u8; 32] {
+        return Err(Error::InvalidMetadataHash);
+    }
+
+    Ok(())
 }
 
 fn verify_all_released(milestones: &Vec<Milestone>) -> bool {
@@ -1730,7 +2078,7 @@ fn calculate_fee(amount: i128, fee_bps: i128) -> Result<i128, Error> {
     Ok(fee)
 }
 
-fn get_operator(env: &Env) -> Result<Address, Error> {
+fn get_operator_internal(env: &Env) -> Result<Address, Error> {
     if let Some(op) = env
         .storage()
         .persistent()
@@ -1752,7 +2100,7 @@ fn get_operator(env: &Env) -> Result<Address, Error> {
     Ok(op)
 }
 
-fn get_arbitrator(env: &Env) -> Result<Address, Error> {
+fn get_arbitrator_internal(env: &Env) -> Result<Address, Error> {
     if let Some(a) = env
         .storage()
         .persistent()
@@ -1774,6 +2122,28 @@ fn get_arbitrator(env: &Env) -> Result<Address, Error> {
     env.storage().persistent().remove(&legacy_key);
     extend_roles_ttl(env);
     Ok(a)
+}
+
+fn emit_role_updated(
+    env: &Env,
+    role: Role,
+    old_address: Option<Address>,
+    new_address: Address,
+    timestamp: u64,
+) {
+    let had_old_address = old_address.is_some();
+    let prior_address = old_address.unwrap_or(new_address.clone());
+
+    env.events().publish(
+        event_topic(env, "RoleUpdated"),
+        RoleUpdatedEvent {
+            role,
+            had_old_address,
+            old_address: prior_address,
+            new_address,
+            timestamp,
+        },
+    );
 }
 
 fn escrow_fee_override_opt(escrow: &EscrowEntryV2) -> Option<i128> {
@@ -1852,9 +2222,18 @@ fn u32_to_resolution(v: u32) -> Resolution {
     }
 }
 
+fn set_escrow_entry_version(env: &Env, escrow_id: u64, version: i128) {
+    let version_key = get_escrow_version_key(escrow_id);
+    env.storage().persistent().set(&version_key, &version);
+    env.storage()
+        .persistent()
+        .extend_ttl(&version_key, 100, 1_000_000);
+}
+
 fn store_escrow_entry_v2(env: &Env, escrow_id: u64, escrow: &EscrowEntryV2) {
     let key = get_storage_key_v2(escrow_id);
     env.storage().persistent().set(&key, escrow);
+    set_escrow_entry_version(env, escrow_id, ESCROW_ENTRY_STORAGE_VERSION);
     extend_escrow_ttl(env, &key, escrow);
 }
 
@@ -1865,6 +2244,17 @@ fn load_escrow_entry_v2(env: &Env, escrow_id: u64) -> Result<EscrowEntryV2, Erro
         .persistent()
         .get::<(Symbol, u64), EscrowEntryV2>(&v2_key)
     {
+        if let Some(version) = env
+            .storage()
+            .persistent()
+            .get::<(Symbol, u64), i128>(&get_escrow_version_key(escrow_id))
+        {
+            if version > ESCROW_ENTRY_STORAGE_VERSION {
+                return Err(Error::UnsupportedEscrowVersion);
+            }
+        } else {
+            set_escrow_entry_version(env, escrow_id, ESCROW_ENTRY_STORAGE_VERSION);
+        }
         extend_escrow_ttl(env, &v2_key, &v2);
         return Ok(v2);
     }
@@ -1895,7 +2285,7 @@ fn load_escrow_entry_v2(env: &Env, escrow_id: u64) -> Result<EscrowEntryV2, Erro
         required_signatures: legacy.required_signatures,
         collected_signatures: legacy.collected_signatures,
         fee_override_bps,
-        metadata_hash: BytesN::from_array(env, &[0u8; 32]),
+        metadata_hash: legacy.metadata_hash,
     };
 
     env.storage().persistent().remove(&legacy_key);

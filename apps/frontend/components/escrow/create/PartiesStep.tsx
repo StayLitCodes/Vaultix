@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useFormContext } from 'react-hook-form';
-import { CreateEscrowFormData } from '@/lib/escrow-schema';
-import Input from '@/component/ui/Input';
+import { useFormContext } from "react-hook-form";
+import { CreateEscrowFormData } from "@/lib/escrow-schema";
+import Input from "@/components/ui/input";
 
 export default function PartiesStep() {
   const {
@@ -13,9 +13,12 @@ export default function PartiesStep() {
   return (
     <div className="space-y-6">
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-gray-900">Parties Involved</h2>
+        <h2 className="text-xl font-semibold text-gray-900">
+          Parties Involved
+        </h2>
         <p className="text-sm text-gray-500">
-          Specify the counterparty for this escrow. This is the address that will receive the funds or provide the service.
+          Specify the counterparty for this escrow. This is the address that
+          will receive the funds or provide the service.
         </p>
 
         {/* Counterparty Address Field */}
@@ -24,7 +27,7 @@ export default function PartiesStep() {
           placeholder="G..."
           helperText="Enter the public key (starts with G) of the other party."
           error={errors.counterpartyAddress?.message}
-          {...register('counterpartyAddress')}
+          {...register("counterpartyAddress")}
         />
       </div>
     </div>

@@ -25,7 +25,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['**/*.spec.ts', '**/*.e2e-spec.ts'],
+    files: ['**/*.spec.ts', '**/*.e2e-spec.ts', 'test/setup/test-app.factory.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'off',

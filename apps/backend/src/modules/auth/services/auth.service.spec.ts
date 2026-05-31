@@ -107,15 +107,7 @@ describe('AuthService', () => {
       userService.findByWalletAddress.mockResolvedValue(null);
 
       await expect(
-        service.verifySignature('GD...123', 'sig', 'GD...123'),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('should throw UnauthorizedException if public key mismatch', async () => {
-      userService.findByWalletAddress.mockResolvedValue(mockUser as any);
-
-      await expect(
-        service.verifySignature('GD...123', 'sig', 'GD...OTHER'),
+        service.verifySignature('sig', 'GD...123'),
       ).rejects.toThrow(UnauthorizedException);
     });
 
@@ -125,7 +117,6 @@ describe('AuthService', () => {
       userService.createRefreshToken.mockResolvedValue({} as any);
 
       const result = await service.verifySignature(
-        'GD...123',
         'sig',
         'GD...123',
       );

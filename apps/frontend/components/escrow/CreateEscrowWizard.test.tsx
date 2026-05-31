@@ -35,6 +35,27 @@ describe('CreateEscrowWizard', () => {
     });
   });
 
+  it('shows the default XLM asset as a read-only selector on the terms step', async () => {
+    const user = userEvent.setup();
+    render(<CreateEscrowWizard />);
+
+    await user.type(screen.getByLabelText(/Title/i), 'Project Development');
+    await user.selectOptions(screen.getByLabelText(/Category/i), 'service');
+    await user.type(screen.getByLabelText(/Description/i), 'This is a long enough description for the test.');
+    await user.click(screen.getByRole('button', { name: /Next/i }));
+
+    await waitFor(() => expect(screen.getByText(/Counterparty Address/i)).toBeInTheDocument());
+    await user.type(screen.getByLabelText(/Counterparty Address/i), 'GBAH4VETEJSTLXU7I6I7DTH2W57YI6XWUT2C7O7XWS6QW2LWSXUUT2C7');
+    await user.click(screen.getByRole('button', { name: /Next/i }));
+
+    await waitFor(() => expect(screen.getByText(/Amount/i)).toBeInTheDocument());
+
+    const assetField = screen.getByLabelText(/Asset/i);
+    expect(assetField).toBeDisabled();
+    expect(assetField).toHaveValue('XLM');
+    expect(screen.getByText('XLM is currently the only supported escrow asset.')).toBeInTheDocument();
+  });
+
   it('navigates through all steps with valid data', async () => {
     const user = userEvent.setup();
     render(<CreateEscrowWizard />);

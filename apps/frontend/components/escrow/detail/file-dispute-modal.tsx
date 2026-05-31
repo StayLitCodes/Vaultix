@@ -2,21 +2,34 @@
 
 import "react";
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Loader2 } from "lucide-react";
 import { IDispute } from "@/types/escrow";
-import { DisputeEvidenceUpload, UploadedFile } from './DisputeEvidenceUpload';
+import { DisputeEvidenceUpload, UploadedFile } from "./DisputeEvidenceUpload";
+import { fileDispute } from "@/lib/escrow-api";
 
 interface FileDisputeModalProps {
   open: boolean;
   onClose: () => void;
   escrowId: string;
-  userRole: 'creator' | 'counterparty' | 'arbitrator' | null;
+  userRole: "creator" | "counterparty" | "arbitrator" | null;
   escrowStatus: string;
+  onDisputeUpdate?: () => void;
 }
 
 const disputeReasons = [
@@ -39,6 +52,7 @@ export default function FileDisputeModal({
   escrowId,
   userRole,
   escrowStatus,
+  onDisputeUpdate,
 }: FileDisputeModalProps) {
   const [reason, setReason] = useState("");
   const [description, setDescription] = useState("");
@@ -49,7 +63,10 @@ export default function FileDisputeModal({
   const [loading, setLoading] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
 
-  const canFileDispute = userRole && ['creator', 'counterparty'].includes(userRole) && escrowStatus === 'ACTIVE';
+  const canFileDispute =
+    userRole &&
+    ["creator", "counterparty"].includes(userRole) &&
+    escrowStatus === "ACTIVE";
 
   const handleAddEvidenceLink = () => {
     if (evidenceLink.trim()) {
@@ -80,39 +97,37 @@ export default function FileDisputeModal({
     try {
       setLoading(true);
 
-      const disputeData = {
-        escrowId,
-        reason,
-        description,
-        severity,
-        evidenceUrls,
-      };
+      // Collect CIDs from successfully uploaded files
+      const successfulUploads = uploadedFiles.filter(
+        (f) => f.progress === 100 && f.cid,
+      );
+      const evidenceCids = successfulUploads.map((f) => f.cid!);
 
-      const response = await fetch(`/api/escrows/${escrowId}/dispute`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(disputeData),
+      // Combine with manual evidence links
+      const allEvidence = [...evidenceCids, ...evidenceUrls];
+
+      // Submit dispute with evidence
+      await fileDispute(escrowId, {
+        reason,
+        evidence: allEvidence.length > 0 ? allEvidence : undefined,
       });
 
-      const result = await response.json();
+      alert(
+        "Dispute filed successfully. The escrow funds are now frozen pending resolution.",
+      );
+      onDisputeUpdate?.();
+      onClose();
 
-      if (result.success) {
-        alert("Dispute filed successfully. The escrow funds are now frozen pending resolution.");
-        onClose();
-        // Reset form
-        setReason("");
-        setDescription("");
-        setSeverity("");
-        setEvidenceUrls([]);
-        setShowConfirmation(false);
-      } else {
-        alert(result.message || "Failed to file dispute.");
-      }
+      // Reset form
+      setReason("");
+      setDescription("");
+      setSeverity("");
+      setEvidenceUrls([]);
+      setUploadedFiles([]);
+      setShowConfirmation(false);
     } catch (error: any) {
       console.error("Dispute filing error:", error);
-      alert("Failed to file dispute. Please try again.");
+      alert(error.message || "Failed to file dispute. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -128,7 +143,8 @@ export default function FileDisputeModal({
 
           {!canFileDispute && (
             <div className="bg-red-50 border border-red-200 p-3 rounded-md text-sm text-red-800">
-              You cannot file a dispute on this escrow. Disputes can only be filed by the buyer or seller on active escrows.
+              You cannot file a dispute on this escrow. Disputes can only be
+              filed by the buyer or seller on active escrows.
             </div>
           )}
 
@@ -146,7 +162,11 @@ export default function FileDisputeModal({
           {/* Reason */}
           <div className="mt-4">
             <label className="text-sm font-medium">Dispute Reason *</label>
-            <Select value={reason} onValueChange={setReason} disabled={!canFileDispute}>
+            <Select
+              value={reason}
+              onValueChange={setReason}
+              disabled={!canFileDispute}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Select reason" />
               </SelectTrigger>
@@ -163,7 +183,11 @@ export default function FileDisputeModal({
           {/* Severity */}
           <div className="mt-4">
             <label className="text-sm font-medium">Severity Level *</label>
-            <Select value={severity} onValueChange={setSeverity} disabled={!canFileDispute}>
+            <Select
+              value={severity}
+              onValueChange={setSeverity}
+              disabled={!canFileDispute}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Select severity" />
               </SelectTrigger>
@@ -191,9 +215,14 @@ export default function FileDisputeModal({
 
           {/* Evidence File Upload */}
           <div className="mt-4">
-            <label className="text-sm font-medium">Evidence Files (Optional)</label>
-            <p className="text-xs text-gray-500 mb-2">Images, PDFs, or text files up to 10 MB each</p>
+            <label className="text-sm font-medium">
+              Evidence Files (Optional)
+            </label>
+            <p className="text-xs text-gray-500 mb-2">
+              Images, PDFs, or text files up to 10 MB each
+            </p>
             <DisputeEvidenceUpload
+              escrowId={escrowId}
               files={uploadedFiles}
               onChange={setUploadedFiles as any}
             />
@@ -201,7 +230,9 @@ export default function FileDisputeModal({
 
           {/* Evidence Links */}
           <div className="mt-4">
-            <label className="text-sm font-medium">Evidence Links (Optional)</label>
+            <label className="text-sm font-medium">
+              Evidence Links (Optional)
+            </label>
             <div className="flex gap-2 mt-2">
               <Input
                 type="url"
@@ -219,12 +250,20 @@ export default function FileDisputeModal({
                 Add
               </Button>
             </div>
-            
+
             {evidenceUrls.length > 0 && (
               <div className="mt-2 space-y-2">
                 {evidenceUrls.map((url, index) => (
-                  <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded text-sm">
-                    <a href={url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate flex-1">
+                  <div
+                    key={index}
+                    className="flex items-center justify-between bg-gray-50 p-2 rounded text-sm"
+                  >
+                    <a
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline truncate flex-1"
+                    >
                       {url}
                     </a>
                     <Button
@@ -247,9 +286,15 @@ export default function FileDisputeModal({
             <Button variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button 
-              onClick={handleSubmit} 
-              disabled={loading || !canFileDispute || !reason || !description || !severity}
+            <Button
+              onClick={handleSubmit}
+              disabled={
+                loading ||
+                !canFileDispute ||
+                !reason ||
+                !description ||
+                !severity
+              }
             >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Submit Dispute
@@ -259,33 +304,51 @@ export default function FileDisputeModal({
       </Dialog>
 
       {/* Confirmation Dialog */}
-      <Dialog open={showConfirmation} onOpenChange={() => setShowConfirmation(false)}>
+      <Dialog
+        open={showConfirmation}
+        onOpenChange={() => setShowConfirmation(false)}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Confirm Dispute Filing</DialogTitle>
           </DialogHeader>
-          
+
           <div className="space-y-4">
             <div className="bg-yellow-50 border border-yellow-200 p-3 rounded-md text-sm">
-              <strong>Warning:</strong> Filing a dispute will immediately freeze the escrow funds until resolution.
+              <strong>Warning:</strong> Filing a dispute will immediately freeze
+              the escrow funds until resolution.
             </div>
-            
+
             <div className="text-sm space-y-2">
-              <p><strong>Reason:</strong> {disputeReasons.find(r => r.value === reason)?.label}</p>
-              <p><strong>Severity:</strong> {severityLevels.find(s => s.value === severity)?.label}</p>
-              <p><strong>Description:</strong> {description}</p>
+              <p>
+                <strong>Reason:</strong>{" "}
+                {disputeReasons.find((r) => r.value === reason)?.label}
+              </p>
+              <p>
+                <strong>Severity:</strong>{" "}
+                {severityLevels.find((s) => s.value === severity)?.label}
+              </p>
+              <p>
+                <strong>Description:</strong> {description}
+              </p>
               {evidenceUrls.length > 0 && (
-                <p><strong>Evidence:</strong> {evidenceUrls.length} link(s) provided</p>
+                <p>
+                  <strong>Evidence:</strong> {evidenceUrls.length} link(s)
+                  provided
+                </p>
               )}
             </div>
-            
+
             <p className="text-sm text-gray-600">
               Are you sure you want to proceed with filing this dispute?
             </p>
           </div>
 
           <div className="flex justify-end gap-2 mt-6">
-            <Button variant="outline" onClick={() => setShowConfirmation(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setShowConfirmation(false)}
+            >
               Cancel
             </Button>
             <Button onClick={confirmSubmit} disabled={loading}>

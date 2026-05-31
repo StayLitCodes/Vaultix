@@ -8,6 +8,7 @@ export class EventResponseDto {
   data?: Record<string, unknown>;
   ipAddress?: string;
   createdAt: Date;
+  cursor: string; // Monotonic cursor for incremental sync
 
   // Escrow details for context
   escrow?: {

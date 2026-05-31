@@ -28,6 +28,9 @@ describe('EscrowStellarIntegrationService', () => {
             buildTransaction: jest.fn().mockResolvedValue({}),
             submitTransaction: jest.fn().mockResolvedValue({ hash: 'tx-hash' }),
             streamTransactions: jest.fn(),
+            getAccount: jest.fn().mockResolvedValue({
+              balances: [{ asset_type: 'native', balance: '1000' }],
+            }),
           },
         },
         {
@@ -39,6 +42,7 @@ describe('EscrowStellarIntegrationService', () => {
             createConfirmationOps: jest.fn().mockReturnValue([]),
             createCancelOps: jest.fn().mockReturnValue([]),
             createCompletionOps: jest.fn().mockReturnValue([]),
+            createResolveDisputeOps: jest.fn().mockReturnValue([]),
           },
         },
         {
@@ -77,6 +81,7 @@ describe('EscrowStellarIntegrationService', () => {
     assetCode: 'XLM',
     assetIssuer: null,
     expiresAt: new Date(),
+    metadataHash: '0'.repeat(64),
   };
 
   describe('createOnChainEscrow', () => {
@@ -157,6 +162,23 @@ describe('EscrowStellarIntegrationService', () => {
       expect(stellarService.streamTransactions).toHaveBeenCalledWith(
         'pubkey',
         expect.any(Function),
+      );
+    });
+  });
+
+  describe('resolveOnChainDispute', () => {
+    it('should resolve dispute successfully', async () => {
+      const hash = await service.resolveOnChainDispute(
+        'e1',
+        'winner-pubkey',
+        'arbitrator-pubkey',
+        '50',
+      );
+      expect(hash).toBe('tx-hash');
+      expect(escrowOps.createResolveDisputeOps).toHaveBeenCalledWith(
+        'e1',
+        'winner-pubkey',
+        '50',
       );
     });
   });

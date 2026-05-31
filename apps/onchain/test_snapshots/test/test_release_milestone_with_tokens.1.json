@@ -172,7 +172,7 @@
                   "u64": 1706400000
                 },
                 {
-                  "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                  "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
                 }
               ]
             }
@@ -339,6 +339,55 @@
             "key": {
               "vec": [
                 {
+                  "symbol": "depidx"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "depidx"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "u64": 3
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
                   "symbol": "esc2"
                 },
                 {
@@ -409,7 +458,7 @@
                         "symbol": "metadata_hash"
                       },
                       "val": {
-                        "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                        "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
                       }
                     },
                     {
@@ -555,6 +604,103 @@
                           "lo": 6000
                         }
                       }
+                    }
+                  ]
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "escver"
+                },
+                {
+                  "u64": 3
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "escver"
+                    },
+                    {
+                      "u64": 3
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "i128": {
+                    "hi": 0,
+                    "lo": 2
+                  }
+                }
+              }
+            },
+            "ext": "v0"
+          },
+          4095
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+            "key": {
+              "vec": [
+                {
+                  "symbol": "recidx"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                }
+              ]
+            },
+            "durability": "persistent"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+                "key": {
+                  "vec": [
+                    {
+                      "symbol": "recidx"
+                    },
+                    {
+                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                    }
+                  ]
+                },
+                "durability": "persistent",
+                "val": {
+                  "vec": [
+                    {
+                      "u64": 3
                     }
                   ]
                 }
@@ -1817,7 +1963,7 @@
                   "u64": 1706400000
                 },
                 {
-                  "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                  "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
                 }
               ]
             }
@@ -1875,7 +2021,7 @@
                     "symbol": "metadata_hash"
                   },
                   "val": {
-                    "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                    "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
                   }
                 },
                 {
@@ -1884,6 +2030,18 @@
                   },
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "status"
+                  },
+                  "val": {
+                    "vec": [
+                      {
+                        "symbol": "Created"
+                      }
+                    ]
                   }
                 },
                 {
@@ -1910,6 +2068,17 @@
                     "i128": {
                       "hi": 0,
                       "lo": 10000
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_released"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 0
                     }
                   }
                 }
@@ -2297,6 +2466,14 @@
               "map": [
                 {
                   "key": {
+                    "symbol": "deadline"
+                  },
+                  "val": {
+                    "u64": 1706400000
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "depositor"
                   },
                   "val": {
@@ -2317,6 +2494,18 @@
                   },
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "status"
+                  },
+                  "val": {
+                    "vec": [
+                      {
+                        "symbol": "Active"
+                      }
+                    ]
                   }
                 },
                 {
@@ -2343,6 +2532,17 @@
                     "i128": {
                       "hi": 0,
                       "lo": 10000
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_released"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 0
                     }
                   }
                 }
@@ -2677,6 +2877,14 @@
               "map": [
                 {
                   "key": {
+                    "symbol": "deadline"
+                  },
+                  "val": {
+                    "u64": 1706400000
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "depositor"
                   },
                   "val": {
@@ -2742,6 +2950,18 @@
                 },
                 {
                   "key": {
+                    "symbol": "status"
+                  },
+                  "val": {
+                    "vec": [
+                      {
+                        "symbol": "Active"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "key": {
                     "symbol": "timestamp"
                   },
                   "val": {
@@ -2754,6 +2974,17 @@
                   },
                   "val": {
                     "address": "CACMVW2KK4H5FZDFF2AUCAKQTEJMZZWJUIZF23XMRVYQBSXYLHZ6BKWN"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "total_amount"
+                  },
+                  "val": {
+                    "i128": {
+                      "hi": 0,
+                      "lo": 10000
+                    }
                   }
                 },
                 {
@@ -2971,7 +3202,7 @@
                     "symbol": "metadata_hash"
                   },
                   "val": {
-                    "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                    "bytes": "0707070707070707070707070707070707070707070707070707070707070707"
                   }
                 },
                 {

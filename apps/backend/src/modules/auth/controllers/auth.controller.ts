@@ -44,7 +44,6 @@ export class AuthController {
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   async verify(@Body() verifyDto: VerifyDto, @Res({ passthrough: true }) res: Response) {
     return this.authService.verifySignature(
-      verifyDto.walletAddress,
       verifyDto.signature,
       verifyDto.publicKey,
     );

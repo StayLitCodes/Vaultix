@@ -41,6 +41,6 @@ import { Dispute } from '../escrow/entities/dispute.entity';
     AdminAuditLogService,
     AnalyticsService,
   ],
-  exports: [AdminService],
+  exports: [AdminService, ConsistencyCheckerService],
 })
 export class AdminModule {}

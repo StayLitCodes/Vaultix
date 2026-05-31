@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useFormContext } from 'react-hook-form';
-import { CreateEscrowFormData } from '@/lib/escrow-schema';
-import Input from '@/component/ui/Input';
-import TextArea from '@/component/ui/TextArea';
-import Select from '@/component/ui/Select';
+import { useFormContext } from "react-hook-form";
+import { CreateEscrowFormData } from "@/lib/escrow-schema";
+import Input from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import TextArea from "@/components/ui/textarea";
 
 export default function BasicInfoStep() {
   const {
@@ -15,7 +15,9 @@ export default function BasicInfoStep() {
   return (
     <div className="space-y-6">
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-gray-900">Basic Information</h2>
+        <h2 className="text-xl font-semibold text-gray-900">
+          Basic Information
+        </h2>
         <p className="text-sm text-gray-500">
           Start by providing the basic details about this escrow agreement.
         </p>
@@ -25,14 +27,14 @@ export default function BasicInfoStep() {
           label="Title"
           placeholder="e.g. Web Development Project"
           error={errors.title?.message}
-          {...register('title')}
+          {...register("title")}
         />
 
         {/* Category Field */}
         <Select
           label="Category"
           error={errors.category?.message}
-          {...register('category')}
+          {...register("category")}
         >
           <option value="">Select a category</option>
           <option value="service">Service</option>
@@ -47,7 +49,7 @@ export default function BasicInfoStep() {
           placeholder="Describe the agreement details..."
           rows={4}
           error={errors.description?.message}
-          {...register('description')}
+          {...register("description")}
         />
       </div>
     </div>

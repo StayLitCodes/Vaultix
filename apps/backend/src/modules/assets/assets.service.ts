@@ -83,4 +83,46 @@ export class AssetsService {
     const asset = await this.findOne(id);
     await this.assetRepository.remove(asset);
   }
+
+  async getBalance(
+    walletAddress: string,
+    assetCode: string,
+    issuer?: string,
+  ): Promise<{ balance: number; assetCode: string; issuer?: string }> {
+    try {
+      const account = await this.stellarService.getAccount(walletAddress);
+      const balanceItem = account.balances.find((b) => {
+        if (assetCode === 'XLM' || assetCode === 'native') {
+          return b.asset_type === 'native';
+        } else {
+          return b.asset_code === assetCode && b.asset_issuer === issuer;
+        }
+      });
+
+      if (!balanceItem) {
+        if (assetCode === 'XLM') {
+          throw new BadRequestException(
+            'Account has no native XLM balance or is not funded',
+          );
+        } else {
+          throw new BadRequestException(
+            `Account does not trust the asset ${assetCode}. Please establish a trustline first.`,
+          );
+        }
+      }
+
+      return {
+        balance: parseFloat(balanceItem.balance),
+        assetCode,
+        issuer,
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        `Failed to fetch balance: account ${walletAddress} may not exist or cannot be reached.`,
+      );
+    }
+  }
 }

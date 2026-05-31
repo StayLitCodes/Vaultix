@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useFormContext } from 'react-hook-form';
-import { CreateEscrowFormData } from '@/lib/escrow-schema';
-import Input from '@/component/ui/Input';
-import Select from '@/component/ui/Select';
+import { useFormContext } from "react-hook-form";
+import { CreateEscrowFormData } from "@/lib/escrow-schema";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 
 export default function TermsStep() {
   const {
@@ -22,26 +22,24 @@ export default function TermsStep() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Amount Field */}
           <div className="relative">
-             <Input
-                label="Amount"
-                placeholder="0.00"
-                error={errors.amount?.message}
-                {...register('amount')}
-              />
-              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pt-6 pointer-events-none">
-                <span className="text-gray-500 sm:text-sm">XLM</span>
-              </div>
+            <Input
+              label="Amount"
+              placeholder="0.00"
+              error={errors.amount?.message}
+              {...register("amount")}
+            />
+            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pt-6 pointer-events-none">
+              <span className="text-gray-500 sm:text-sm">XLM</span>
+            </div>
           </div>
 
-          {/* Asset Selector (Placeholder for now) */}
           <Select
             label="Asset"
+            helperText="XLM is currently the only supported escrow asset."
             disabled
+            options={[{ value: 'XLM', label: 'Stellar Lumens (XLM)' }]}
             {...register('asset')}
-          >
-             <option value="XLM">Stellar Lumens (XLM)</option>
-              {/* Future: Add USDC, etc. */}
-          </Select>
+          />
         </div>
 
         {/* Deadline Field */}
@@ -50,7 +48,7 @@ export default function TermsStep() {
           type="datetime-local"
           helperText="The date and time by which the terms must be met."
           error={errors.deadline?.message}
-          {...register('deadline', { valueAsDate: true })}
+          {...register("deadline", { valueAsDate: true })}
         />
       </div>
     </div>

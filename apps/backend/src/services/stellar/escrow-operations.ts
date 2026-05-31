@@ -1,5 +1,6 @@
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { Injectable, Logger } from '@nestjs/common';
+import { normalizeMetadataHash } from '../../modules/escrow/utils/metadata-hash.util';
 
 @Injectable()
 export class EscrowOperationsService {
@@ -21,6 +22,7 @@ export class EscrowOperationsService {
     tokenAddress: string,
     milestones: Array<{ id: number; amount: string; description: string }>,
     deadline: number,
+    metadataReference: string,
   ): StellarSdk.xdr.Operation[] {
     try {
       this.logger.log(
@@ -28,6 +30,10 @@ export class EscrowOperationsService {
       );
 
       const contract = new StellarSdk.Contract(this.contractId);
+      const metadataHash = Buffer.from(
+        normalizeMetadataHash(metadataReference),
+        'hex',
+      );
 
       const milestoneVec = StellarSdk.xdr.ScVal.scvVec(
         milestones.map((m) =>
@@ -69,6 +75,7 @@ export class EscrowOperationsService {
         StellarSdk.xdr.ScVal.scvU64(
           new StellarSdk.xdr.Uint64(deadline.toString()),
         ),
+        StellarSdk.xdr.ScVal.scvBytes(metadataHash),
       );
 
       return [op];

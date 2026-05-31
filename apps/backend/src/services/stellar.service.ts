@@ -180,7 +180,8 @@ export class StellarService {
     this.logger.log(`Starting transaction stream for account: ${accountId}`);
 
     const handler = (transaction: any) => {
-      const typedTransaction = transaction as unknown as StellarTransactionResponse;
+      const typedTransaction =
+        transaction as unknown as StellarTransactionResponse;
       this.logger.log(
         `Received transaction: ${typedTransaction.id} for account: ${accountId}`,
       );

@@ -1,73 +1,119 @@
-'use client';
+"use client";
 
-import React, { useState, useRef, useCallback } from 'react';
-import { Upload, X, FileText, Image as ImageIcon, Loader2 } from 'lucide-react';
+import React, { useState, useRef, useCallback } from "react";
+import { Upload, X, FileText, Image as ImageIcon, Loader2 } from "lucide-react";
+import { uploadEvidence } from "@/lib/escrow-api";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const MAX_FILES = 5;
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf', 'text/plain'];
+const ALLOWED_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "application/pdf",
+  "text/plain",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+];
 
 export interface UploadedFile {
   id: string;
   file: File;
   preview?: string;
   progress: number;
+  cid?: string;
+  url?: string;
   error?: string;
 }
 
 interface DisputeEvidenceUploadProps {
+  escrowId: string;
   files: UploadedFile[];
   onChange: React.Dispatch<React.SetStateAction<UploadedFile[]>>;
 }
 
 function FileIcon({ type }: { type: string }) {
-  if (type.startsWith('image/')) return <ImageIcon className="w-5 h-5 text-blue-400" />;
+  if (type.startsWith("image/"))
+    return <ImageIcon className="w-5 h-5 text-blue-400" />;
   return <FileText className="w-5 h-5 text-gray-400" />;
 }
 
-export function DisputeEvidenceUpload({ files, onChange }: DisputeEvidenceUploadProps) {
+export function DisputeEvidenceUpload({
+  escrowId,
+  files,
+  onChange,
+}: DisputeEvidenceUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const simulateUpload = useCallback((uploadedFile: UploadedFile) => {
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += Math.random() * 25 + 10;
-      if (progress >= 100) {
-        progress = 100;
-        clearInterval(interval);
+  const uploadToIpfs = useCallback(
+    async (uploadedFile: UploadedFile) => {
+      try {
+        const result = await uploadEvidence(escrowId, uploadedFile.file);
+        onChange((prev: UploadedFile[]) =>
+          prev.map((f) =>
+            f.id === uploadedFile.id
+              ? { ...f, progress: 100, cid: result.cid, url: result.url }
+              : f,
+          ),
+        );
+      } catch (error: any) {
+        onChange((prev: UploadedFile[]) =>
+          prev.map((f) =>
+            f.id === uploadedFile.id
+              ? { ...f, progress: 0, error: error.message || "Upload failed" }
+              : f,
+          ),
+        );
       }
-      onChange((prev: UploadedFile[]) =>
-        prev.map((f) => (f.id === uploadedFile.id ? { ...f, progress: Math.round(progress) } : f)),
-      );
-    }, 200);
-  }, [onChange]);
+    },
+    [escrowId, onChange],
+  );
 
-  const processFiles = useCallback((rawFiles: FileList | File[]) => {
-    const incoming = Array.from(rawFiles);
-    const remaining = MAX_FILES - files.length;
-    if (remaining <= 0) return;
+  const processFiles = useCallback(
+    (rawFiles: FileList | File[]) => {
+      const incoming = Array.from(rawFiles);
+      const remaining = MAX_FILES - files.length;
+      if (remaining <= 0) return;
 
-    const toAdd: UploadedFile[] = incoming.slice(0, remaining).map((file) => {
-      if (!ALLOWED_TYPES.includes(file.type)) {
-        return { id: crypto.randomUUID(), file, progress: 0, error: 'Unsupported file type' };
-      }
-      if (file.size > MAX_FILE_SIZE) {
-        return { id: crypto.randomUUID(), file, progress: 0, error: 'File exceeds 10 MB limit' };
-      }
-      const preview = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined;
-      return { id: crypto.randomUUID(), file, preview, progress: 0 };
-    });
+      const toAdd: UploadedFile[] = incoming.slice(0, remaining).map((file) => {
+        if (!ALLOWED_TYPES.includes(file.type)) {
+          return {
+            id: crypto.randomUUID(),
+            file,
+            progress: 0,
+            error: "Unsupported file type",
+          };
+        }
+        if (file.size > MAX_FILE_SIZE) {
+          return {
+            id: crypto.randomUUID(),
+            file,
+            progress: 0,
+            error: "File exceeds 10 MB limit",
+          };
+        }
+        const preview = file.type.startsWith("image/")
+          ? URL.createObjectURL(file)
+          : undefined;
+        return { id: crypto.randomUUID(), file, preview, progress: 0 };
+      });
 
-    onChange((prev: UploadedFile[]) => [...prev, ...toAdd]);
-    toAdd.filter((f) => !f.error).forEach(simulateUpload);
-  }, [files.length, onChange, simulateUpload]);
+      onChange((prev: UploadedFile[]) => [...prev, ...toAdd]);
+      toAdd.filter((f) => !f.error).forEach(uploadToIpfs);
+    },
+    [files.length, onChange, uploadToIpfs],
+  );
 
-  const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    processFiles(e.dataTransfer.files);
-  }, [processFiles]);
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setIsDragging(false);
+      processFiles(e.dataTransfer.files);
+    },
+    [processFiles],
+  );
 
   const removeFile = (id: string) => {
     onChange((prev: UploadedFile[]) => {
@@ -81,19 +127,22 @@ export function DisputeEvidenceUpload({ files, onChange }: DisputeEvidenceUpload
     <div className="space-y-3">
       {/* Drop zone */}
       <div
-        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={onDrop}
         onClick={() => inputRef.current?.click()}
         className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
           isDragging
-            ? 'border-blue-500 bg-blue-500/10'
-            : 'border-gray-300 hover:border-gray-400 bg-gray-50'
-        } ${files.length >= MAX_FILES ? 'opacity-50 pointer-events-none' : ''}`}
+            ? "border-blue-500 bg-blue-500/10"
+            : "border-gray-300 hover:border-gray-400 bg-gray-50"
+        } ${files.length >= MAX_FILES ? "opacity-50 pointer-events-none" : ""}`}
       >
         <Upload className="w-8 h-8 mx-auto mb-2 text-gray-400" />
         <p className="text-sm text-gray-600 font-medium">
-          {isDragging ? 'Drop files here' : 'Drag & drop or click to upload'}
+          {isDragging ? "Drop files here" : "Drag & drop or click to upload"}
         </p>
         <p className="text-xs text-gray-400 mt-1">
           Images, PDFs, text files · max 10 MB · up to {MAX_FILES} files
@@ -102,7 +151,7 @@ export function DisputeEvidenceUpload({ files, onChange }: DisputeEvidenceUpload
           ref={inputRef}
           type="file"
           multiple
-          accept={ALLOWED_TYPES.join(',')}
+          accept={ALLOWED_TYPES.join(",")}
           className="hidden"
           onChange={(e) => e.target.files && processFiles(e.target.files)}
         />
@@ -112,11 +161,18 @@ export function DisputeEvidenceUpload({ files, onChange }: DisputeEvidenceUpload
       {files.length > 0 && (
         <ul className="space-y-2">
           {files.map((f) => (
-            <li key={f.id} className="flex items-center gap-3 border border-gray-200 rounded-lg p-2">
+            <li
+              key={f.id}
+              className="flex items-center gap-3 border border-gray-200 rounded-lg p-2"
+            >
               {/* Thumbnail or icon */}
               {f.preview ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={f.preview} alt={f.file.name} className="w-10 h-10 rounded object-cover flex-shrink-0" />
+                <img
+                  src={f.preview}
+                  alt={f.file.name}
+                  className="w-10 h-10 rounded object-cover flex-shrink-0"
+                />
               ) : (
                 <div className="w-10 h-10 rounded bg-gray-100 flex items-center justify-center flex-shrink-0">
                   <FileIcon type={f.file.type} />

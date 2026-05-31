@@ -18,6 +18,10 @@ import { WebhookModule } from '../webhook/webhook.module';
 import { IpfsModule } from '../ipfs/ipfs.module';
 import { User } from '../user/entities/user.entity';
 import { AllowedAsset } from '../assets/entities/allowed-asset.entity';
+import { EscrowLifecycleService } from './escrow-lifecycle.service';
+import { EscrowFundingService } from './escrow-funding.service';
+import { EscrowDisputeService } from './escrow-dispute.service';
+import { EscrowQueryService } from './escrow-query.service';
 
 @Module({
   imports: [
@@ -41,7 +45,18 @@ import { AllowedAsset } from '../assets/entities/allowed-asset.entity';
     EscrowStellarIntegrationService,
     EscrowAccessGuard,
     EscrowExpireGuard,
+    EscrowLifecycleService,
+    EscrowFundingService,
+    EscrowDisputeService,
+    EscrowQueryService,
   ],
-  exports: [EscrowService, EscrowSchedulerService],
+  exports: [
+    EscrowService,
+    EscrowSchedulerService,
+    EscrowLifecycleService,
+    EscrowFundingService,
+    EscrowDisputeService,
+    EscrowQueryService,
+  ],
 })
 export class EscrowModule {}

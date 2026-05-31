@@ -43,11 +43,17 @@ export class EscrowStellarIntegrationService {
       // Get the escrow from the database
       const escrow = await this.escrowRepository.findOne({
         where: { id: escrowId },
-        relations: ['parties', 'conditions'],
+        relations: ['parties', 'parties.user', 'conditions'],
       });
 
       if (!escrow) {
         throw new Error(`Escrow with ID ${escrowId} not found`);
+      }
+
+      if (!escrow.metadataHash) {
+        throw new Error(
+          `Escrow ${escrowId} is missing metadataHash for on-chain creation`,
+        );
       }
 
       // Get the depositor (usually the buyer)
@@ -91,6 +97,7 @@ export class EscrowStellarIntegrationService {
           escrow.expiresAt
             ? Math.floor(new Date(escrow.expiresAt).getTime() / 1000)
             : Math.floor(Date.now() / 1000) + 86400, // Convert to Unix timestamp or default to 24 hours
+          escrow.metadataHash,
         );
 
       // Build the transaction
@@ -128,17 +135,41 @@ export class EscrowStellarIntegrationService {
     funderPublicKey: string,
     amount: string,
     assetCode: string = 'XLM',
+    assetIssuer?: string,
   ): Promise<string> {
     try {
       this.logger.log(
         `Funding on-chain escrow ${escrowId} with ${amount} ${assetCode}`,
       );
 
-      // Determine asset (unused but kept logic if needed later, currently causing lint error)
-      // const asset =
-      //   assetCode === 'XLM' || assetCode === 'native'
-      //     ? StellarSdk.Asset.native()
-      //     : new StellarSdk.Asset(assetCode, funderPublicKey);
+      // Verify funder has sufficient balance and trustline
+      const funderAccount =
+        await this.stellarService.getAccount(funderPublicKey);
+      const balanceItem = funderAccount.balances.find((b) => {
+        if (assetCode === 'XLM' || assetCode === 'native') {
+          return b.asset_type === 'native';
+        } else {
+          return b.asset_code === assetCode && b.asset_issuer === assetIssuer;
+        }
+      });
+
+      if (!balanceItem) {
+        if (assetCode === 'XLM') {
+          throw new Error(
+            'Funder account has no XLM balance or does not exist',
+          );
+        } else {
+          throw new Error(
+            `Funder does not have a trustline for the asset ${assetCode}. Please establish a trustline first.`,
+          );
+        }
+      }
+
+      if (parseFloat(balanceItem.balance) < parseFloat(amount)) {
+        throw new Error(
+          `Insufficient balance. Funder has ${balanceItem.balance} ${assetCode}, needs ${amount}`,
+        );
+      }
 
       // Create funding operations
       const operations =
@@ -381,6 +412,42 @@ export class EscrowStellarIntegrationService {
       accountPublicKey,
       filteredCallback,
     );
+  }
+
+  async resolveOnChainDispute(
+    escrowId: string,
+    winnerPublicKey: string,
+    arbitratorPublicKey: string,
+    splitWinnerAmount?: string,
+  ): Promise<string> {
+    try {
+      this.logger.log(
+        `Resolving on-chain dispute for escrow ${escrowId} in favor of ${winnerPublicKey}`,
+      );
+
+      const operations = this.escrowOperationsService.createResolveDisputeOps(
+        escrowId,
+        winnerPublicKey,
+        splitWinnerAmount,
+      );
+
+      const transaction = await this.stellarService.buildTransaction(
+        arbitratorPublicKey,
+        operations,
+      );
+
+      const result = await this.stellarService.submitTransaction(transaction);
+
+      this.logger.log(
+        `Successfully resolved on-chain dispute for escrow ${escrowId}, transaction: ${result.hash}`,
+      );
+      return result.hash;
+    } catch (error) {
+      this.logger.error(
+        `Failed to resolve on-chain dispute for escrow ${escrowId}: ${this.getErrorMessage(error)}`,
+      );
+      throw error;
+    }
   }
 
   /**

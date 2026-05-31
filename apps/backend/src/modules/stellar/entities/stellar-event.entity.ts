@@ -78,4 +78,10 @@ export class StellarEvent {
 
   @Column({ type: 'text', nullable: true })
   reason?: string;
+
+  // Monotonic cursor for incremental sync
+  // Composite of ledger sequence and event index for uniqueness
+  @Column({ type: 'bigint', name: 'cursor' })
+  @Index()
+  cursor: string;
 }

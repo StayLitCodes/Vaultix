@@ -30,19 +30,19 @@ function relativeTime(dateStr: string): string {
 }
 
 const EVENT_META: Record<string, { bg: string; ring: string; badge: string; label: string; iconPath: string }> = {
-  CREATED:            { bg: 'bg-blue-500',   ring: 'ring-blue-100',   badge: 'bg-blue-50 text-blue-700',   label: 'Escrow created',            iconPath: 'M12 6v6m0 0v6m0-6h6m-6 0H6' },
-  FUNDED:             { bg: 'bg-green-500',  ring: 'ring-green-100',  badge: 'bg-green-50 text-green-700', label: 'Escrow funded',             iconPath: 'M5 13l4 4L19 7' },
-  MILESTONE_RELEASED: { bg: 'bg-teal-500',   ring: 'ring-teal-100',   badge: 'bg-teal-50 text-teal-700',   label: 'Milestone released',        iconPath: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z' },
-  DISPUTED:           { bg: 'bg-orange-500', ring: 'ring-orange-100', badge: 'bg-orange-50 text-orange-700', label: 'Dispute raised',           iconPath: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' },
-  RESOLVED:           { bg: 'bg-indigo-500', ring: 'ring-indigo-100', badge: 'bg-indigo-50 text-indigo-700', label: 'Dispute resolved',         iconPath: 'M5 13l4 4L19 7' },
-  EXPIRED:            { bg: 'bg-gray-400',   ring: 'ring-gray-100',   badge: 'bg-gray-50 text-gray-600',   label: 'Escrow expired',            iconPath: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
-  CANCELLED:          { bg: 'bg-red-500',    ring: 'ring-red-100',    badge: 'bg-red-50 text-red-700',     label: 'Escrow cancelled',          iconPath: 'M6 18L18 6M6 6l12 12' },
-  CONDITION_MET:      { bg: 'bg-yellow-500', ring: 'ring-yellow-100', badge: 'bg-yellow-50 text-yellow-700', label: 'Condition met',           iconPath: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
-  PARTY_ACCEPTED:     { bg: 'bg-purple-500', ring: 'ring-purple-100', badge: 'bg-purple-50 text-purple-700', label: 'Party accepted',          iconPath: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
-  COMPLETED:          { bg: 'bg-purple-600', ring: 'ring-purple-100', badge: 'bg-purple-50 text-purple-700', label: 'Escrow completed',        iconPath: 'M5 13l4 4L19 7' },
+  CREATED:            { bg: 'bg-blue-500',   ring: 'ring-blue-100 dark:ring-blue-900/30',   badge: 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300',   label: 'Escrow created',            iconPath: 'M12 6v6m0 0v6m0-6h6m-6 0H6' },
+  FUNDED:             { bg: 'bg-green-500',  ring: 'ring-green-100 dark:ring-green-900/30',  badge: 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300', label: 'Escrow funded',             iconPath: 'M5 13l4 4L19 7' },
+  MILESTONE_RELEASED: { bg: 'bg-teal-500',   ring: 'ring-teal-100 dark:ring-teal-900/30',   badge: 'bg-teal-50 text-teal-700 dark:bg-teal-950 dark:text-teal-300',   label: 'Milestone released',        iconPath: 'M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z' },
+  DISPUTED:           { bg: 'bg-orange-500', ring: 'ring-orange-100 dark:ring-orange-900/30', badge: 'bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-300', label: 'Dispute raised',           iconPath: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z' },
+  RESOLVED:           { bg: 'bg-indigo-500', ring: 'ring-indigo-100 dark:ring-indigo-900/30', badge: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300', label: 'Dispute resolved',         iconPath: 'M5 13l4 4L19 7' },
+  EXPIRED:            { bg: 'bg-gray-400',   ring: 'ring-gray-100 dark:ring-zinc-800',   badge: 'bg-gray-50 text-gray-600 dark:bg-zinc-800 dark:text-zinc-300',   label: 'Escrow expired',            iconPath: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
+  CANCELLED:          { bg: 'bg-red-500',    ring: 'ring-red-100 dark:ring-red-900/30',    badge: 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300',     label: 'Escrow cancelled',          iconPath: 'M6 18L18 6M6 6l12 12' },
+  CONDITION_MET:      { bg: 'bg-yellow-500', ring: 'ring-yellow-100 dark:ring-yellow-900/30', badge: 'bg-yellow-50 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300', label: 'Condition met',           iconPath: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
+  PARTY_ACCEPTED:     { bg: 'bg-purple-500', ring: 'ring-purple-100 dark:ring-purple-900/30', badge: 'bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300', label: 'Party accepted',          iconPath: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
+  COMPLETED:          { bg: 'bg-purple-600', ring: 'ring-purple-100 dark:ring-purple-900/30', badge: 'bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300', label: 'Escrow completed',        iconPath: 'M5 13l4 4L19 7' },
 };
 
-const DEFAULT_META = { bg: 'bg-gray-500', ring: 'ring-gray-100', badge: 'bg-gray-50 text-gray-700', label: '', iconPath: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' };
+const DEFAULT_META = { bg: 'bg-gray-500', ring: 'ring-gray-100 dark:ring-zinc-800', badge: 'bg-gray-50 text-gray-700 dark:bg-zinc-800 dark:text-zinc-300', label: '', iconPath: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' };
 
 function EventIcon({ eventType }: { eventType: string }) {
   const meta = EVENT_META[eventType] ?? DEFAULT_META;
@@ -63,7 +63,7 @@ function EventRow({ event, isLast }: { event: IEscrowEvent; isLast: boolean }) {
     <li>
       <div className="relative pb-7">
         {!isLast && (
-          <span className="absolute top-3.5 left-3.5 -ml-px h-full w-0.5 bg-gray-200" aria-hidden="true" />
+          <span className="absolute top-3.5 left-3.5 -ml-px h-full w-0.5 bg-border" aria-hidden="true" />
         )}
         <div className="relative flex items-start space-x-3">
           <EventIcon eventType={event.eventType} />
@@ -72,7 +72,7 @@ function EventRow({ event, isLast }: { event: IEscrowEvent; isLast: boolean }) {
               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${meta.badge}`}>
                 {event.eventType.replace(/_/g, ' ')}
               </span>
-              <p className="mt-0.5 text-sm text-gray-700">{label}</p>
+              <p className="mt-0.5 text-sm text-foreground">{label}</p>
               {event.actorId && (
                 <a
                   href={`${STELLAR_EXPLORER_BASE}/${event.actorId}`}
@@ -85,7 +85,7 @@ function EventRow({ event, isLast }: { event: IEscrowEvent; isLast: boolean }) {
               )}
             </div>
             <time
-              className="whitespace-nowrap text-xs text-gray-400 pt-0.5"
+              className="whitespace-nowrap text-xs text-muted-foreground pt-0.5"
               title={new Date(event.createdAt).toLocaleString()}
             >
               {relativeTime(event.createdAt)}
@@ -126,11 +126,11 @@ const TimelineSection: React.FC<TimelineSectionProps> = ({ escrow }) => {
   const hasMore = visibleCount < allEvents.length;
 
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h2 className="text-xl font-semibold text-gray-900 mb-4">Activity Timeline</h2>
+    <div className="bg-card text-card-foreground rounded-lg shadow p-6">
+      <h2 className="text-xl font-semibold text-foreground mb-4">Activity Timeline</h2>
 
       {allEvents.length === 0 ? (
-        <p className="text-gray-500 italic text-sm">No events recorded yet.</p>
+        <p className="text-muted-foreground italic text-sm">No events recorded yet.</p>
       ) : (
         <>
           <div className="flow-root">
@@ -144,7 +144,7 @@ const TimelineSection: React.FC<TimelineSectionProps> = ({ escrow }) => {
           {hasMore && (
             <button
               onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}
-              className="mt-4 text-sm text-blue-600 hover:underline"
+              className="mt-4 text-sm text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
             >
               Load more ({allEvents.length - visibleCount} remaining)
             </button>
