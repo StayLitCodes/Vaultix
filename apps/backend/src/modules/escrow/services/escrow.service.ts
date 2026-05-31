@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository, SelectQueryBuilder } from 'typeorm';
-import { Escrow, EscrowStatus } from '../entities/escrow.entity';
+import { Escrow, EscrowStatus, EscrowType } from '../entities/escrow.entity';
 import { Party, PartyRole } from '../entities/party.entity';
 import { Condition } from '../entities/condition.entity';
 import { EscrowEvent, EscrowEventType } from '../entities/escrow-event.entity';
@@ -1236,6 +1236,105 @@ export class EscrowService {
     });
 
     return this.findOne(escrow.id);
+  }
+
+  async releaseMilestone(
+    escrowId: string,
+    conditionId: string,
+    userId: string,
+  ): Promise<Escrow> {
+    const escrow = await this.findOne(escrowId);
+
+    if (escrow.type !== EscrowType.MILESTONE) {
+      throw new BadRequestException('Only milestone escrows support partial releases');
+    }
+
+    if (escrow.status !== EscrowStatus.ACTIVE) {
+      throw new BadRequestException('Escrow is not active');
+    }
+
+    if (escrow.expiresAt && escrow.expiresAt < new Date()) {
+      throw new BadRequestException('Escrow has expired');
+    }
+
+    // Check if user is depositor or arbitrator
+    const isDepositor = escrow.creatorId === userId;
+    const isArbitrator = escrow.parties.some(
+      (party) => party.userId === userId && party.role === 'arbitrator',
+    );
+
+    if (!isDepositor && !isArbitrator) {
+      throw new ForbiddenException('Only depositor or arbitrator can release a milestone');
+    }
+
+    // Find the condition
+    const condition = escrow.conditions.find((c) => c.id === conditionId);
+    if (!condition) {
+      throw new NotFoundException('Condition not found');
+    }
+
+    if (condition.isReleased) {
+      throw new BadRequestException('This milestone has already been released');
+    }
+
+    if (!condition.isMet) {
+      throw new BadRequestException('Milestone must be confirmed before releasing');
+    }
+
+    if (!condition.amount) {
+      throw new BadRequestException('Milestone has no amount defined');
+    }
+
+    // Get the seller/recipient
+    const seller = escrow.parties.find((p) => p.role === 'seller');
+    if (!seller) {
+      throw new BadRequestException('No seller found for this escrow');
+    }
+
+    // Calculate released amount
+    const releaseAmount = parseFloat(condition.amount.toString());
+    const newReleasedAmount = parseFloat(escrow.releasedAmount.toString()) + releaseAmount;
+
+    // Update escrow
+    escrow.releasedAmount = newReleasedAmount;
+
+    // Check if all milestones are released
+    const totalMilestonesAmount = escrow.conditions.reduce(
+      (sum, c) => sum + (c.amount ? parseFloat(c.amount.toString()) : 0),
+      0,
+    );
+
+    // If all are released, set escrow to completed
+    if (newReleasedAmount >= parseFloat(escrow.amount.toString()) ||
+        newReleasedAmount >= totalMilestonesAmount) {
+      escrow.status = EscrowStatus.COMPLETED;
+      escrow.isReleased = true;
+    }
+
+    // Mark condition as released
+    condition.isReleased = true;
+    condition.releasedAt = new Date();
+
+    // Save changes
+    await this.escrowRepository.save(escrow);
+    await this.conditionRepository.save(condition);
+
+    // Log the event
+    await this.logEvent(
+      escrowId,
+      'milestone_released' as any,
+      userId,
+      { conditionId, amount: releaseAmount },
+    );
+
+    // Dispatch webhook
+    await this.webhookService.dispatchEvent('escrow.milestone_released', {
+      escrowId,
+      conditionId,
+      amount: releaseAmount,
+    });
+
+    return this.findOne(escrowId);
   }
 
   async uploadEvidence(

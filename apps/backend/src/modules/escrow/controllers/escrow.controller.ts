@@ -254,6 +254,21 @@ export class EscrowController {
     );
   }
 
+  @Post(':id/conditions/:conditionId/release')
+  @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Release a specific milestone payment' })
+  async releaseMilestone(
+    @Param('id') escrowId: string,
+    @Param('conditionId') conditionId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.escrowService.releaseMilestone(
+      escrowId,
+      conditionId,
+      this.getAuthenticatedUserId(req),
+    );
+  }
+
   /**
    * POST /escrows/:id/dispute
    * File a dispute against an active escrow. Only a buyer or seller party may call this.

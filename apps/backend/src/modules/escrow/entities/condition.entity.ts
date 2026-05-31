@@ -77,6 +77,12 @@ export class Condition {
   @Column({ nullable: true })
   proposedByUserId?: string;
 
+  @Column({ default: false })
+  isReleased: boolean;
+
+  @Column({ type: 'datetime', nullable: true })
+  releasedAt?: Date;
+
   @CreateDateColumn()
   createdAt: Date;
 

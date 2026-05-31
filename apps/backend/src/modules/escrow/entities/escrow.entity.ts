@@ -53,6 +53,9 @@ export class Escrow {
   @Column({ type: 'decimal', precision: 18, scale: 7 })
   amount: number;
 
+  @Column({ type: 'decimal', precision: 18, scale: 7, default: 0 })
+  releasedAmount: number;
+
   @Column({ default: 'XLM', name: 'asset_code' })
   assetCode: string;
 
