@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository, UpdateResult } from 'typeorm';
+import { Readable } from 'stream';
 
 import { EscrowService } from './escrow.service';
 import { Escrow, EscrowStatus, EscrowType } from '../entities/escrow.entity';
@@ -47,7 +48,11 @@ describe('EscrowService', () => {
   let userRepository: jest.Mocked<Repository<User>>;
   let assetRepository: jest.Mocked<Repository<AllowedAsset>>;
 
-  let ipfsService: { uploadFile: jest.Mock; getGatewayUrl: jest.Mock };
+  let ipfsService: {
+    uploadFile: jest.Mock;
+    getGatewayUrl: jest.Mock;
+    getFileStream: jest.Mock;
+  };
   let webhookService: { dispatchEvent: jest.Mock };
 
   // ✅ NEW MOCKS
@@ -128,6 +133,7 @@ describe('EscrowService', () => {
     const mockEventRepo = {
       create: jest.fn(),
       save: jest.fn(),
+      findOne: jest.fn(),
     };
 
     const mockDisputeRepo = {
@@ -148,6 +154,11 @@ describe('EscrowService', () => {
     const mockIpfsService = {
       uploadFile: jest.fn().mockResolvedValue('mock-cid'),
       getGatewayUrl: jest.fn().mockReturnValue('https://ipfs.io/ipfs/mock-cid'),
+      getFileStream: jest.fn().mockResolvedValue({
+        stream: Readable.from(['file-bytes']),
+        contentType: 'application/pdf',
+        contentLength: 10,
+      }),
     };
 
     // ---------------- NEW SERVICE MOCKS ----------------
@@ -247,6 +258,162 @@ describe('EscrowService', () => {
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  describe('dispute evidence pipeline', () => {
+    const disputedEscrow = {
+      ...mockEscrow,
+      status: EscrowStatus.DISPUTED,
+      parties: [{ ...mockParty, userId: 'seller-123' }],
+    } as Escrow;
+
+    const openDispute = {
+      id: 'dispute-123',
+      escrowId: 'escrow-123',
+      filedByUserId: 'user-123',
+      reason: 'Delivery issue',
+      evidence: null,
+      evidenceFiles: null,
+      status: DisputeStatus.OPEN,
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    } as Dispute;
+
+    beforeEach(() => {
+      escrowRepository.findOne.mockResolvedValue(disputedEscrow);
+      userRepository.findOne.mockResolvedValue(null);
+      eventRepository.findOne.mockResolvedValue(null);
+      eventRepository.create.mockImplementation((event) => event as EscrowEvent);
+      eventRepository.save.mockImplementation(
+        async (event) => event as EscrowEvent,
+      );
+    });
+
+    it('uploads evidence files to IPFS and appends immutable dispute metadata', async () => {
+      disputeRepository.findOne.mockResolvedValue({ ...openDispute });
+      disputeRepository.save.mockImplementation(
+        async (dispute) => dispute as Dispute,
+      );
+      ipfsService.uploadFile
+        .mockResolvedValueOnce('cid-1')
+        .mockResolvedValueOnce('cid-2');
+
+      const result = await service.uploadEvidence('escrow-123', 'user-123', [
+        {
+          buffer: Buffer.from('pdf'),
+          originalname: 'invoice.pdf',
+          mimetype: 'application/pdf',
+          size: 3,
+        },
+        {
+          buffer: Buffer.from('png'),
+          originalname: 'photo.png',
+          mimetype: 'image/png',
+          size: 3,
+        },
+      ]);
+
+      expect(ipfsService.uploadFile).toHaveBeenCalledTimes(2);
+      expect(result.cids).toEqual(['cid-1', 'cid-2']);
+      expect(disputeRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          evidence: ['cid-1', 'cid-2'],
+          evidenceFiles: [
+            expect.objectContaining({
+              cid: 'cid-1',
+              name: 'invoice.pdf',
+              type: 'application/pdf',
+              size: 3,
+              uploadedBy: 'user-123',
+            }),
+            expect.objectContaining({
+              cid: 'cid-2',
+              name: 'photo.png',
+              type: 'image/png',
+              size: 3,
+              uploadedBy: 'user-123',
+            }),
+          ],
+        }),
+      );
+    });
+
+    it('lists evidence metadata for dispute parties', async () => {
+      disputeRepository.findOne.mockResolvedValue({
+        ...openDispute,
+        evidenceFiles: [
+          {
+            cid: 'cid-1',
+            name: 'invoice.pdf',
+            type: 'application/pdf',
+            size: 3,
+            uploadedAt: '2026-01-01T00:00:00.000Z',
+            uploadedBy: 'user-123',
+          },
+        ],
+      });
+
+      await expect(
+        service.listEvidence('escrow-123', 'seller-123'),
+      ).resolves.toEqual([
+        expect.objectContaining({
+          cid: 'cid-1',
+          name: 'invoice.pdf',
+        }),
+      ]);
+    });
+
+    it('streams a specific evidence file from IPFS with stored metadata', async () => {
+      disputeRepository.findOne.mockResolvedValue({
+        ...openDispute,
+        evidenceFiles: [
+          {
+            cid: 'cid-1',
+            name: 'invoice.pdf',
+            type: 'application/pdf',
+            size: 3,
+            uploadedAt: '2026-01-01T00:00:00.000Z',
+            uploadedBy: 'user-123',
+          },
+        ],
+      });
+
+      const result = await service.getEvidenceFile(
+        'escrow-123',
+        'seller-123',
+        'cid-1',
+      );
+
+      expect(ipfsService.getFileStream).toHaveBeenCalledWith('cid-1');
+      expect(result.metadata.name).toBe('invoice.pdf');
+      expect(result.contentType).toBe('application/pdf');
+    });
+
+    it('allows admins to access evidence even when they are not escrow parties', async () => {
+      userRepository.findOne.mockResolvedValue({
+        id: 'admin-123',
+        role: UserRole.ADMIN,
+      } as User);
+      disputeRepository.findOne.mockResolvedValue({
+        ...openDispute,
+        evidence: ['legacy-cid'],
+      });
+
+      await expect(
+        service.listEvidence('escrow-123', 'admin-123'),
+      ).resolves.toEqual([
+        expect.objectContaining({
+          cid: 'legacy-cid',
+          name: 'legacy-cid',
+          type: 'application/octet-stream',
+        }),
+      ]);
+    });
+
+    it('rejects evidence access for users who are neither parties nor admins', async () => {
+      await expect(
+        service.listEvidence('escrow-123', 'stranger-123'),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
   });
 
   // ✅ KEEP ALL YOUR EXISTING TESTS BELOW UNCHANGED

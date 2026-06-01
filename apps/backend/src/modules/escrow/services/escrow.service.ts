@@ -8,6 +8,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Readable } from 'stream';
 import {
   Brackets,
   Repository,
@@ -21,6 +22,7 @@ import { Condition } from '../entities/condition.entity';
 import { EscrowEvent, EscrowEventType } from '../entities/escrow-event.entity';
 import {
   Dispute,
+  DisputeEvidenceFile,
   DisputeStatus,
   DisputeOutcome,
 } from '../entities/dispute.entity';
@@ -55,6 +57,13 @@ import { EscrowFundingService } from '../escrow-funding.service';
 import { EscrowDisputeService } from '../escrow-dispute.service';
 import { EscrowQueryService } from '../escrow-query.service';
 import { StellarService } from '../../../services/stellar.service';
+
+interface EvidenceUploadFile {
+  buffer: Buffer;
+  originalname: string;
+  mimetype: string;
+  size: number;
+}
 
 @Injectable()
 export class EscrowService {
@@ -1125,6 +1134,7 @@ export class EscrowService {
       filedByUserId: userId,
       reason: dto.reason,
       evidence: dto.evidence ?? null,
+      evidenceFiles: this.buildAttachedCidMetadata(dto.evidence, userId),
       status: DisputeStatus.OPEN,
     });
     const savedDispute = await this.disputeRepository.save(dispute);
@@ -1535,9 +1545,23 @@ export class EscrowService {
   async uploadEvidence(
     escrowId: string,
     userId: string,
-    file: { buffer: Buffer; originalname: string },
-  ): Promise<{ cid: string; url: string }> {
-    const escrow = await this.findOne(escrowId);
+    files: EvidenceUploadFile[],
+    ipAddress?: string,
+  ): Promise<{ cids: string[]; files: DisputeEvidenceFile[] }> {
+    if (files.length === 0) {
+      throw new BadRequestException('At least one evidence file is required');
+    }
+
+    const escrow = await this.escrowRepository.findOne({
+      where: { id: escrowId },
+      relations: ['parties'],
+    });
+
+    if (!escrow) {
+      throw new NotFoundException('Escrow not found');
+    }
+
+    await this.assertEvidenceAccess(escrowId, userId);
 
     if (escrow.status !== EscrowStatus.DISPUTED) {
       throw new BadRequestException('Escrow is not in disputed status');
@@ -1551,23 +1575,143 @@ export class EscrowService {
       throw new NotFoundException('Dispute record not found');
     }
 
-    // Upload to IPFS
-    const cid = await this.ipfsService.uploadFile(
-      file.buffer,
-      file.originalname,
-    );
+    if (dispute.status === DisputeStatus.RESOLVED) {
+      throw new ConflictException('Cannot add evidence to a resolved dispute');
+    }
 
-    // Update dispute evidence list
+    const uploadedAt = new Date().toISOString();
+    const uploadedFiles: DisputeEvidenceFile[] = [];
+
+    for (const file of files) {
+      const cid = await this.ipfsService.uploadFile(
+        file.buffer,
+        file.originalname,
+      );
+
+      uploadedFiles.push({
+        cid,
+        name: file.originalname,
+        type: file.mimetype,
+        size: file.size,
+        uploadedAt,
+        uploadedBy: userId,
+      });
+    }
+
+    const existingEvidenceFiles = this.getDisputeEvidenceFiles(dispute);
     const evidence = dispute.evidence || [];
-    evidence.push(cid);
+    evidence.push(...uploadedFiles.map((file) => file.cid));
     dispute.evidence = evidence;
+    dispute.evidenceFiles = [...existingEvidenceFiles, ...uploadedFiles];
 
     await this.disputeRepository.save(dispute);
 
+    await this.logEvent(
+      escrowId,
+      EscrowEventType.UPDATED,
+      userId,
+      {
+        action: 'dispute_evidence_uploaded',
+        cids: uploadedFiles.map((file) => file.cid),
+      },
+      ipAddress,
+    );
+
     return {
-      cid,
-      url: this.ipfsService.getGatewayUrl(cid),
+      cids: uploadedFiles.map((file) => file.cid),
+      files: uploadedFiles,
     };
+  }
+
+  async listEvidence(
+    escrowId: string,
+    userId: string,
+  ): Promise<DisputeEvidenceFile[]> {
+    await this.assertEvidenceAccess(escrowId, userId);
+    const dispute = await this.getDispute(escrowId);
+
+    return this.getDisputeEvidenceFiles(dispute);
+  }
+
+  async getEvidenceFile(
+    escrowId: string,
+    userId: string,
+    cid: string,
+  ): Promise<{
+    metadata: DisputeEvidenceFile;
+    stream: Readable;
+    contentType: string;
+    contentLength?: number;
+  }> {
+    await this.assertEvidenceAccess(escrowId, userId);
+    const dispute = await this.getDispute(escrowId);
+    const metadata = this
+      .getDisputeEvidenceFiles(dispute)
+      .find((file) => file.cid === cid);
+
+    if (!metadata) {
+      throw new NotFoundException('Evidence file not found for this dispute');
+    }
+
+    const ipfsFile = await this.ipfsService.getFileStream(cid);
+
+    return {
+      metadata,
+      stream: ipfsFile.stream,
+      contentType:
+        metadata.type || ipfsFile.contentType || 'application/octet-stream',
+      contentLength: ipfsFile.contentLength,
+    };
+  }
+
+  private async assertEvidenceAccess(
+    escrowId: string,
+    userId: string,
+  ): Promise<void> {
+    const [isParty, isAdmin] = await Promise.all([
+      this.isUserPartyToEscrow(escrowId, userId),
+      this.isUserAdmin(userId),
+    ]);
+
+    if (!isParty && !isAdmin) {
+      throw new ForbiddenException(
+        'Only dispute parties and admins can access dispute evidence',
+      );
+    }
+  }
+
+  private getDisputeEvidenceFiles(dispute: Dispute): DisputeEvidenceFile[] {
+    if (dispute.evidenceFiles?.length) {
+      return dispute.evidenceFiles;
+    }
+
+    return this.buildAttachedCidMetadata(
+      dispute.evidence ?? undefined,
+      dispute.filedByUserId,
+      dispute.createdAt,
+    ) ?? [];
+  }
+
+  private buildAttachedCidMetadata(
+    cids: string[] | undefined,
+    uploadedBy: string,
+    uploadedAt: Date | string = new Date(),
+  ): DisputeEvidenceFile[] | null {
+    if (!cids?.length) {
+      return null;
+    }
+
+    const uploadedAtIso =
+      uploadedAt instanceof Date ? uploadedAt.toISOString() : uploadedAt;
+
+    return cids.map((cid) => ({
+      cid,
+      name: cid,
+      type: 'application/octet-stream',
+      size: 0,
+      uploadedAt: uploadedAtIso,
+      uploadedBy,
+    }));
   }
 
   private getErrorMessage(error: unknown): string {

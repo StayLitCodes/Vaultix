@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import axios from 'axios';
+import { Readable } from 'stream';
 import ipfsConfig from '../../config/ipfs.config';
 
 interface PinataResponse {
@@ -53,6 +54,31 @@ export class IpfsService {
     } catch (error) {
       this.logger.error(`Failed to upload file to IPFS: ${filename}`, error);
       throw new InternalServerErrorException('IPFS upload failed');
+    }
+  }
+
+  async getFileStream(
+    cid: string,
+  ): Promise<{ stream: Readable; contentType?: string; contentLength?: number }> {
+    try {
+      const response = await axios.get<Readable>(this.getGatewayUrl(cid), {
+        responseType: 'stream',
+      });
+
+      const contentLength = response.headers['content-length'];
+      const contentType = response.headers['content-type'];
+
+      return {
+        stream: response.data,
+        contentType: Array.isArray(contentType) ? contentType[0] : contentType,
+        contentLength:
+          typeof contentLength === 'string'
+            ? Number.parseInt(contentLength, 10)
+            : undefined,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to retrieve IPFS file: ${cid}`, error);
+      throw new InternalServerErrorException('IPFS retrieval failed');
     }
   }
 

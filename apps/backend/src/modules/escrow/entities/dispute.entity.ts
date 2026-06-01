@@ -23,6 +23,15 @@ export enum DisputeOutcome {
   SPLIT = 'split',
 }
 
+export interface DisputeEvidenceFile {
+  cid: string;
+  name: string;
+  type: string;
+  size: number;
+  uploadedAt: string;
+  uploadedBy: string;
+}
+
 @Entity('disputes')
 export class Dispute {
   @PrimaryGeneratedColumn('uuid')
@@ -48,6 +57,9 @@ export class Dispute {
   // Stores URLs or reference strings pointing to supporting evidence
   @Column({ type: 'simple-json', nullable: true })
   evidence: string[] | null;
+
+  @Column({ type: 'simple-json', nullable: true })
+  evidenceFiles: DisputeEvidenceFile[] | null;
 
   @Column({ type: 'varchar', default: DisputeStatus.OPEN })
   status: DisputeStatus;

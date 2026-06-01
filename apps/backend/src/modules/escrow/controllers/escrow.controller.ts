@@ -9,16 +9,16 @@ import {
   UseGuards,
   Request,
   Req,
+  Res,
   ForbiddenException,
+  BadRequestException,
   UseInterceptors,
-  UploadedFile,
-  ParseFilePipe,
-  MaxFileSizeValidator,
-  FileTypeValidator,
+  UploadedFiles,
+  StreamableFile,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ThrottlerGuard } from '@nestjs/throttler';
-import { Request as ExpressRequest } from 'express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { Request as ExpressRequest, Response } from 'express';
 import {
   ApiBearerAuth,
   ApiOkResponse,
@@ -48,6 +48,57 @@ interface AuthenticatedRequest extends ExpressRequest {
   user: { sub?: string; userId?: string; walletAddress: string };
 }
 
+interface EvidenceUploadFile {
+  buffer: Buffer;
+  originalname: string;
+  mimetype: string;
+  size: number;
+}
+
+const MAX_EVIDENCE_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_EVIDENCE_FILES = 5;
+const ALLOWED_EVIDENCE_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/png',
+  'image/jpg',
+  'image/jpeg',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+]);
+const ALLOWED_EVIDENCE_EXTENSIONS = new Set([
+  'pdf',
+  'png',
+  'jpg',
+  'jpeg',
+  'doc',
+  'docx',
+]);
+
+function evidenceFileFilter(
+  _req: ExpressRequest,
+  file: { originalname: string; mimetype: string },
+  callback: (error: Error | null, acceptFile: boolean) => void,
+) {
+  const extension = file.originalname.split('.').pop()?.toLowerCase();
+  const hasAllowedExtension =
+    extension !== undefined && ALLOWED_EVIDENCE_EXTENSIONS.has(extension);
+
+  if (
+    !ALLOWED_EVIDENCE_MIME_TYPES.has(file.mimetype) ||
+    !hasAllowedExtension
+  ) {
+    callback(
+      new BadRequestException(
+        'Evidence must be a PDF, PNG, JPG, JPEG, DOC, or DOCX file',
+      ),
+      false,
+    );
+    return;
+  }
+
+  callback(null, true);
+}
+
 @Controller('escrows')
 @ApiTags('escrows')
 @ApiBearerAuth()
@@ -62,6 +113,96 @@ export class EscrowController {
     }
 
     return userId;
+  }
+
+  @Post(':id/evidence')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @UseInterceptors(
+    FileFieldsInterceptor(
+      [
+        { name: 'files', maxCount: MAX_EVIDENCE_FILES },
+        { name: 'file', maxCount: MAX_EVIDENCE_FILES },
+      ],
+      {
+        limits: {
+          fileSize: MAX_EVIDENCE_FILE_SIZE,
+          files: MAX_EVIDENCE_FILES,
+        },
+        fileFilter: evidenceFileFilter,
+      },
+    ),
+  )
+  async uploadEvidence(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+    @UploadedFiles()
+    uploadedFiles: {
+      files?: EvidenceUploadFile[];
+      file?: EvidenceUploadFile[];
+    },
+  ) {
+    uploadedFiles = uploadedFiles ?? {};
+    const files = [
+      ...(uploadedFiles.files ?? []),
+      ...(uploadedFiles.file ?? []),
+    ];
+
+    if (files.length === 0) {
+      throw new BadRequestException('At least one evidence file is required');
+    }
+
+    if (files.length > MAX_EVIDENCE_FILES) {
+      throw new BadRequestException(
+        `A maximum of ${MAX_EVIDENCE_FILES} evidence files can be uploaded`,
+      );
+    }
+
+    return this.escrowService.uploadEvidence(
+      id,
+      this.getAuthenticatedUserId(req),
+      files,
+      req.ip || req.socket?.remoteAddress,
+    );
+  }
+
+  @Get(':id/evidence')
+  async listEvidence(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.escrowService.listEvidence(
+      id,
+      this.getAuthenticatedUserId(req),
+    );
+  }
+
+  @Get(':id/evidence/:cid')
+  async getEvidenceFile(
+    @Param('id') id: string,
+    @Param('cid') cid: string,
+    @Request() req: AuthenticatedRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const evidenceFile = await this.escrowService.getEvidenceFile(
+      id,
+      this.getAuthenticatedUserId(req),
+      cid,
+    );
+
+    res.setHeader(
+      'Content-Type',
+      evidenceFile.metadata.type || evidenceFile.contentType,
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${evidenceFile.metadata.name.replace(/"/g, '\\"')}"`,
+    );
+
+    if (evidenceFile.contentLength) {
+      res.setHeader('Content-Length', evidenceFile.contentLength.toString());
+    }
+
+    return new StreamableFile(evidenceFile.stream);
   }
 
   @Post()
@@ -304,26 +445,5 @@ export class EscrowController {
       dto,
       ipAddress,
     );
-  }
-  @Post(':id/evidence')
-  @UseGuards(EscrowAccessGuard)
-  @UseInterceptors(FileInterceptor('file'))
-  async uploadEvidence(
-    @Param('id') id: string,
-    @Request() req: AuthenticatedRequest,
-    @UploadedFile(
-      new ParseFilePipe({
-        validators: [
-          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB
-          new FileTypeValidator({
-            fileType: /(jpg|jpeg|png|pdf|txt|doc|docx)$/,
-          }),
-        ],
-      }),
-    )
-    file: { buffer: Buffer; originalname: string },
-  ) {
-    const userId = this.getAuthenticatedUserId(req);
-    return this.escrowService.uploadEvidence(id, userId, file);
   }
 }
