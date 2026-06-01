@@ -544,6 +544,12 @@ export class EscrowService {
       );
     }
 
+    if (escrow.expiresAt && escrow.expiresAt < new Date()) {
+      throw new BadRequestException(
+        'Cannot cancel an expired escrow. Use expire endpoint instead.',
+      );
+    }
+
     if (escrow.status === EscrowStatus.PENDING) {
       if (escrow.creatorId !== userId) {
         throw new ForbiddenException(
@@ -610,6 +616,90 @@ export class EscrowService {
     });
   }
 
+  async refundExpiredEscrow(id: string): Promise<Escrow> {
+    const escrow = await this.escrowRepository.findOne({
+      where: { id },
+      relations: ['creator'],
+    });
+
+    if (!escrow) {
+      throw new NotFoundException(`Escrow not found: ${id}`);
+    }
+
+    if (escrow.status !== EscrowStatus.EXPIRED) {
+      throw new BadRequestException(
+        'Refund can only be processed for expired escrows',
+      );
+    }
+
+    if (escrow.refundTransactionHash) {
+      return escrow;
+    }
+
+    if (escrow.refundRetryCount >= 3) {
+      throw new ConflictException(
+        `Refund retry limit reached for escrow ${id}. Manual intervention required.`,
+      );
+    }
+
+    if (!escrow.creator?.walletAddress) {
+      throw new BadRequestException(
+        'Escrow creator wallet address is required to process refund',
+      );
+    }
+
+    try {
+      const refundTransactionHash =
+        await this.stellarIntegrationService.cancelOnChainEscrow(
+          escrow.id,
+          escrow.creator.walletAddress,
+        );
+
+      escrow.refundTransactionHash = refundTransactionHash;
+      escrow.releasedAmount = Number(escrow.amount);
+      escrow.refundRetryCount = 0;
+
+      await this.escrowRepository.save(escrow);
+
+      await this.logEvent(
+        escrow.id,
+        EscrowEventType.REFUND_PROCESSED,
+        undefined,
+        {
+          refundTransactionHash,
+          amount: escrow.releasedAmount,
+        },
+      );
+      await this.webhookService.dispatchEvent('escrow.refund_processed', {
+        escrowId: escrow.id,
+        refundTransactionHash,
+      });
+
+      return escrow;
+    } catch (error) {
+      escrow.refundRetryCount = (escrow.refundRetryCount ?? 0) + 1;
+      await this.escrowRepository.save(escrow);
+
+      if (escrow.refundRetryCount >= 3) {
+        await this.logEvent(
+          escrow.id,
+          EscrowEventType.REFUND_FAILED,
+          undefined,
+          {
+            error: error instanceof Error ? error.message : String(error),
+            refundRetryCount: escrow.refundRetryCount,
+          },
+        );
+        await this.webhookService.dispatchEvent('escrow.refund_failed', {
+          escrowId: escrow.id,
+          refundRetryCount: escrow.refundRetryCount,
+        });
+      }
+
+      throw error;
+    }
+  }
+
   async fund(
     id: string,
     dto: FundEscrowDto,
@@ -621,6 +711,12 @@ export class EscrowService {
 
     if (escrow.creatorId !== userId) {
       throw new ForbiddenException('Only the buyer can fund this escrow');
+    }
+
+    if (escrow.expiresAt && escrow.expiresAt < new Date()) {
+      throw new BadRequestException(
+        'Cannot fund an expired escrow. Use expire endpoint instead.',
+      );
     }
 
     if (escrow.status !== EscrowStatus.PENDING) {
@@ -748,11 +844,13 @@ export class EscrowService {
     escrow.status = EscrowStatus.COMPLETED;
     escrow.isReleased = true;
     escrow.releaseTransactionHash = txHash;
+    escrow.releasedAmount = Number(escrow.amount);
 
     await this.escrowRepository.save(escrow);
 
     await this.logEvent(escrow.id, EscrowEventType.COMPLETED, currentUserId, {
       txHash,
+      releasedAmount: escrow.releasedAmount,
     });
     await this.webhookService.dispatchEvent('escrow.released', {
       escrowId: escrow.id,

@@ -4,6 +4,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Escrow, EscrowStatus } from '../entities/escrow.entity';
 import { EscrowEvent } from '../entities/escrow-event.entity';
 import { EscrowService } from './escrow.service';
+import { NotificationService } from '../../../notifications/notifications.service';
 import { Repository } from 'typeorm';
 
 describe('EscrowSchedulerService', () => {
@@ -11,6 +12,7 @@ describe('EscrowSchedulerService', () => {
   let escrowRepo: jest.Mocked<Repository<Escrow>>;
   let eventRepo: jest.Mocked<Repository<EscrowEvent>>;
   let escrowService: jest.Mocked<EscrowService>;
+  let notificationService: jest.Mocked<NotificationService>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -35,6 +37,13 @@ describe('EscrowSchedulerService', () => {
           provide: EscrowService,
           useValue: {
             expireBySystem: jest.fn(),
+            refundExpiredEscrow: jest.fn(),
+          },
+        },
+        {
+          provide: NotificationService,
+          useValue: {
+            handleEscrowEvent: jest.fn(),
           },
         },
       ],
@@ -44,6 +53,7 @@ describe('EscrowSchedulerService', () => {
     escrowRepo = module.get(getRepositoryToken(Escrow));
     eventRepo = module.get(getRepositoryToken(EscrowEvent));
     escrowService = module.get(EscrowService);
+    notificationService = module.get(NotificationService);
   });
 
   const mockEscrow = {
@@ -78,7 +88,11 @@ describe('EscrowSchedulerService', () => {
         {
           ...mockEscrow,
           status: EscrowStatus.ACTIVE,
-          expiresAt: new Date(Date.now() + 1000 * 60 * 60),
+          expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24),
+          creator: { id: 'creator1' },
+          parties: [{ user: { id: 'user1' } }],
+          expirationWarning24hSentAt: null,
+          expirationWarning1hSentAt: null,
         },
       ] as any);
 
@@ -86,6 +100,27 @@ describe('EscrowSchedulerService', () => {
 
       expect(escrowRepo.save).toHaveBeenCalled();
       expect(eventRepo.save).toHaveBeenCalled();
+      expect(notificationService.handleEscrowEvent).toHaveBeenCalled();
+    });
+  });
+
+  describe('processExpiredEscrowRefunds', () => {
+    it('should process expired escrows ready for refunds', async () => {
+      escrowRepo.find.mockResolvedValue([
+        {
+          ...mockEscrow,
+          status: EscrowStatus.EXPIRED,
+          refundTransactionHash: null,
+          refundRetryCount: 0,
+          creator: { id: 'creator1', walletAddress: 'addr1' },
+          parties: [{ user: { id: 'user1' } }],
+        },
+      ] as any);
+      escrowService.refundExpiredEscrow.mockResolvedValue(mockEscrow as any);
+
+      await service.processExpiredEscrowRefunds();
+
+      expect(escrowService.refundExpiredEscrow).toHaveBeenCalledWith('e1');
     });
   });
 

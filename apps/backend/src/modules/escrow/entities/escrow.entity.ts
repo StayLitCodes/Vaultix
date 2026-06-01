@@ -96,6 +96,21 @@ export class Escrow {
   @Column({ type: 'datetime', nullable: true })
   expirationNotifiedAt?: Date;
 
+  @Column({ type: 'datetime', nullable: true })
+  expirationWarning24hSentAt?: Date;
+
+  @Column({ type: 'datetime', nullable: true })
+  expirationWarning1hSentAt?: Date;
+
+  @Column({ nullable: true })
+  refundTransactionHash?: string;
+
+  @Column({ type: 'decimal', precision: 18, scale: 7, default: 0 })
+  releasedAmount: number;
+
+  @Column({ type: 'integer', default: 0 })
+  refundRetryCount: number;
+
   @Column({ default: true })
   isActive: boolean;
 
