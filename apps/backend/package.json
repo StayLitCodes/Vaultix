@@ -54,6 +54,7 @@
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.3",
     "sqlite3": "^5.1.7",
+    "pg": "^8.11.0",
     "stellar-sdk": "^13.3.0",
     "swagger-ui-express": "^5.0.1",
     "typeorm": "^0.3.28"

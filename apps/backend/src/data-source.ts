@@ -17,9 +17,12 @@ import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
 
 config(); // Load .env file
 
-export default new DataSource({
-  type: 'sqlite',
-  database: process.env.DATABASE_PATH || './data/vaultix.db',
+const databaseUrl = process.env.DATABASE_URL;
+const sqlitePath = process.env.DATABASE_PATH || './data/vaultix.db';
+const usePostgres = Boolean(databaseUrl);
+const sslEnabled = process.env.DATABASE_SSL === 'true';
+
+const commonOptions = {
   entities: [
     User,
     RefreshToken,
@@ -38,4 +41,31 @@ export default new DataSource({
   ],
   migrations: ['./src/migrations/*.ts'],
   synchronize: false,
-});
+};
+
+const postgresOptions = {
+  type: 'postgres' as const,
+  url: databaseUrl,
+  ssl: sslEnabled ? { rejectUnauthorized: false } : false,
+  extra: {
+    min: 2,
+    max: 10,
+  },
+};
+
+const sqliteOptions = {
+  type: 'better-sqlite3' as const,
+  database: sqlitePath,
+};
+
+export default new DataSource(
+  usePostgres
+    ? {
+        ...commonOptions,
+        ...postgresOptions,
+      }
+    : {
+        ...commonOptions,
+        ...sqliteOptions,
+      },
+);

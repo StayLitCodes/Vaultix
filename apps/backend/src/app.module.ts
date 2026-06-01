@@ -43,32 +43,47 @@ import ipfsConfig from './config/ipfs.config';
     ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        type: 'sqlite',
-        database: configService.get<string>(
+      useFactory: (configService: ConfigService) => {
+        const databaseUrl = configService.get<string>('DATABASE_URL');
+        const databasePath = configService.get<string>(
           'DATABASE_PATH',
           './data/vaultix.db',
-        ),
-        entities: [
-          User,
-          RefreshToken,
-          Escrow,
-          Party,
-          Condition,
-          EscrowEvent,
-          Dispute,
-          Notification,
-          NotificationPreference,
-          ApiKey,
-          AdminAuditLog,
-          Webhook,
-          StellarEvent,
-          AllowedAsset,
-        ],
-        synchronize: process.env.NODE_ENV === 'test',
-        migrations: [__dirname + '/migrations/*.ts'],
-        migrationsRun: process.env.NODE_ENV !== 'test',
-      }),
+        );
+        const usePostgres = Boolean(databaseUrl);
+        const sslEnabled = configService.get<string>('DATABASE_SSL') === 'true';
+
+        return {
+          type: usePostgres ? 'postgres' : 'better-sqlite3',
+          url: databaseUrl,
+          database: databasePath,
+          ssl: usePostgres ? (sslEnabled ? { rejectUnauthorized: false } : false) : false,
+          extra: usePostgres
+            ? {
+                min: 2,
+                max: 10,
+              }
+            : undefined,
+          entities: [
+            User,
+            RefreshToken,
+            Escrow,
+            Party,
+            Condition,
+            EscrowEvent,
+            Dispute,
+            Notification,
+            NotificationPreference,
+            ApiKey,
+            AdminAuditLog,
+            Webhook,
+            StellarEvent,
+            AllowedAsset,
+          ],
+          synchronize: process.env.NODE_ENV === 'test',
+          migrations: [__dirname + '/migrations/*.ts'],
+          migrationsRun: process.env.NODE_ENV !== 'test',
+        };
+      },
       inject: [ConfigService],
     }),
     AuthModule,
