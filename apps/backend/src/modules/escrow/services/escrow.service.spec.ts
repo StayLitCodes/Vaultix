@@ -249,5 +249,45 @@ describe('EscrowService', () => {
     expect(service).toBeDefined();
   });
 
+  describe('party acceptance flow', () => {
+    it('should accept an invitation', async () => {
+      escrowRepository.findOne.mockResolvedValue({ ...mockEscrow, status: EscrowStatus.PENDING } as any);
+      partyRepository.findOne.mockResolvedValue({ ...mockParty, id: 'party-1', userId: 'user-2', status: PartyStatus.PENDING } as any);
+      partyRepository.save.mockResolvedValue({} as any);
+
+      const result = await service.acceptParty('escrow-1', 'party-1', 'user-2');
+      expect(result.status).toBe(PartyStatus.ACCEPTED);
+      expect(partyRepository.save).toHaveBeenCalled();
+    });
+
+    it('should reject an invitation', async () => {
+      escrowRepository.findOne.mockResolvedValue({ ...mockEscrow, status: EscrowStatus.PENDING } as any);
+      partyRepository.findOne.mockResolvedValue({ ...mockParty, id: 'party-1', userId: 'user-2', status: PartyStatus.PENDING } as any);
+      partyRepository.save.mockResolvedValue({} as any);
+
+      const result = await service.rejectParty('escrow-1', 'party-1', 'user-2');
+      expect(result.status).toBe(PartyStatus.REJECTED);
+      expect(partyRepository.save).toHaveBeenCalled();
+    });
+
+    it('should fail to accept if not user', async () => {
+      escrowRepository.findOne.mockResolvedValue({ ...mockEscrow, status: EscrowStatus.PENDING } as any);
+      partyRepository.findOne.mockResolvedValue({ ...mockParty, id: 'party-1', userId: 'user-2' } as any);
+      
+      await expect(service.acceptParty('escrow-1', 'party-1', 'user-3')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should fail to fund if parties not accepted', async () => {
+      escrowRepository.findOne.mockResolvedValue({ 
+        ...mockEscrow, 
+        creatorId: 'user-1',
+        status: EscrowStatus.PENDING,
+        parties: [{ status: PartyStatus.PENDING } as any]
+      } as any);
+      
+      await expect(service.fund('escrow-1', { amount: 100 } as any, 'user-1', 'addr-1')).rejects.toThrow(BadRequestException);
+    });
+  });
+
   // ✅ KEEP ALL YOUR EXISTING TESTS BELOW UNCHANGED
 });

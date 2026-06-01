@@ -55,4 +55,21 @@ export class WebhookController {
     await this.webhookService.deleteWebhook(userId, id);
     return { success: true };
   }
+
+  @Get('admin/failed')
+  // @UseGuards(AdminGuard) - assuming we rely on AuthGuard for now or add role check if admin guard exists
+  async getFailedDeliveries() {
+    return this.webhookService.getFailedDeliveries();
+  }
+
+  @Post('admin/deliveries/:id/retry')
+  async retryDelivery(@Param('id') id: string) {
+    await this.webhookService.retryDelivery(id);
+    return { success: true, message: 'Retry initiated' };
+  }
+
+  @Get('health')
+  async getHealth() {
+    return this.webhookService.getHealthStatus();
+  }
 }

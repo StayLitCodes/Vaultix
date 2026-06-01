@@ -974,4 +974,44 @@ describe('Escrow (e2e)', () => {
         .expect(400);
     });
   });
+  describe('Party Acceptance', () => {
+    let escrowId: string;
+    let partyId: string;
+
+    beforeEach(async () => {
+      const response = await request(httpServer)
+        .post('/escrows')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          title: 'Party Acceptance Test Escrow',
+          amount: 50,
+          parties: [{ userId: secondUserId, role: PartyRole.SELLER }],
+        });
+      escrowId = (response.body as EscrowResponse).id;
+
+      const escrow = await escrowRepository.findOne({ where: { id: escrowId }, relations: ['parties'] });
+      partyId = escrow!.parties!.find(p => p.userId === secondUserId)!.id;
+    });
+
+    it('should allow an invited user to accept', async () => {
+      await request(httpServer)
+        .post(`/escrows/${escrowId}/parties/${partyId}/accept`)
+        .set('Authorization', `Bearer ${secondAccessToken}`)
+        .expect(201);
+    });
+
+    it('should allow an invited user to reject', async () => {
+      await request(httpServer)
+        .post(`/escrows/${escrowId}/parties/${partyId}/reject`)
+        .set('Authorization', `Bearer ${secondAccessToken}`)
+        .expect(201);
+    });
+
+    it('should not allow accepting another user invitation', async () => {
+      await request(httpServer)
+        .post(`/escrows/${escrowId}/parties/${partyId}/accept`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(403);
+    });
+  });
 });

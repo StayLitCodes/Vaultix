@@ -16,7 +16,7 @@ import {
   LessThan,
 } from 'typeorm';
 import { Escrow, EscrowStatus } from '../entities/escrow.entity';
-import { Party, PartyRole } from '../entities/party.entity';
+import { Party, PartyRole, PartyStatus } from '../entities/party.entity';
 import { Condition } from '../entities/condition.entity';
 import { EscrowEvent, EscrowEventType } from '../entities/escrow-event.entity';
 import {
@@ -237,6 +237,7 @@ export class EscrowService {
         escrowId: savedEscrow.id,
         userId: partyDto.userId,
         role: partyDto.role,
+        status: partyDto.userId === creatorId ? PartyStatus.ACCEPTED : PartyStatus.PENDING,
       }),
     );
     await this.partyRepository.save(parties);
@@ -633,6 +634,11 @@ export class EscrowService {
       throw new BadRequestException('Escrow is already funded');
     }
 
+    const unacceptedParties = escrow.parties?.filter(p => p.status !== PartyStatus.ACCEPTED) || [];
+    if (unacceptedParties.length > 0) {
+      throw new BadRequestException('All parties must accept the invitation before the escrow can be funded');
+    }
+
     const escrowAmount = Number(escrow.amount);
     if (Number(dto.amount) !== escrowAmount) {
       throw new BadRequestException('Amount must match the escrow amount');
@@ -669,6 +675,72 @@ export class EscrowService {
     });
 
     return this.findOne(id);
+  }
+
+  async acceptParty(escrowId: string, partyId: string, userId: string, ipAddress?: string): Promise<Party> {
+    const escrow = await this.findOne(escrowId);
+    if (escrow.status !== EscrowStatus.PENDING) {
+      throw new BadRequestException('Can only accept invitations for pending escrows');
+    }
+
+    const party = await this.partyRepository.findOne({ where: { id: partyId, escrowId } });
+    if (!party) {
+      throw new NotFoundException('Party not found');
+    }
+
+    if (party.userId !== userId) {
+      throw new ForbiddenException('You can only accept your own invitation');
+    }
+
+    if (party.status === PartyStatus.ACCEPTED) {
+      throw new ConflictException('Invitation already accepted');
+    }
+
+    party.status = PartyStatus.ACCEPTED;
+    await this.partyRepository.save(party);
+
+    await this.logEvent(
+      escrowId,
+      EscrowEventType.UPDATED,
+      userId,
+      { action: 'PARTY_ACCEPTED', partyId, role: party.role },
+      ipAddress,
+    );
+
+    return party;
+  }
+
+  async rejectParty(escrowId: string, partyId: string, userId: string, ipAddress?: string): Promise<Party> {
+    const escrow = await this.findOne(escrowId);
+    if (escrow.status !== EscrowStatus.PENDING) {
+      throw new BadRequestException('Can only reject invitations for pending escrows');
+    }
+
+    const party = await this.partyRepository.findOne({ where: { id: partyId, escrowId } });
+    if (!party) {
+      throw new NotFoundException('Party not found');
+    }
+
+    if (party.userId !== userId) {
+      throw new ForbiddenException('You can only reject your own invitation');
+    }
+
+    if (party.status === PartyStatus.REJECTED) {
+      throw new ConflictException('Invitation already rejected');
+    }
+
+    party.status = PartyStatus.REJECTED;
+    await this.partyRepository.save(party);
+
+    await this.logEvent(
+      escrowId,
+      EscrowEventType.UPDATED,
+      userId,
+      { action: 'PARTY_REJECTED', partyId, role: party.role },
+      ipAddress,
+    );
+
+    return party;
   }
 
   async isUserPartyToEscrow(

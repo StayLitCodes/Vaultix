@@ -150,6 +150,32 @@ export class EscrowController {
     return this.escrowService.findEvents(userId, query, id);
   }
 
+  @Post(':id/parties/:partyId/accept')
+  @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Accept an invitation to join an escrow' })
+  async acceptParty(
+    @Param('id') id: string,
+    @Param('partyId') partyId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const userId = this.getAuthenticatedUserId(req);
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.acceptParty(id, partyId, userId, ipAddress);
+  }
+
+  @Post(':id/parties/:partyId/reject')
+  @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Reject an invitation to join an escrow' })
+  async rejectParty(
+    @Param('id') id: string,
+    @Param('partyId') partyId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const userId = this.getAuthenticatedUserId(req);
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.rejectParty(id, partyId, userId, ipAddress);
+  }
+
   @Post(':id/fund')
   @UseGuards(EscrowAccessGuard)
   async fund(
