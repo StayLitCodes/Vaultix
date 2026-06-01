@@ -117,6 +117,7 @@ describe('EscrowService', () => {
     const mockPartyRepo = {
       create: jest.fn(),
       save: jest.fn(),
+      findOne: jest.fn(),
     };
 
     const mockConditionRepo = {
@@ -128,6 +129,7 @@ describe('EscrowService', () => {
     const mockEventRepo = {
       create: jest.fn(),
       save: jest.fn(),
+      findOne: jest.fn(),
     };
 
     const mockDisputeRepo = {
