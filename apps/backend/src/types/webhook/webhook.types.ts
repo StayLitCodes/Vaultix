@@ -7,7 +7,13 @@ export type WebhookEvent =
   | 'escrow.disputed'
   | 'escrow.resolved'
   | 'condition.fulfilled'
-  | 'condition.confirmed';
+  | 'condition.confirmed'
+  | 'milestone.released'
+  | 'party.invited'
+  | 'party.accepted'
+  | 'party.rejected'
+  | 'escrow.refund_processed'
+  | 'escrow.expiration_warning';
 
 export interface WebhookPayload {
   event: WebhookEvent;

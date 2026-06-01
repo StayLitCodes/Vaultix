@@ -4,12 +4,14 @@ import { Escrow } from './entities/escrow.entity';
 import { Party } from './entities/party.entity';
 import { Condition } from './entities/condition.entity';
 import { EscrowEvent } from './entities/escrow-event.entity';
+import { EscrowEventStore } from './entities/escrow-event-store.entity';
 import { Dispute } from './entities/dispute.entity';
 import { EscrowService } from './services/escrow.service';
 import { EscrowSchedulerService } from './services/escrow-scheduler.service';
+import { EscrowEventStoreService } from './services/escrow-event-store.service';
 import { EscrowController } from './controllers/escrow.controller';
 import { EscrowSchedulerController } from './controllers/escrow-scheduler.controller';
-import { EventsController } from './controllers/events.controller';
+import { EventStoreController } from './controllers/event-store.controller';
 import { EscrowAccessGuard } from './guards/escrow-access.guard';
 import { EscrowExpireGuard } from './guards/escrow-expire.guard';
 import { AuthModule } from '../auth/auth.module';
@@ -30,6 +32,7 @@ import { EscrowQueryService } from './escrow-query.service';
       Party,
       Condition,
       EscrowEvent,
+      EscrowEventStore,
       Dispute,
       User,
       AllowedAsset,
@@ -38,10 +41,15 @@ import { EscrowQueryService } from './escrow-query.service';
     WebhookModule,
     IpfsModule,
   ],
-  controllers: [EscrowController, EscrowSchedulerController, EventsController],
+  controllers: [
+    EscrowController,
+    EscrowSchedulerController,
+    EventStoreController,
+  ],
   providers: [
     EscrowService,
     EscrowSchedulerService,
+    EscrowEventStoreService,
     EscrowStellarIntegrationService,
     EscrowAccessGuard,
     EscrowExpireGuard,
@@ -53,6 +61,7 @@ import { EscrowQueryService } from './escrow-query.service';
   exports: [
     EscrowService,
     EscrowSchedulerService,
+    EscrowEventStoreService,
     EscrowLifecycleService,
     EscrowFundingService,
     EscrowDisputeService,

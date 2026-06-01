@@ -22,4 +22,9 @@ npm-debug.log*
 
 # Vaultix Specific Secrets
 wallet_secrets.json
-auth_tokens.json
+auth_tokens.json
+# Vaultix Specific Secrets
+# Issue tracking files
+jp.md
+wallet_secrets.json
+auth_tokens.json
