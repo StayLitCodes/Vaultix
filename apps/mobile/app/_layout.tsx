@@ -6,6 +6,7 @@ import { useBiometricLock } from '../hooks/useBiometricLock';
 import { useAppVersion } from '../hooks/useAppVersion';
 import { MobileLockScreen } from '../components/MobileLockScreen';
 import { UpdatePromptModal } from '../components/UpdatePromptModal';
+import { ToastProvider } from '../contexts/ToastProvider';
 import { useEffect, useRef, useState } from 'react';
 
 export default function RootLayout() {
@@ -42,7 +43,7 @@ export default function RootLayout() {
     !isLoading && needsUpdate && !forceUpdate && isUnlocked && !updateDismissed;
 
   return (
-    <>
+    <ToastProvider>
       {/* Force update gate — renders over everything including biometric lock */}
       <UpdatePromptModal
         visible={showForceUpdate}
@@ -89,6 +90,6 @@ export default function RootLayout() {
         <Stack.Screen name="escrow/create" options={{ title: 'Create Escrow' }} />
         <Stack.Screen name="escrow/release" options={{ title: 'Release Milestone' }} />
       </Stack>
-    </>
+    </ToastProvider>
   );
 }
