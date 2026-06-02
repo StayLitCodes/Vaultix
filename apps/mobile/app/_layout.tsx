@@ -3,15 +3,19 @@ import { StatusBar } from 'expo-status-bar';
 
 import { AppState, AppStateStatus } from 'react-native';
 import { useBiometricLock } from '../hooks/useBiometricLock';
+import { useAppVersion } from '../hooks/useAppVersion';
 import { MobileLockScreen } from '../components/MobileLockScreen';
-import { useEffect, useRef } from 'react';
+import { UpdatePromptModal } from '../components/UpdatePromptModal';
+import { useEffect, useRef, useState } from 'react';
 
 export default function RootLayout() {
   const { isEnabled, isUnlocked, authenticate, lock, disableBiometric } = useBiometricLock();
+  const { needsUpdate, forceUpdate, latestVersion, updateUrl, isLoading } = useAppVersion();
   const appState = useRef(AppState.currentState);
+  const [updateDismissed, setUpdateDismissed] = useState(false);
 
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', nextAppState => {
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
       if (
         appState.current.match(/inactive|background/) &&
         nextAppState === 'active'
@@ -30,17 +34,41 @@ export default function RootLayout() {
     };
   }, [isEnabled, authenticate, lock]);
 
-  if (!isUnlocked) {
-    return (
-      <MobileLockScreen 
-        onUnlock={authenticate} 
-        onDisableFallback={disableBiometric} 
-      />
-    );
-  }
+  // Force update: shown before biometric unlock, cannot be dismissed
+  const showForceUpdate = !isLoading && forceUpdate;
+
+  // Soft update: shown after unlock, dismissible once per session
+  const showSoftUpdate =
+    !isLoading && needsUpdate && !forceUpdate && isUnlocked && !updateDismissed;
 
   return (
     <>
+      {/* Force update gate — renders over everything including biometric lock */}
+      <UpdatePromptModal
+        visible={showForceUpdate}
+        forceUpdate={true}
+        latestVersion={latestVersion}
+        updateUrl={updateUrl}
+        onDismiss={() => {}}
+      />
+
+      {/* Biometric lock gate */}
+      {!showForceUpdate && !isUnlocked && (
+        <MobileLockScreen
+          onUnlock={authenticate}
+          onDisableFallback={disableBiometric}
+        />
+      )}
+
+      {/* Soft update prompt — shown after unlock, dismissible */}
+      <UpdatePromptModal
+        visible={showSoftUpdate}
+        forceUpdate={false}
+        latestVersion={latestVersion}
+        updateUrl={updateUrl}
+        onDismiss={() => setUpdateDismissed(true)}
+      />
+
       <StatusBar style="auto" />
       <Stack
         screenOptions={{

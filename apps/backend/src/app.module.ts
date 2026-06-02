@@ -32,6 +32,7 @@ import { AssetsModule } from './modules/assets/assets.module';
 import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
 import { IpfsModule } from './modules/ipfs/ipfs.module';
 import { HealthModule } from './modules/health/health.module';
+import { AppVersionModule } from './app-version/app-version.module';
 import { EscrowGateway } from './gateways/escrow.gateway';
 import stellarConfig from './config/stellar.config';
 import ipfsConfig from './config/ipfs.config';
@@ -86,6 +87,7 @@ import ipfsConfig from './config/ipfs.config';
     AssetsModule,
     IpfsModule,
     HealthModule,
+    AppVersionModule,
     JwtModule.registerAsync({
       useFactory: (configService: ConfigService) => ({
         secret:

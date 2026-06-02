@@ -87,6 +87,20 @@ export const inviteApi = {
   },
 };
 
+export interface AppVersionResponse {
+  minSupportedVersion: string;
+  latestVersion: string;
+  updateUrl: string;
+}
+
+export const versionApi = {
+  /** #366 – check minimum supported and latest app versions */
+  check: async (): Promise<AppVersionResponse> => {
+    const { data } = await api.get<AppVersionResponse>('/api/app/version');
+    return data;
+  },
+};
+
 export const notificationApi = {
   /** Fetch user notifications */
   list: async (): Promise<NotificationsResponse> => {
