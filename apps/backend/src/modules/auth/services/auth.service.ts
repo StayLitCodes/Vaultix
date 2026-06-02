@@ -1,9 +1,14 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { User } from '../../user/entities/user.entity';
 import { UserService } from '../../user/user.service';
+import { EmailVerification } from '../../user/entities/email-verification.entity';
+import { UpdateProfileDto } from '../dto/profile.dto';
+import { IpfsService } from '../../ipfs/ipfs.service';
 
 // Stellar SDK types for signature verification
 interface StellarKeypair {
@@ -25,6 +30,9 @@ export class AuthService {
     private userService: UserService,
     private jwtService: JwtService,
     private configService: ConfigService,
+    @InjectRepository(EmailVerification)
+    private emailVerificationRepository: Repository<EmailVerification>,
+    private ipfsService: IpfsService,
   ) {}
 
   async generateChallenge(
@@ -48,10 +56,12 @@ export class AuthService {
   }
 
   async verifySignature(
-    walletAddress: string,
     signature: string,
     publicKey: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
+    // Derive walletAddress from publicKey (trusted source after signature verification)
+    const walletAddress = publicKey;
+
     const user = await this.userService.findByWalletAddress(walletAddress);
 
     if (!user || !user.nonce) {
@@ -73,12 +83,6 @@ export class AuthService {
       }
     } catch {
       throw new UnauthorizedException('Signature verification failed');
-    }
-
-    if (publicKey !== walletAddress) {
-      throw new UnauthorizedException(
-        'Public key does not match wallet address',
-      );
     }
 
     await this.userService.update(user.id, { nonce: undefined });
@@ -121,6 +125,73 @@ export class AuthService {
     }
 
     return user;
+  }
+
+  async updateProfile(userId: string, updateProfileDto: UpdateProfileDto): Promise<User> {
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    // If email is being updated, reset emailVerified
+    if (updateProfileDto.email && updateProfileDto.email !== user.email) {
+      updateProfileDto.emailVerified = false;
+    }
+
+    return this.userService.update(userId, updateProfileDto);
+  }
+
+  async uploadAvatar(userId: string, file: { buffer: Buffer; originalname: string }): Promise<User> {
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    const cid = await this.ipfsService.uploadFile(file.buffer, file.originalname);
+    const avatarUrl = this.ipfsService.getGatewayUrl(cid);
+
+    return this.userService.update(userId, { avatarUrl });
+  }
+
+  async sendEmailVerification(userId: string): Promise<void> {
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+    if (!user.email) {
+      throw new BadRequestException('No email set for user');
+    }
+
+    // Generate token
+    const token = crypto.randomUUID();
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 24);
+
+    // Save token
+    const emailVerification = this.emailVerificationRepository.create({
+      userId,
+      token,
+      expiresAt,
+    });
+    await this.emailVerificationRepository.save(emailVerification);
+
+    // TODO: Actually send email (for now, just log it
+    console.log(`Email verification token for ${user.email}: ${token}`);
+  }
+
+  async verifyEmail(token: string): Promise<void> {
+    const verification = await this.emailVerificationRepository.findOne({
+      where: { token, isUsed: false },
+    });
+
+    if (!verification || verification.expiresAt < new Date()) {
+      throw new BadRequestException('Invalid or expired verification token');
+    }
+
+    verification.isUsed = true;
+    await this.emailVerificationRepository.save(verification);
+
+    await this.userService.update(verification.userId, { emailVerified: true });
   }
 
   async validateToken(

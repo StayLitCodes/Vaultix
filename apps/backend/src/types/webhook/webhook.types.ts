@@ -6,6 +6,7 @@ export type WebhookEvent =
   | 'escrow.expired'
   | 'escrow.disputed'
   | 'escrow.resolved'
+  | 'escrow.milestone_released'
   | 'condition.fulfilled'
   | 'condition.confirmed';
 

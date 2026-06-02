@@ -6,45 +6,86 @@ export interface IEscrow {
   asset: string;
   creatorAddress: string;
   counterpartyAddress: string;
-  deadline: string; // ISO date string
-  status: 'created' | 'funded' | 'confirmed' | 'released' | 'completed' | 'cancelled' | 'disputed' | 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'DISPUTED';
-  createdAt: string; // ISO date string
-  updatedAt: string; // ISO date string
+  deadline: string;
+  status:
+    | "created"
+    | "funded"
+    | "confirmed"
+    | "released"
+    | "completed"
+    | "cancelled"
+    | "disputed"
+    | "expired"
+    | "PENDING"
+    | "ACTIVE"
+    | "COMPLETED"
+    | "CANCELLED"
+    | "DISPUTED"
+    | "EXPIRED";
+  createdAt: string;
+  updatedAt: string;
   milestones?: Array<{
     id: string;
     title: string;
     amount: string;
-    status: 'pending' | 'released';
+    status: "pending" | "released";
   }>;
 }
 
 export interface IParty {
   id: string;
   userId: string;
-  role: 'BUYER' | 'SELLER' | 'ARBITRATOR';
-  status: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  role: "BUYER" | "SELLER" | "ARBITRATOR" | "buyer" | "seller" | "arbitrator";
+  status:
+    | "PENDING"
+    | "ACCEPTED"
+    | "REJECTED"
+    | "pending"
+    | "accepted"
+    | "rejected";
   createdAt: string;
 }
 
 export interface ICondition {
   id: string;
+  escrowId?: string;
   description: string;
   type: string;
   metadata?: Record<string, any>;
+  isFulfilled?: boolean;
+  fulfilledAt?: string | null;
+  fulfilledByUserId?: string | null;
+  fulfillmentNotes?: string | null;
+  fulfillmentEvidence?: string | null;
+  isMet?: boolean;
+  metAt?: string | null;
+  metByUserId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface IEscrowEvent {
   id: string;
-  eventType: 'CREATED' | 'PARTY_ADDED' | 'PARTY_ACCEPTED' | 'PARTY_REJECTED' | 'FUNDED' | 'CONDITION_MET' | 'STATUS_CHANGED' | 'UPDATED' | 'CANCELLED' | 'COMPLETED' | 'DISPUTED';
+  eventType:
+    | "CREATED"
+    | "PARTY_ADDED"
+    | "PARTY_ACCEPTED"
+    | "PARTY_REJECTED"
+    | "FUNDED"
+    | "CONDITION_MET"
+    | "STATUS_CHANGED"
+    | "UPDATED"
+    | "CANCELLED"
+    | "COMPLETED"
+    | "DISPUTED";
   actorId?: string;
   data?: Record<string, any>;
   ipAddress?: string;
   createdAt: string;
 }
 
-// Extended IEscrow interface to match backend entities
 export interface IEscrowExtended extends IEscrow {
-  type: 'STANDARD' | 'MILESTONE' | 'TIMED';
+  type: "STANDARD" | "MILESTONE" | "TIMED" | "standard" | "milestone" | "timed";
   creatorId: string;
   expiresAt?: string;
   isActive: boolean;
@@ -61,6 +102,7 @@ export interface IUseEscrowReturn {
   escrow: IEscrowExtended | null;
   loading: boolean;
   error: string | null;
+  refetch: () => Promise<void>;
 }
 
 export interface IWalletHookReturn {
@@ -77,12 +119,16 @@ export interface IEscrowResponse {
 }
 
 export interface IEscrowFilters {
-  status?: 'all' | 'active' | 'pending' | 'completed' | 'disputed';
+  status?: string;
   search?: string;
-  sortBy?: 'date' | 'amount' | 'deadline';
-  sortOrder?: 'asc' | 'desc';
+  sortBy?: "date" | "amount" | "deadline";
+  sortOrder?: "asc" | "desc";
   page?: number;
   limit?: number;
+  minAmount?: string;
+  maxAmount?: string;
+  fromDate?: string;
+  toDate?: string;
 }
 
 export interface IEscrowEventResponse {
@@ -96,4 +142,40 @@ export interface IEscrowEventFilters {
   eventType?: string;
   page?: number;
   limit?: number;
+}
+
+// Dispute related interfaces
+export interface IDispute {
+  id: string;
+  escrowId: string;
+  filedBy: string;
+  reason: string;
+  description: string;
+  evidenceUrls: string[];
+  severity: "LOW" | "MEDIUM" | "HIGH";
+  status: "OPEN" | "UNDER_REVIEW" | "RESOLVED";
+  resolution?: IDisputeResolution;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface IDisputeResolution {
+  id: string;
+  resolvedBy: string;
+  outcome: "RELEASED_TO_SELLER" | "REFUNDED_TO_BUYER" | "SPLIT";
+  notes?: string;
+  splitPercentage?: {
+    buyer: number;
+    seller: number;
+  };
+  resolvedAt: string;
+}
+
+export interface IDisputeTimeline {
+  id: string;
+  disputeId: string;
+  action: "FILED" | "ASSIGNED" | "UNDER_REVIEW" | "RESOLVED";
+  description: string;
+  actorId?: string;
+  createdAt: string;
 }

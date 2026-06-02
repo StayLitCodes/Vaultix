@@ -172,6 +172,15 @@ export class EscrowSchedulerService {
     escrow.expirationNotifiedAt = new Date();
     await this.escrowRepository.save(escrow);
 
+    // Get the last cursor value and increment it for monotonic sequence
+    const lastEvent = await this.escrowEventRepository.findOne({
+      where: {},
+      order: { cursor: 'DESC' },
+    });
+
+    const lastCursor = lastEvent?.cursor ? BigInt(lastEvent.cursor) : BigInt(0);
+    const nextCursor = (lastCursor + BigInt(1)).toString();
+
     await this.escrowEventRepository.save({
       escrowId: escrow.id,
       eventType: EscrowEventType.EXPIRATION_WARNING_SENT,
@@ -179,6 +188,7 @@ export class EscrowSchedulerService {
         expiresAt: escrow.expiresAt,
         warnedAt: new Date(),
       },
+      cursor: nextCursor,
     });
 
     void this.notifyParties(escrow, 'ESCROW_EXPIRING_SOON', {

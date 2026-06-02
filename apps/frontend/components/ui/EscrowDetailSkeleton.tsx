@@ -2,11 +2,11 @@ import { Skeleton } from "./Skeleton";
 
 export function EscrowDetailSkeleton() {
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-background py-8">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
 
       
-        <div className="bg-white rounded-lg p-6 space-y-4">
+        <div className="bg-card text-card-foreground border border-border rounded-lg p-6 space-y-4">
           <Skeleton className="h-8 w-1/3" />
           <Skeleton className="h-4 w-1/4" />
           <div className="flex gap-3">
@@ -19,7 +19,7 @@ export function EscrowDetailSkeleton() {
           <div className="lg:col-span-2 space-y-8">
 
   
-            <div className="bg-white rounded-lg p-6 space-y-4">
+            <div className="bg-card text-card-foreground border border-border rounded-lg p-6 space-y-4">
               <Skeleton className="h-6 w-24" />
               <div className="flex gap-4">
                 <Skeleton className="h-12 w-12 rounded-full" />
@@ -38,7 +38,7 @@ export function EscrowDetailSkeleton() {
             </div>
 
       
-            <div className="bg-white rounded-lg p-6 space-y-4">
+            <div className="bg-card text-card-foreground border border-border rounded-lg p-6 space-y-4">
               <Skeleton className="h-6 w-24" />
               {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="flex gap-3 items-center">
@@ -49,7 +49,7 @@ export function EscrowDetailSkeleton() {
             </div>
 
  
-            <div className="bg-white rounded-lg p-6 space-y-4">
+            <div className="bg-card text-card-foreground border border-border rounded-lg p-6 space-y-4">
               <Skeleton className="h-6 w-28" />
               {Array.from({ length: 4 }).map((_, i) => (
                 <div key={i} className="flex gap-3 items-center">
@@ -66,7 +66,7 @@ export function EscrowDetailSkeleton() {
 
        
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-lg p-6 space-y-4">
+            <div className="bg-card text-card-foreground border border-border rounded-lg p-6 space-y-4">
               <Skeleton className="h-6 w-20" />
               <Skeleton className="h-4 w-full" />
               <Skeleton className="h-4 w-full" />

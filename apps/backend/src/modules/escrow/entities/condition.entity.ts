@@ -65,6 +65,24 @@ export class Condition {
   @Column({ type: 'simple-json', nullable: true })
   metadata?: Record<string, any>;
 
+  @Column({ type: 'decimal', precision: 18, scale: 7, nullable: true })
+  amount?: number;
+
+  @Column({ type: 'decimal', precision: 18, scale: 7, nullable: true })
+  proposedAmount?: number;
+
+  @Column({ type: 'text', nullable: true })
+  proposedDescription?: string;
+
+  @Column({ nullable: true })
+  proposedByUserId?: string;
+
+  @Column({ default: false })
+  isReleased: boolean;
+
+  @Column({ type: 'datetime', nullable: true })
+  releasedAt?: Date;
+
   @CreateDateColumn()
   createdAt: Date;
 

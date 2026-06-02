@@ -37,8 +37,8 @@ export class Notification {
   @Column({ default: 0 })
   retryCount: number;
 
-  @Column({ nullable: true })
-  readAt: Date | null;
+  @Column({ type: 'datetime', nullable: true })
+  readAt?: Date;
 
   @CreateDateColumn()
   createdAt: Date;

@@ -176,7 +176,7 @@ export class ConsistencyCheckerService {
   private mapContractStatus(contractStatus: string): string {
     const statusMap: Record<string, string> = {
       Created: 'pending',
-      Active: 'funded',
+      Active: 'active',
       Completed: 'completed',
       Cancelled: 'cancelled',
       Disputed: 'disputed',

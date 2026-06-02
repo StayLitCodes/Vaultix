@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { fetchEscrow } from '@/lib/escrow-api';
 import { IEscrowExtended, IUseEscrowReturn } from '@/types/escrow';
 
 export const useEscrow = (id: string): IUseEscrowReturn => {
@@ -6,36 +7,34 @@ export const useEscrow = (id: string): IUseEscrowReturn => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchEscrow = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch(`/api/escrows/${id}`);
-        
-        if (!response.ok) {
-          if (response.status === 404) {
-            setError('Escrow not found');
-          } else {
-            setError('Failed to load escrow details');
-          }
-          return;
-        }
-        
-        const data = await response.json();
-        setEscrow(data);
-        setError(null);
-      } catch (err) {
-        setError('An error occurred while fetching escrow details');
-        console.error('Error fetching escrow:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const refetch = useCallback(async () => {
+    if (!id) {
+      setEscrow(null);
+      setLoading(false);
+      return;
+    }
 
-    if (id) {
-      fetchEscrow();
+    try {
+      setLoading(true);
+      const data = await fetchEscrow(id);
+      setEscrow(data);
+      setError(null);
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'An error occurred while fetching escrow details';
+
+      setError(message.includes('404') ? 'Escrow not found' : message);
+      console.error('Error fetching escrow:', err);
+    } finally {
+      setLoading(false);
     }
   }, [id]);
 
-  return { escrow, loading, error };
+  useEffect(() => {
+    void refetch();
+  }, [refetch]);
+
+  return { escrow, loading, error, refetch };
 };

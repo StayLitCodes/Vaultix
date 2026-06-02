@@ -13,6 +13,7 @@ import { ApiKey } from './api-key/entities/api-key.entity';
 import { AdminAuditLog } from './modules/admin/entities/admin-audit-log.entity';
 import { Webhook } from './modules/webhook/webhook.entity';
 import { StellarEvent } from './modules/stellar/entities/stellar-event.entity';
+import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
 
 config(); // Load .env file
 
@@ -33,6 +34,7 @@ export default new DataSource({
     AdminAuditLog,
     Webhook,
     StellarEvent,
+    AllowedAsset,
   ],
   migrations: ['./src/migrations/*.ts'],
   synchronize: false,

@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository, SelectQueryBuilder } from 'typeorm';
-import { Escrow, EscrowStatus } from '../entities/escrow.entity';
+import { Escrow, EscrowStatus, EscrowType } from '../entities/escrow.entity';
 import { Party, PartyRole } from '../entities/party.entity';
 import { Condition } from '../entities/condition.entity';
 import { EscrowEvent, EscrowEventType } from '../entities/escrow-event.entity';
@@ -37,11 +37,14 @@ import { FulfillConditionDto } from '../dto/fulfill-condition.dto';
 import { FileDisputeDto, ResolveDisputeDto } from '../dto/dispute.dto';
 import { FundEscrowDto } from '../dto/fund-escrow.dto';
 import { ExpireEscrowDto } from '../dto/expire-escrow.dto';
+import { ProposeMilestoneChangeDto } from '../dto/milestone-change.dto';
 import { validateTransition, isTerminalStatus } from '../escrow-state-machine';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
 import { WebhookService } from '../../../services/webhook/webhook.service';
 import { User, UserRole } from '../../user/entities/user.entity';
 import { WebSocketEventsService } from '../../../websocket/websocket-events.service';
+import { IpfsService } from '../../ipfs/ipfs.service';
+import { AllowedAsset } from '../../assets/entities/allowed-asset.entity';
 
 @Injectable()
 export class EscrowService {
@@ -58,11 +61,14 @@ export class EscrowService {
     private disputeRepository: Repository<Dispute>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(AllowedAsset)
+    private assetRepository: Repository<AllowedAsset>,
 
     private readonly stellarIntegrationService: EscrowStellarIntegrationService,
     private readonly webhookService: WebhookService,
     @Inject(forwardRef(() => WebSocketEventsService))
     private readonly wsEventsService: WebSocketEventsService,
+    private readonly ipfsService: IpfsService,
   ) {}
 
   async create(
@@ -74,13 +80,17 @@ export class EscrowService {
       title: dto.title,
       description: dto.description,
       amount: dto.amount,
-      asset: dto.asset || 'XLM',
+      assetCode: dto.asset?.code || 'XLM',
+      assetIssuer: dto.asset?.issuer || undefined,
       type: dto.type,
       creatorId,
       expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
-    });
+      metadataHash: dto.metadataHash,
+    } as Partial<Escrow>);
 
-    const savedEscrow = await this.escrowRepository.save(escrow);
+    const savedEscrow = (await this.escrowRepository.save(
+      escrow,
+    )) as unknown as Escrow;
 
     const parties = dto.parties.map((partyDto) =>
       this.partyRepository.create({
@@ -135,7 +145,8 @@ export class EscrowService {
     qb.select([
       'escrow.id AS escrowId',
       'escrow.creatorId AS depositor',
-      'escrow.asset AS token',
+      'escrow.assetCode AS token',
+      'escrow.assetIssuer AS tokenIssuer',
       'escrow.amount AS totalAmount',
       'escrow.status AS status',
       'escrow.expiresAt AS deadline',
@@ -160,6 +171,12 @@ export class EscrowService {
             .limit(1),
         'recipient',
       )
+      .leftJoin(
+        AllowedAsset,
+        'assetInfo',
+        'assetInfo.code = escrow.assetCode AND (assetInfo.issuer = escrow.assetIssuer OR (assetInfo.issuer IS NULL AND escrow.assetIssuer IS NULL))',
+      )
+      .addSelect('COALESCE(assetInfo.decimals, 7)', 'tokenDecimals')
       .setParameter('completedStatus', EscrowStatus.COMPLETED)
       .setParameter('recipientRole', PartyRole.SELLER);
 
@@ -175,13 +192,13 @@ export class EscrowService {
     if (role === EscrowOverviewRole.DEPOSITOR) {
       qb.where('escrow.creatorId = :userId', { userId });
     } else if (role === EscrowOverviewRole.RECIPIENT) {
-      qb.where(`EXISTS (${recipientExistsSubquery})`, { userId });
+      qb.where(`EXISTS ${recipientExistsSubquery}`, { userId });
     } else {
       qb.where(
         new Brackets((overviewScope) => {
           overviewScope
             .where('escrow.creatorId = :userId', { userId })
-            .orWhere(`EXISTS (${recipientExistsSubquery})`, { userId });
+            .orWhere(`EXISTS ${recipientExistsSubquery}`, { userId });
         }),
       );
     }
@@ -203,7 +220,7 @@ export class EscrowService {
     }
 
     if (query.token) {
-      qb.andWhere('escrow.asset = :asset', { asset: query.token });
+      qb.andWhere('escrow.assetCode = :asset', { asset: query.token });
     }
 
     if (query.from) {
@@ -233,6 +250,8 @@ export class EscrowService {
         depositor: string;
         recipient: string | null;
         token: string;
+        tokenIssuer: string | null;
+        tokenDecimals: number;
         totalAmount: string | number;
         totalReleased: string | number;
         remainingAmount: string | number;
@@ -248,16 +267,18 @@ export class EscrowService {
         depositor: row.depositor,
         recipient: row.recipient,
         token: row.token,
-        totalAmount: Number(row.totalAmount),
-        totalReleased: Number(row.totalReleased),
-        remainingAmount: Number(row.remainingAmount),
+        tokenIssuer: row.tokenIssuer || undefined,
+        tokenDecimals: row.tokenDecimals,
+        totalAmount: parseFloat(row.totalAmount.toString()),
+        totalReleased: parseFloat(row.totalReleased.toString()),
+        remainingAmount: parseFloat(row.remainingAmount.toString()),
         status: row.status,
         deadline: row.deadline,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
       })),
       totalItems,
-      totalPages: totalItems > 0 ? Math.ceil(totalItems / pageSize) : 0,
+      totalPages: Math.ceil(totalItems / pageSize),
       page,
       pageSize,
     };
@@ -482,7 +503,7 @@ export class EscrowService {
         id,
         walletAddress,
         String(dto.amount),
-        escrow.asset ?? 'XLM',
+        escrow.assetCode ?? 'XLM',
       );
 
     const fundedAt = new Date();
@@ -885,12 +906,14 @@ export class EscrowService {
       data: event.data,
       ipAddress: event.ipAddress,
       createdAt: event.createdAt,
+      cursor: event.cursor,
       escrow: event.escrow
         ? {
             id: event.escrow.id,
             title: event.escrow.title,
             amount: event.escrow.amount,
-            asset: event.escrow.asset,
+            assetCode: event.escrow.assetCode,
+            assetIssuer: event.escrow.assetIssuer,
             status: event.escrow.status,
           }
         : undefined,
@@ -912,28 +935,28 @@ export class EscrowService {
   ): Promise<Dispute> {
     const escrow = await this.findOne(escrowId);
 
-    if (escrow.status !== EscrowStatus.ACTIVE) {
-      throw new BadRequestException(
-        'Disputes can only be filed against active escrows',
-      );
-    }
-
-    // Only a buyer or seller party may file — arbitrators mediate, they don't file
-    const filingParty = escrow.parties?.find(
-      (p) => p.userId === userId && p.role !== PartyRole.ARBITRATOR,
-    );
-    if (!filingParty) {
-      throw new ForbiddenException(
-        'Only a buyer or seller party can file a dispute',
-      );
-    }
-
     const existing = await this.disputeRepository.findOne({
       where: { escrowId },
     });
     if (existing) {
       throw new ConflictException(
         'A dispute has already been filed for this escrow',
+      );
+    }
+
+    if (escrow.status !== EscrowStatus.ACTIVE) {
+      throw new BadRequestException(
+        'Disputes can only be filed against active escrows',
+      );
+    }
+
+    const isBuyer = escrow.creatorId === userId;
+    const filingParty = escrow.parties?.find(
+      (p) => p.userId === userId && p.role !== PartyRole.ARBITRATOR,
+    );
+    if (!isBuyer && !filingParty) {
+      throw new ForbiddenException(
+        'Only a buyer or seller party can file a dispute',
       );
     }
 
@@ -1089,6 +1112,130 @@ export class EscrowService {
     }) as Promise<Dispute>;
   }
 
+  async proposeMilestoneChange(
+    escrowId: string,
+    conditionId: string,
+    dto: ProposeMilestoneChangeDto,
+    userId: string,
+  ): Promise<Condition> {
+    const escrow = await this.escrowRepository.findOne({
+      where: { id: escrowId },
+      relations: ['conditions', 'parties'],
+    });
+
+    if (!escrow) throw new NotFoundException('Escrow not found');
+
+    if (escrow.status !== EscrowStatus.ACTIVE) {
+      throw new BadRequestException(
+        'Milestones can only be changed when the escrow is ACTIVE',
+      );
+    }
+
+    const isBuyer =
+      escrow.creatorId === userId ||
+      escrow.parties.some(
+        (p) => p.userId === userId && p.role === PartyRole.BUYER,
+      );
+    const isSeller = escrow.parties.some(
+      (p) => p.userId === userId && p.role === PartyRole.SELLER,
+    );
+    if (!isBuyer && !isSeller) {
+      throw new ForbiddenException(
+        'Only the buyer or seller can propose milestone changes',
+      );
+    }
+
+    const condition = escrow.conditions.find((c) => c.id === conditionId);
+    if (!condition) throw new NotFoundException('Condition not found');
+
+    if (condition.isFulfilled || condition.isMet) {
+      throw new BadRequestException(
+        'Cannot change a milestone that is already fulfilled or met',
+      );
+    }
+
+    if (dto.amount === undefined && dto.description === undefined) {
+      throw new BadRequestException(
+        'Must propose at least one change (amount or description)',
+      );
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    condition.proposedAmount = (dto.amount ?? null) as any;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    condition.proposedDescription = (dto.description ?? null) as any;
+    condition.proposedByUserId = userId;
+
+    await this.conditionRepository.save(condition);
+    return condition;
+  }
+
+  async acceptMilestoneChange(
+    escrowId: string,
+    conditionId: string,
+    userId: string,
+  ): Promise<Condition> {
+    const escrow = await this.escrowRepository.findOne({
+      where: { id: escrowId },
+      relations: ['conditions', 'parties'],
+    });
+
+    if (!escrow) throw new NotFoundException('Escrow not found');
+
+    if (escrow.status !== EscrowStatus.ACTIVE) {
+      throw new BadRequestException(
+        'Milestones can only be changed when the escrow is ACTIVE',
+      );
+    }
+
+    const isBuyer =
+      escrow.creatorId === userId ||
+      escrow.parties.some(
+        (p) => p.userId === userId && p.role === PartyRole.BUYER,
+      );
+    const isSeller = escrow.parties.some(
+      (p) => p.userId === userId && p.role === PartyRole.SELLER,
+    );
+    if (!isBuyer && !isSeller) {
+      throw new ForbiddenException(
+        'Only the buyer or seller can accept milestone changes',
+      );
+    }
+
+    const condition = escrow.conditions.find((c) => c.id === conditionId);
+    if (!condition) throw new NotFoundException('Condition not found');
+
+    if (!condition.proposedByUserId) {
+      throw new BadRequestException('No pending proposal for this milestone');
+    }
+
+    if (condition.proposedByUserId === userId) {
+      throw new ForbiddenException(
+        'You cannot accept your own proposed changes',
+      );
+    }
+
+    if (
+      condition.proposedAmount !== null &&
+      condition.proposedAmount !== undefined
+    ) {
+      condition.amount = condition.proposedAmount;
+    }
+    if (condition.proposedDescription) {
+      condition.description = condition.proposedDescription;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    condition.proposedAmount = null as any;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    condition.proposedDescription = null as any;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    condition.proposedByUserId = null as any;
+
+    await this.conditionRepository.save(condition);
+    return condition;
+  }
+
   private async logEvent(
     escrowId: string,
     eventType: EscrowEventType,
@@ -1174,5 +1321,142 @@ export class EscrowService {
     });
 
     return this.findOne(escrow.id);
+  }
+
+  async releaseMilestone(
+    escrowId: string,
+    conditionId: string,
+    userId: string,
+  ): Promise<Escrow> {
+    const escrow = await this.findOne(escrowId);
+
+    if (escrow.type !== EscrowType.MILESTONE) {
+      throw new BadRequestException('Only milestone escrows support partial releases');
+    }
+
+    if (escrow.status !== EscrowStatus.ACTIVE) {
+      throw new BadRequestException('Escrow is not active');
+    }
+
+    if (escrow.expiresAt && escrow.expiresAt < new Date()) {
+      throw new BadRequestException('Escrow has expired');
+    }
+
+    // Check if user is depositor or arbitrator
+    const isDepositor = escrow.creatorId === userId;
+    const isArbitrator = escrow.parties.some(
+      (party) => party.userId === userId && party.role === PartyRole.ARBITRATOR,
+    );
+
+    if (!isDepositor && !isArbitrator) {
+      throw new ForbiddenException('Only depositor or arbitrator can release a milestone');
+    }
+
+    // Find the condition
+    const condition = escrow.conditions.find((c) => c.id === conditionId);
+    if (!condition) {
+      throw new NotFoundException('Condition not found');
+    }
+
+    if (condition.isReleased) {
+      throw new BadRequestException('This milestone has already been released');
+    }
+
+    if (!condition.isMet) {
+      throw new BadRequestException('Milestone must be confirmed before releasing');
+    }
+
+    if (!condition.amount) {
+      throw new BadRequestException('Milestone has no amount defined');
+    }
+
+    // Get the seller/recipient
+    const seller = escrow.parties.find((p) => p.role === PartyRole.SELLER);
+    if (!seller) {
+      throw new BadRequestException('No seller found for this escrow');
+    }
+
+    // Calculate released amount
+    const releaseAmount = parseFloat(condition.amount.toString());
+    const newReleasedAmount = parseFloat(escrow.releasedAmount.toString()) + releaseAmount;
+
+    // Update escrow
+    escrow.releasedAmount = newReleasedAmount;
+
+    // Check if all milestones are released
+    const totalMilestonesAmount = escrow.conditions.reduce(
+      (sum, c) => sum + (c.amount ? parseFloat(c.amount.toString()) : 0),
+      0,
+    );
+
+    // If all are released, set escrow to completed
+    if (newReleasedAmount >= parseFloat(escrow.amount.toString()) ||
+        newReleasedAmount >= totalMilestonesAmount) {
+      escrow.status = EscrowStatus.COMPLETED;
+      escrow.isReleased = true;
+    }
+
+    // Mark condition as released
+    condition.isReleased = true;
+    condition.releasedAt = new Date();
+
+    // Save changes
+    await this.escrowRepository.save(escrow);
+    await this.conditionRepository.save(condition);
+
+    // Log the event
+    await this.logEvent(
+      escrowId,
+      EscrowEventType.MILESTONE_RELEASED,
+      userId,
+      { conditionId, amount: releaseAmount },
+    );
+
+    // Dispatch webhook
+    await this.webhookService.dispatchEvent('escrow.milestone_released', {
+      escrowId,
+      conditionId,
+      amount: releaseAmount,
+    });
+
+    return this.findOne(escrowId);
+  }
+
+  async uploadEvidence(
+    escrowId: string,
+    userId: string,
+    file: { buffer: Buffer; originalname: string },
+  ): Promise<{ cid: string; url: string }> {
+    const escrow = await this.findOne(escrowId);
+
+    if (escrow.status !== EscrowStatus.DISPUTED) {
+      throw new BadRequestException('Escrow is not in disputed status');
+    }
+
+    const dispute = await this.disputeRepository.findOne({
+      where: { escrowId },
+    });
+
+    if (!dispute) {
+      throw new NotFoundException('Dispute record not found');
+    }
+
+    // Upload to IPFS
+    const cid = await this.ipfsService.uploadFile(
+      file.buffer,
+      file.originalname,
+    );
+
+    // Update dispute evidence list
+    const evidence = dispute.evidence || [];
+    evidence.push(cid);
+    dispute.evidence = evidence;
+
+    await this.disputeRepository.save(dispute);
+
+    return {
+      cid,
+      url: this.ipfsService.getGatewayUrl(cid),
+    };
   }
 }

@@ -52,4 +52,12 @@ export class ListEscrowsDto {
   @IsString()
   @IsOptional()
   search?: string;
+
+  @IsString()
+  @IsOptional()
+  assetCode?: string;
+
+  @IsString()
+  @IsOptional()
+  assetIssuer?: string;
 }

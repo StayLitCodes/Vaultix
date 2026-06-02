@@ -10,7 +10,7 @@ import { EscrowService } from '../services/escrow.service';
 import { Escrow } from '../entities/escrow.entity';
 
 interface AuthUser {
-  sub: string;
+  userId: string;
   walletAddress: string;
 }
 
@@ -29,7 +29,7 @@ export class EscrowAccessGuard implements CanActivate {
     const user = request.user;
     const escrowId = request.params.id;
 
-    if (!user || !user.sub) {
+    if (!user || !user.userId) {
       throw new ForbiddenException('User not authenticated');
     }
 
@@ -44,7 +44,7 @@ export class EscrowAccessGuard implements CanActivate {
 
     const isParty = await this.escrowService.isUserPartyToEscrow(
       escrowId,
-      user.sub,
+      user.userId,
     );
 
     if (!isParty) {

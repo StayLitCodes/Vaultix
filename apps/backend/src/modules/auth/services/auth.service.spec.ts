@@ -4,6 +4,9 @@ import { UserService } from '../../user/user.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException } from '@nestjs/common';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { EmailVerification } from '../../user/entities/email-verification.entity';
+import { IpfsService } from '../../ipfs/ipfs.service';
 
 // Mock Stellar SDK
 jest.mock('stellar-sdk', () => ({
@@ -19,6 +22,8 @@ describe('AuthService', () => {
   let userService: jest.Mocked<UserService>;
   let jwtService: jest.Mocked<JwtService>;
   let configService: jest.Mocked<ConfigService>;
+  let emailVerificationRepository: any;
+  let ipfsService: any;
 
   const mockUser = {
     id: 'user-id',
@@ -61,6 +66,21 @@ describe('AuthService', () => {
             get: jest.fn().mockReturnValue('jwt-secret'),
           },
         },
+        {
+          provide: getRepositoryToken(EmailVerification),
+          useValue: {
+            create: jest.fn(),
+            save: jest.fn(),
+            findOne: jest.fn(),
+          },
+        },
+        {
+          provide: IpfsService,
+          useValue: {
+            uploadFile: jest.fn(),
+            getGatewayUrl: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -68,6 +88,8 @@ describe('AuthService', () => {
     userService = module.get(UserService);
     jwtService = module.get(JwtService);
     configService = module.get(ConfigService);
+    emailVerificationRepository = module.get(getRepositoryToken(EmailVerification));
+    ipfsService = module.get(IpfsService);
   });
 
   it('should be defined', () => {
@@ -107,15 +129,7 @@ describe('AuthService', () => {
       userService.findByWalletAddress.mockResolvedValue(null);
 
       await expect(
-        service.verifySignature('GD...123', 'sig', 'GD...123'),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('should throw UnauthorizedException if public key mismatch', async () => {
-      userService.findByWalletAddress.mockResolvedValue(mockUser as any);
-
-      await expect(
-        service.verifySignature('GD...123', 'sig', 'GD...OTHER'),
+        service.verifySignature('sig', 'GD...123'),
       ).rejects.toThrow(UnauthorizedException);
     });
 
@@ -125,7 +139,6 @@ describe('AuthService', () => {
       userService.createRefreshToken.mockResolvedValue({} as any);
 
       const result = await service.verifySignature(
-        'GD...123',
         'sig',
         'GD...123',
       );

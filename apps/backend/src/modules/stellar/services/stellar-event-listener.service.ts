@@ -5,20 +5,31 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+  Inject,
+  forwardRef,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { rpc, xdr, Address } from '@stellar/stellar-sdk';
+import { rpc, xdr, Address, Asset } from '@stellar/stellar-sdk';
 import {
   StellarEvent,
   StellarEventType,
 } from '../entities/stellar-event.entity';
 import { Escrow, EscrowStatus } from '../../escrow/entities/escrow.entity';
 import { SorobanClientService } from '../../../services/stellar/soroban-client.service';
+import { ConsistencyCheckerService } from '../../admin/services/consistency-checker.service';
+import { AllowedAsset } from '../../assets/entities/allowed-asset.entity';
 
 @Injectable()
-export class StellarEventListenerService implements OnModuleInit {
+export class StellarEventListenerService
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(StellarEventListenerService.name);
   private server: rpc.Server;
   private contractId: string;
@@ -27,6 +38,7 @@ export class StellarEventListenerService implements OnModuleInit {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 5000; // 5 seconds
+  private abortController: AbortController | null = null;
 
   constructor(
     private configService: ConfigService,
@@ -35,6 +47,8 @@ export class StellarEventListenerService implements OnModuleInit {
     @InjectRepository(Escrow)
     private escrowRepository: Repository<Escrow>,
     private sorobanClient: SorobanClientService,
+    @Inject(forwardRef(() => ConsistencyCheckerService))
+    private consistencyChecker: ConsistencyCheckerService,
   ) {}
 
   async onModuleInit() {
@@ -46,7 +60,11 @@ export class StellarEventListenerService implements OnModuleInit {
       return;
     }
 
-    await this.startEventListener();
+    void this.startEventListener();
+  }
+
+  async onModuleDestroy() {
+    await this.stopEventListener();
   }
 
   async startEventListener() {
@@ -55,6 +73,7 @@ export class StellarEventListenerService implements OnModuleInit {
       return;
     }
 
+    this.abortController = new AbortController();
     this.isRunning = true;
     this.logger.log(
       `Starting Stellar event listener for contract: ${this.contractId}`,
@@ -67,19 +86,25 @@ export class StellarEventListenerService implements OnModuleInit {
       // Start the event polling loop
       await this.pollEvents();
     } catch (error) {
-      this.logger.error('Failed to start event listener:', error);
-      this.isRunning = false;
-      await this.handleReconnection();
+      if ((error as Error).name !== 'AbortError') {
+        this.logger.error('Failed to start event listener:', error);
+        this.isRunning = false;
+      }
     }
   }
 
   async stopEventListener() {
     this.isRunning = false;
+    if (this.abortController) {
+      this.abortController.abort();
+      this.abortController = null;
+    }
     this.logger.log('Stopped Stellar event listener');
   }
 
   private async initializeLastProcessedLedger() {
     const lastEvent = await this.stellarEventRepository.findOne({
+      where: {},
       order: { ledger: 'DESC' },
     });
 
@@ -98,13 +123,36 @@ export class StellarEventListenerService implements OnModuleInit {
   }
 
   private async pollEvents() {
+    let delay = 10000;
     while (this.isRunning) {
       try {
         await this.processNewEvents();
-        await this.sleep(10000); // Poll every 10 seconds for Soroban
+        delay = 10000;
+        this.reconnectAttempts = 0;
+        await this.sleep(delay, this.abortController?.signal);
       } catch (error) {
-        this.logger.error('Error during event polling:', error);
-        await this.handleReconnection();
+        if ((error as Error).name === 'AbortError') break;
+        this.reconnectAttempts++;
+
+        if (this.reconnectAttempts > this.maxReconnectAttempts) {
+          this.logger.error(
+            `Max reconnection attempts (${this.maxReconnectAttempts}) reached. Stopping event listener.`,
+          );
+          this.isRunning = false;
+          break;
+        }
+
+        const backoffDelay =
+          this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+        this.logger.error(
+          `Error during event polling: ${(error as Error).message}. Reconnecting in ${backoffDelay / 1000}s (Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`,
+        );
+
+        try {
+          await this.sleep(backoffDelay, this.abortController?.signal);
+        } catch (sleepErr) {
+          if ((sleepErr as Error).name === 'AbortError') break;
+        }
       }
     }
   }
@@ -165,13 +213,22 @@ export class StellarEventListenerService implements OnModuleInit {
           break;
         }
 
+        let index = 0;
+        let lastTxHash = '';
         for (const event of response.events) {
+          if (event.txHash === lastTxHash) {
+            index++;
+          } else {
+            index = 0;
+            lastTxHash = event.txHash;
+          }
+
           allEvents.push({
             txHash: event.txHash,
-            eventIndex: 0, // Simplified as Soroban doesn't expose index easily in getEvents?
+            eventIndex: index,
+            event: event,
             ledger: event.ledger,
             timestamp: new Date(event.ledgerClosedAt),
-            rawEvent: event,
           });
         }
 
@@ -246,6 +303,13 @@ export class StellarEventListenerService implements OnModuleInit {
     const eventType = this.mapEventType(event);
     const extractedFields = await this.extractEventFields(event, eventType);
 
+    // Compute monotonic cursor: composite of ledger and eventIndex
+    // Format: ledger * 1000 + eventIndex to ensure uniqueness within ledger
+    const cursor = (
+      BigInt(ledger) * BigInt(1000) +
+      BigInt(eventIndex)
+    ).toString();
+
     return this.stellarEventRepository.create({
       txHash,
       eventIndex,
@@ -256,11 +320,13 @@ export class StellarEventListenerService implements OnModuleInit {
       rawPayload: event,
       extractedFields,
       amount: extractedFields.amount,
-      asset: extractedFields.asset,
+      assetCode: extractedFields.assetCode,
+      assetIssuer: extractedFields.assetIssuer,
       milestoneIndex: extractedFields.milestoneIndex,
       fromAddress: extractedFields.fromAddress,
       toAddress: extractedFields.toAddress,
       reason: extractedFields.reason,
+      cursor,
     });
   }
 
@@ -288,12 +354,44 @@ export class StellarEventListenerService implements OnModuleInit {
 
       switch (eventType) {
         case StellarEventType.ESCROW_CREATED: {
-          // Value: [depositor, recipient, token_address, milestones, deadline]
           const createdVec = value.vec();
           if (createdVec) {
             fields.fromAddress = Address.fromScVal(createdVec[0]).toString();
             fields.toAddress = Address.fromScVal(createdVec[1]).toString();
-            // ... (milestones and other fields can be extracted if needed)
+
+            const milestonesVec = createdVec[3].vec();
+            if (milestonesVec) {
+              let totalAmount = 0;
+              milestonesVec.forEach((m: any) => {
+                const map = m.map();
+                if (map) {
+                  map.forEach((entry: any) => {
+                    const keySym = entry.key().sym().toString();
+                    if (keySym === 'amount') {
+                      totalAmount += Number(entry.val().i128().lo().toString());
+                    }
+                  });
+                }
+              });
+
+              const tokenContractId = Address.fromScVal(
+                createdVec[2],
+              ).toString();
+              let decimals = 7;
+              const asset = await this.getAssetByContractId(tokenContractId);
+              if (asset) {
+                fields.assetCode = asset.code;
+                fields.assetIssuer = asset.issuer;
+                decimals = asset.decimals;
+              } else {
+                fields.assetCode =
+                  tokenContractId ===
+                  'CDLZFC3SYJYDZT7K67VZ75YJFCGSN5W4B77T2YI2EHCWH6I6D6LNCU6B'
+                    ? 'XLM'
+                    : 'UNKNOWN';
+              }
+              fields.amount = totalAmount / Math.pow(10, decimals);
+            }
           }
           break;
         }
@@ -321,12 +419,54 @@ export class StellarEventListenerService implements OnModuleInit {
           // Topics: [Symbol("dispute_raised"), escrow_id, caller]
           fields.fromAddress = Address.fromScVal(topics[2]).toString();
           break;
+
+        case StellarEventType.DISPUTE_RESOLVED:
+          // Topics: [Symbol("dispute_resolved"), escrow_id, winner]
+          fields.toAddress = Address.fromScVal(topics[2]).toString();
+          // Value: split_winner_amount (Option<i128>)
+          if (value.switch() === xdr.ScValType.scvVec()) {
+            const vec = value.vec();
+            if (vec && vec.length > 0) {
+              fields.amount = Number(vec[0].i128().lo().toString());
+            }
+          }
+          break;
       }
     } catch (error) {
       this.logger.error(`Error extracting fields from Soroban event:`, error);
     }
 
     return fields;
+  }
+
+  private async getAssetByContractId(
+    contractAddress: string,
+  ): Promise<AllowedAsset | null> {
+    const assets = await this.stellarEventRepository.manager
+      .getRepository(AllowedAsset)
+      .find({
+        where: { active: true },
+      });
+
+    const networkPassphrase =
+      this.configService.get<string>('stellar.networkPassphrase') ||
+      'Test SDF Network ; September 2015';
+
+    for (const asset of assets) {
+      let assetContractId: string;
+      if (asset.code === 'XLM') {
+        assetContractId =
+          'CDLZFC3SYJYDZT7K67VZ75YJFCGSN5W4B77T2YI2EHCWH6I6D6LNCU6B';
+      } else {
+        const stellarAsset = new Asset(asset.code, asset.issuer);
+        assetContractId = stellarAsset.contractId(networkPassphrase);
+      }
+
+      if (assetContractId === contractAddress) {
+        return asset;
+      }
+    }
+    return null;
   }
 
   private mapEventType(event: any): StellarEventType {
@@ -391,7 +531,7 @@ export class StellarEventListenerService implements OnModuleInit {
           break;
 
         case StellarEventType.DISPUTE_RESOLVED:
-          this.handleDisputeResolved(event);
+          await this.handleDisputeResolved(event);
           break;
       }
     } catch (error) {
@@ -402,40 +542,72 @@ export class StellarEventListenerService implements OnModuleInit {
     }
   }
 
+  private async checkStateMismatch(
+    escrowId: string,
+    expectedStatus: EscrowStatus,
+  ) {
+    const escrow = await this.escrowRepository.findOne({
+      where: { id: escrowId },
+    });
+    if (escrow && escrow.status !== expectedStatus) {
+      this.logger.warn(
+        `State mismatch detected for escrow ${escrowId}: DB status is '${escrow.status}', but on-chain event indicates status should be '${expectedStatus}'.`,
+      );
+      try {
+        await this.consistencyChecker.checkConsistency({
+          escrowIds: [Number(escrowId)],
+        });
+      } catch (err) {
+        this.logger.error(
+          `Failed to run consistency check for escrow ${escrowId}:`,
+          err,
+        );
+      }
+    }
+  }
+
   private async handleEscrowCreated(event: StellarEvent) {
+    if (!event.escrowId) return;
     // Check if escrow already exists
-    let escrow = await this.escrowRepository.findOne({
+    const escrow = await this.escrowRepository.findOne({
       where: { id: event.escrowId },
     });
 
     if (!escrow) {
       // Create new escrow from event data
-      escrow = this.escrowRepository.create({
+      const newEscrow = this.escrowRepository.create({
         id: event.escrowId,
         title: `Escrow ${event.escrowId}`, // Extract from event if available
         amount: event.amount || 0,
-        asset: event.asset || 'XLM',
+        assetCode: event.assetCode || 'XLM',
+        assetIssuer: event.assetIssuer || null,
         status: EscrowStatus.PENDING,
         creatorId: event.fromAddress, // This would need to be mapped to user ID
         isActive: true,
         createdAt: event.timestamp,
         updatedAt: event.timestamp,
-      });
+      } as any);
 
-      await this.escrowRepository.save(escrow);
+      await this.escrowRepository.save(newEscrow);
       this.logger.log(`Created new escrow from blockchain: ${event.escrowId}`);
+    } else {
+      await this.checkStateMismatch(event.escrowId, EscrowStatus.PENDING);
     }
   }
 
   private async handleEscrowFunded(event: StellarEvent) {
+    if (!event.escrowId) return;
     const escrow = await this.escrowRepository.findOne({
       where: { id: event.escrowId },
     });
 
-    if (escrow && escrow.status === EscrowStatus.PENDING) {
-      escrow.status = EscrowStatus.ACTIVE;
-      await this.escrowRepository.save(escrow);
-      this.logger.log(`Updated escrow status to ACTIVE: ${event.escrowId}`);
+    if (escrow) {
+      await this.checkStateMismatch(event.escrowId, EscrowStatus.ACTIVE);
+      if (escrow.status === EscrowStatus.PENDING) {
+        escrow.status = EscrowStatus.ACTIVE;
+        await this.escrowRepository.save(escrow);
+        this.logger.log(`Updated escrow status to ACTIVE: ${event.escrowId}`);
+      }
     }
   }
 
@@ -448,83 +620,92 @@ export class StellarEventListenerService implements OnModuleInit {
   }
 
   private async handleEscrowCompleted(event: StellarEvent) {
+    if (!event.escrowId) return;
     const escrow = await this.escrowRepository.findOne({
       where: { id: event.escrowId },
     });
 
-    if (escrow && !this.isTerminalStatus(escrow.status)) {
-      escrow.status = EscrowStatus.COMPLETED;
-      escrow.isActive = false;
-      await this.escrowRepository.save(escrow);
-      this.logger.log(`Completed escrow: ${event.escrowId}`);
+    if (escrow) {
+      await this.checkStateMismatch(event.escrowId, EscrowStatus.COMPLETED);
+      if (!this.isTerminalStatus(escrow.status)) {
+        escrow.status = EscrowStatus.COMPLETED;
+        escrow.isActive = false;
+        await this.escrowRepository.save(escrow);
+        this.logger.log(`Completed escrow: ${event.escrowId}`);
+      }
     }
   }
 
   private async handleEscrowCancelled(event: StellarEvent) {
+    if (!event.escrowId) return;
     const escrow = await this.escrowRepository.findOne({
       where: { id: event.escrowId },
     });
 
-    if (escrow && !this.isTerminalStatus(escrow.status)) {
-      escrow.status = EscrowStatus.CANCELLED;
-      escrow.isActive = false;
-      await this.escrowRepository.save(escrow);
-      this.logger.log(`Cancelled escrow: ${event.escrowId}`);
+    if (escrow) {
+      await this.checkStateMismatch(event.escrowId, EscrowStatus.CANCELLED);
+      if (!this.isTerminalStatus(escrow.status)) {
+        escrow.status = EscrowStatus.CANCELLED;
+        escrow.isActive = false;
+        await this.escrowRepository.save(escrow);
+        this.logger.log(`Cancelled escrow: ${event.escrowId}`);
+      }
     }
   }
 
   private async handleDisputeCreated(event: StellarEvent) {
+    if (!event.escrowId) return;
     const escrow = await this.escrowRepository.findOne({
       where: { id: event.escrowId },
     });
 
-    if (escrow && escrow.status === EscrowStatus.ACTIVE) {
-      escrow.status = EscrowStatus.DISPUTED;
-      await this.escrowRepository.save(escrow);
-      this.logger.log(`Escrow disputed: ${event.escrowId}`);
+    if (escrow) {
+      await this.checkStateMismatch(event.escrowId, EscrowStatus.DISPUTED);
+      if (escrow.status === EscrowStatus.ACTIVE) {
+        escrow.status = EscrowStatus.DISPUTED;
+        await this.escrowRepository.save(escrow);
+        this.logger.log(`Escrow disputed: ${event.escrowId}`);
+      }
     }
   }
 
-  private handleDisputeResolved(event: StellarEvent): void {
-    // This would handle dispute resolution logic
+  private async handleDisputeResolved(event: StellarEvent) {
+    if (!event.escrowId) return;
     this.logger.log(`Dispute resolved for escrow: ${event.escrowId}`);
+    try {
+      await this.consistencyChecker.checkConsistency({
+        escrowIds: [Number(event.escrowId)],
+      });
+    } catch (err) {
+      this.logger.error(
+        `Failed to trigger consistency check after dispute resolved:`,
+        err,
+      );
+    }
   }
 
   private isTerminalStatus(status: EscrowStatus): boolean {
     return [EscrowStatus.COMPLETED, EscrowStatus.CANCELLED].includes(status);
   }
 
-  private async handleReconnection() {
-    if (!this.isRunning) {
-      return;
-    }
+  private sleep(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        const err = new Error('AbortError');
+        err.name = 'AbortError';
+        reject(err);
+        return;
+      }
 
-    this.reconnectAttempts++;
+      const timeout = setTimeout(resolve, ms);
 
-    if (this.reconnectAttempts > this.maxReconnectAttempts) {
-      this.logger.error(
-        'Max reconnection attempts reached. Stopping event listener.',
-      );
-      this.isRunning = false;
-      return;
-    }
-
-    this.logger.warn(
-      `Reconnection attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts}`,
-    );
-    await this.sleep(this.reconnectDelay);
-
-    try {
-      await this.startEventListener();
-      this.reconnectAttempts = 0; // Reset on successful reconnection
-    } catch (error) {
-      this.logger.error('Reconnection failed:', error);
-      await this.handleReconnection();
-    }
-  }
-
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+      signal?.addEventListener('abort', () => {
+        clearTimeout(timeout);
+        const err = new Error('AbortError');
+        err.name = 'AbortError';
+        reject(err);
+      });
+    });
   }
 
   // Public methods for external control

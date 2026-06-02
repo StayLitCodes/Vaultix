@@ -8,6 +8,7 @@ import {
 import { Escrow, EscrowStatus } from '../../escrow/entities/escrow.entity';
 import { SorobanClientService } from '../../../services/stellar/soroban-client.service';
 import { ConfigService } from '@nestjs/config';
+import { ConsistencyCheckerService } from '../../admin/services/consistency-checker.service';
 
 describe('StellarEventListenerService', () => {
   let service: StellarEventListenerService;
@@ -52,6 +53,12 @@ describe('StellarEventListenerService', () => {
           useValue: {
             getContractId: jest.fn().mockReturnValue('contract-id'),
             getRpc: jest.fn().mockReturnValue(rpcServer),
+          },
+        },
+        {
+          provide: ConsistencyCheckerService,
+          useValue: {
+            checkConsistency: jest.fn().mockResolvedValue({}),
           },
         },
       ],

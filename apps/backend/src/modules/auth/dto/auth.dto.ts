@@ -11,12 +11,6 @@ export class ChallengeDto {
 export class VerifyDto {
   @IsString()
   @IsNotEmpty()
-  @Length(1, 56)
-  @Matches(/^G[A-Z0-9]{55}$/)
-  walletAddress: string;
-
-  @IsString()
-  @IsNotEmpty()
   signature: string;
 
   @IsString()

@@ -14,6 +14,7 @@ import { EscrowEventType } from '../entities/escrow-event.entity';
 export enum EventSortBy {
   CREATED_AT = 'createdAt',
   EVENT_TYPE = 'eventType',
+  CURSOR = 'cursor',
 }
 
 export enum EventSortOrder {
@@ -62,4 +63,19 @@ export class ListEventsDto {
   @IsEnum(EventSortOrder)
   @IsOptional()
   sortOrder?: EventSortOrder = EventSortOrder.DESC;
+
+  // Cursor-based pagination for incremental sync
+  @IsString()
+  @IsOptional()
+  cursor?: string;
+
+  // When using cursor, fetch events after this cursor
+  @IsString()
+  @IsOptional()
+  after?: string;
+
+  // When using cursor, fetch events before this cursor
+  @IsString()
+  @IsOptional()
+  before?: string;
 }

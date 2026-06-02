@@ -6,7 +6,7 @@ import { EscrowService } from '../services/escrow.service';
 import { ListEventsDto } from '../dto/list-events.dto';
 
 interface AuthenticatedRequest extends ExpressRequest {
-  user: { sub: string; walletAddress: string };
+  user: { userId: string; walletAddress: string };
 }
 
 @Controller('events')
@@ -19,7 +19,7 @@ export class EventsController {
     @Query() query: ListEventsDto,
     @Request() req: AuthenticatedRequest,
   ) {
-    const userId = req.user.sub;
+    const userId = req.user.userId;
     return this.escrowService.findEvents(userId, query);
   }
 }

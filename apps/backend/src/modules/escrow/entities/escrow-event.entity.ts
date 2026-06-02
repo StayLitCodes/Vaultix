@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   ManyToOne,
   JoinColumn,
+  Index,
 } from 'typeorm';
 import { Escrow } from './escrow.entity';
 
@@ -25,6 +26,7 @@ export enum EscrowEventType {
   DISPUTE_RESOLVED = 'dispute_resolved',
   EXPIRED = 'expired',
   EXPIRATION_WARNING_SENT = 'expiration_warning_sent',
+  MILESTONE_RELEASED = 'milestone_released',
 }
 
 @Entity('escrow_events')
@@ -55,4 +57,10 @@ export class EscrowEvent {
 
   @CreateDateColumn()
   createdAt: Date;
+
+  // Monotonic cursor for incremental sync
+  // Auto-incrementing sequence number for ordering events
+  @Column({ type: 'bigint', name: 'cursor' })
+  @Index()
+  cursor: string;
 }

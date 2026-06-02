@@ -27,6 +27,7 @@ describe('EscrowSchedulerService', () => {
         {
           provide: getRepositoryToken(EscrowEvent),
           useValue: {
+            findOne: jest.fn(),
             save: jest.fn(),
           },
         },

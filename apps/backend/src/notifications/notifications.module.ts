@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigModule } from '@nestjs/config';
+import { AuthModule } from '../modules/auth/auth.module';
 import { Notification } from './entities/notification.entity';
 import { NotificationPreference } from './entities/notification-preference.entity';
 import { NotificationController } from './notifications.controller';
@@ -11,6 +13,8 @@ import { WebSocketModule } from '../websocket/websocket.module';
 
 @Module({
   imports: [
+    ConfigModule,
+    AuthModule,
     TypeOrmModule.forFeature([Notification, NotificationPreference]),
     WebSocketModule,
   ],

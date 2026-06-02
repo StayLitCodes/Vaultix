@@ -2,7 +2,7 @@ import { Skeleton } from "./Skeleton";
 
 export function EscrowCardSkeleton() {
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+    <div className="bg-card text-card-foreground border border-border rounded-lg shadow-sm overflow-hidden">
       <div className="p-6">
         <div className="flex justify-between items-start">
           <div className="flex-1 min-w-0">

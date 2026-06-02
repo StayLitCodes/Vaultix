@@ -1,16 +1,17 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
+import { JwtModule } from '@nestjs/jwt';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
 import { UserModule } from './modules/user/user.module';
 import { StellarModule } from './modules/stellar/stellar.module';
-import { AdminModule } from './modules/admin/admin.module';
 import { WebhookModule } from './modules/webhook/webhook.module';
 import { User } from './modules/user/entities/user.entity';
 import { RefreshToken } from './modules/user/entities/refresh-token.entity';
+import { EmailVerification } from './modules/user/entities/email-verification.entity';
 import { Escrow } from './modules/escrow/entities/escrow.entity';
 import { Party } from './modules/escrow/entities/party.entity';
 import { Condition } from './modules/escrow/entities/condition.entity';
@@ -19,7 +20,6 @@ import { Dispute } from './modules/escrow/entities/dispute.entity';
 import { NotificationsModule } from './notifications/notifications.module';
 import { EscrowModule } from './modules/escrow/escrow.module';
 import { ApiKeyModule } from './api-key/api-key.module';
-import { StellarEventModule } from './modules/stellar/stellar-event.module';
 import { Notification } from './notifications/entities/notification.entity';
 import { NotificationPreference } from './notifications/entities/notification-preference.entity';
 import { ApiKey } from './api-key/entities/api-key.entity';
@@ -27,11 +27,22 @@ import { AdminAuditLog } from './modules/admin/entities/admin-audit-log.entity';
 import { Webhook } from './modules/webhook/webhook.entity';
 import { StellarEvent } from './modules/stellar/entities/stellar-event.entity';
 import { WebSocketModule } from './websocket/websocket.module';
+import { AdminModule } from './modules/admin/admin.module';
+import { StellarEventModule } from './modules/stellar/stellar-event.module';
+import { AssetsModule } from './modules/assets/assets.module';
+import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
+import { IpfsModule } from './modules/ipfs/ipfs.module';
+import { HealthModule } from './modules/health/health.module';
+import { AppVersionModule } from './app-version/app-version.module';
+import { EscrowGateway } from './gateways/escrow.gateway';
+import stellarConfig from './config/stellar.config';
+import ipfsConfig from './config/ipfs.config';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
+      load: [stellarConfig, ipfsConfig],
     }),
     ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
@@ -45,6 +56,7 @@ import { WebSocketModule } from './websocket/websocket.module';
         entities: [
           User,
           RefreshToken,
+          EmailVerification,
           Escrow,
           Party,
           Condition,
@@ -56,10 +68,11 @@ import { WebSocketModule } from './websocket/websocket.module';
           AdminAuditLog,
           Webhook,
           StellarEvent,
+          AllowedAsset,
         ],
-        synchronize: false,
+        synchronize: process.env.NODE_ENV === 'test',
         migrations: [__dirname + '/migrations/*.ts'],
-        migrationsRun: true,
+        migrationsRun: process.env.NODE_ENV !== 'test',
       }),
       inject: [ConfigService],
     }),
@@ -67,14 +80,30 @@ import { WebSocketModule } from './websocket/websocket.module';
     UserModule,
     EscrowModule,
     StellarModule,
-    AdminModule,
+    forwardRef(() => AdminModule),
     WebhookModule,
     NotificationsModule,
     ApiKeyModule,
-    StellarEventModule,
+    forwardRef(() => StellarEventModule),
     WebSocketModule,
+    AssetsModule,
+    IpfsModule,
+    HealthModule,
+    AppVersionModule,
+    JwtModule.registerAsync({
+      useFactory: (configService: ConfigService) => ({
+        secret:
+          configService.get<string>('JWT_SECRET') ||
+          'your-secret-key-change-in-production',
+        signOptions: { expiresIn: '15m' },
+      }),
+      inject: [ConfigService],
+    }),
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    EscrowGateway, // WebSocket Gateway for real-time updates
+  ],
 })
 export class AppModule {}
