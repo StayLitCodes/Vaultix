@@ -1,0 +1,25 @@
+# Node.js
+node_modules/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Editor directories and files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Vaultix Specific Secrets
+wallet_secrets.json
+auth_tokens.json

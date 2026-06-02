@@ -1,0 +1,466 @@
+import { Injectable, Logger, Inject } from '@nestjs/common';
+import { ConfigType } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Escrow } from '../entities/escrow.entity';
+import { Party } from '../entities/party.entity';
+import { Condition } from '../entities/condition.entity';
+import { StellarService } from '../../../services/stellar.service';
+import { EscrowOperationsService } from '../../../services/stellar/escrow-operations';
+import stellarConfig from '../../../config/stellar.config';
+import {
+  StellarSubmitTransactionResponse,
+  StellarTransactionResponse,
+} from '../../../types/stellar.types';
+import * as StellarSdk from '@stellar/stellar-sdk';
+
+@Injectable()
+export class EscrowStellarIntegrationService {
+  private readonly logger = new Logger(EscrowStellarIntegrationService.name);
+
+  constructor(
+    @Inject(stellarConfig.KEY)
+    private config: ConfigType<typeof stellarConfig>,
+    private stellarService: StellarService,
+    private escrowOperationsService: EscrowOperationsService,
+    @InjectRepository(Escrow)
+    private escrowRepository: Repository<Escrow>,
+    @InjectRepository(Party)
+    private partyRepository: Repository<Party>,
+    @InjectRepository(Condition)
+    private conditionRepository: Repository<Condition>,
+  ) {}
+
+  /**
+   * Creates an escrow contract on the Stellar blockchain
+   * @param escrowId The ID of the escrow to create on-chain
+   * @returns Transaction hash of the creation transaction
+   */
+  async createOnChainEscrow(escrowId: string): Promise<string> {
+    try {
+      this.logger.log(`Creating on-chain escrow for ID: ${escrowId}`);
+
+      // Get the escrow from the database
+      const escrow = await this.escrowRepository.findOne({
+        where: { id: escrowId },
+        relations: ['parties', 'parties.user', 'conditions'],
+      });
+
+      if (!escrow) {
+        throw new Error(`Escrow with ID ${escrowId} not found`);
+      }
+
+      if (!escrow.metadataHash) {
+        throw new Error(
+          `Escrow ${escrowId} is missing metadataHash for on-chain creation`,
+        );
+      }
+
+      // Get the depositor (usually the buyer)
+      const depositor = escrow.parties.find(
+        (party) => party.role === ('buyer' as any),
+      );
+      if (!depositor) {
+        throw new Error(`Depositor not found for escrow ${escrowId}`);
+      }
+
+      // Get the recipient (usually the seller)
+      const recipient = escrow.parties.find(
+        (party) => party.role === ('seller' as any),
+      );
+      if (!recipient) {
+        throw new Error(`Recipient not found for escrow ${escrowId}`);
+      }
+
+      // Convert conditions to milestones format
+      const milestones = escrow.conditions.map((condition, index) => ({
+        id: index,
+        amount: (
+          parseFloat(escrow.amount.toString()) / escrow.conditions.length
+        ).toString(),
+        description: condition.description,
+      }));
+
+      // Create operations for escrow initialization
+      const operations =
+        this.escrowOperationsService.createEscrowInitializationOps(
+          escrowId,
+          depositor.user.walletAddress, // User's Stellar wallet address
+          recipient.user.walletAddress, // User's Stellar wallet address
+          escrow.assetCode === 'XLM'
+            ? 'native'
+            : new StellarSdk.Asset(
+                escrow.assetCode,
+                escrow.assetIssuer,
+              ).contractId(this.config.networkPassphrase),
+          milestones,
+          escrow.expiresAt
+            ? Math.floor(new Date(escrow.expiresAt).getTime() / 1000)
+            : Math.floor(Date.now() / 1000) + 86400, // Convert to Unix timestamp or default to 24 hours
+          escrow.metadataHash,
+        );
+
+      // Build the transaction
+      const transaction = await this.stellarService.buildTransaction(
+        depositor.user.walletAddress, // Source account
+        operations,
+      );
+
+      // Submit the transaction to the Stellar network
+      const result: StellarSubmitTransactionResponse =
+        await this.stellarService.submitTransaction(transaction);
+
+      this.logger.log(
+        `Successfully created on-chain escrow ${escrowId}, transaction: ${result.hash}`,
+      );
+      return result.hash;
+    } catch (error) {
+      this.logger.error(
+        `Failed to create on-chain escrow ${escrowId}: ${this.getErrorMessage(error)}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Funds an escrow on the Stellar blockchain
+   * @param escrowId The ID of the escrow to fund
+   * @param funderPublicKey The public key of the account funding the escrow
+   * @param amount The amount to fund
+   * @param assetCode The asset code (e.g., 'XLM' or custom asset)
+   * @returns Transaction hash of the funding transaction
+   */
+  async fundOnChainEscrow(
+    escrowId: string,
+    funderPublicKey: string,
+    amount: string,
+    assetCode: string = 'XLM',
+    assetIssuer?: string,
+  ): Promise<string> {
+    try {
+      this.logger.log(
+        `Funding on-chain escrow ${escrowId} with ${amount} ${assetCode}`,
+      );
+
+      // Verify funder has sufficient balance and trustline
+      const funderAccount =
+        await this.stellarService.getAccount(funderPublicKey);
+      const balanceItem = funderAccount.balances.find((b) => {
+        if (assetCode === 'XLM' || assetCode === 'native') {
+          return b.asset_type === 'native';
+        } else {
+          return b.asset_code === assetCode && b.asset_issuer === assetIssuer;
+        }
+      });
+
+      if (!balanceItem) {
+        if (assetCode === 'XLM') {
+          throw new Error(
+            'Funder account has no XLM balance or does not exist',
+          );
+        } else {
+          throw new Error(
+            `Funder does not have a trustline for the asset ${assetCode}. Please establish a trustline first.`,
+          );
+        }
+      }
+
+      if (parseFloat(balanceItem.balance) < parseFloat(amount)) {
+        throw new Error(
+          `Insufficient balance. Funder has ${balanceItem.balance} ${assetCode}, needs ${amount}`,
+        );
+      }
+
+      // Create funding operations
+      const operations =
+        this.escrowOperationsService.createFundingOps(escrowId);
+
+      // Build the transaction
+      const transaction = await this.stellarService.buildTransaction(
+        funderPublicKey, // Source account
+        operations,
+      );
+
+      // Submit the transaction to the Stellar network
+      const result: StellarSubmitTransactionResponse =
+        await this.stellarService.submitTransaction(transaction);
+
+      this.logger.log(
+        `Successfully funded escrow ${escrowId}, transaction: ${result.hash}`,
+      );
+      return result.hash;
+    } catch (error) {
+      this.logger.error(
+        `Failed to fund on-chain escrow ${escrowId}: ${this.getErrorMessage(error)}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Releases a milestone payment on the Stellar blockchain
+   * @param escrowId The ID of the escrow
+   * @param milestoneId The ID of the milestone to release
+   * @param releaserPublicKey The public key of the account releasing the payment
+   * @param recipientPublicKey The public key of the recipient
+   * @param amount The amount to release
+   * @param assetCode The asset code
+   * @returns Transaction hash of the release transaction
+   */
+  async releaseMilestonePayment(
+    escrowId: string,
+    milestoneId: number,
+    releaserPublicKey: string,
+    // recipientPublicKey: string,
+    // amount: string,
+    // assetCode: string = 'XLM',
+  ): Promise<string> {
+    try {
+      this.logger.log(
+        `Releasing milestone ${milestoneId} for escrow ${escrowId}`,
+      );
+
+      // Create milestone release operations
+      const operations = this.escrowOperationsService.createMilestoneReleaseOps(
+        escrowId,
+        milestoneId,
+      );
+
+      // Build the transaction
+      const transaction = await this.stellarService.buildTransaction(
+        releaserPublicKey, // Source account
+        operations,
+      );
+
+      // Submit the transaction to the Stellar network
+      const result: StellarSubmitTransactionResponse =
+        await this.stellarService.submitTransaction(transaction);
+
+      this.logger.log(
+        `Successfully released milestone ${milestoneId} for escrow ${escrowId}, transaction: ${result.hash}`,
+      );
+      return result.hash;
+    } catch (error) {
+      this.logger.error(
+        `Failed to release milestone ${milestoneId} for escrow ${escrowId}: ${this.getErrorMessage(error)}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Confirms delivery/acceptance of an escrow on the Stellar blockchain
+   * @param escrowId The ID of the escrow to confirm
+   * @param confirmerPublicKey The public key of the account confirming
+   * @param milestoneId The milestone ID
+   * @returns Transaction hash of the confirmation transaction
+   */
+  async confirmEscrow(
+    escrowId: string,
+    confirmerPublicKey: string,
+    milestoneId: number,
+  ): Promise<string> {
+    try {
+      this.logger.log(
+        `Confirming escrow ${escrowId} for milestone: ${milestoneId}`,
+      );
+
+      // Create confirmation operations
+      const operations = this.escrowOperationsService.createConfirmationOps(
+        escrowId,
+        confirmerPublicKey,
+        milestoneId,
+      );
+
+      // Build the transaction
+      const transaction = await this.stellarService.buildTransaction(
+        confirmerPublicKey, // Source account
+        operations,
+      );
+
+      // Submit the transaction to the Stellar network
+      const result: StellarSubmitTransactionResponse =
+        await this.stellarService.submitTransaction(transaction);
+
+      this.logger.log(
+        `Successfully confirmed milestone ${milestoneId} for escrow ${escrowId}, transaction: ${result.hash}`,
+      );
+      return result.hash;
+    } catch (error) {
+      this.logger.error(
+        `Failed to confirm escrow ${escrowId}: ${this.getErrorMessage(error)}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Cancels an escrow on the Stellar blockchain
+   * @param escrowId The ID of the escrow to cancel
+   * @param cancellerPublicKey The public key of the account canceling
+   * @param refundDestination The destination for refunded funds
+   * @returns Transaction hash of the cancellation transaction
+   */
+  async cancelOnChainEscrow(
+    escrowId: string,
+    cancellerPublicKey: string,
+
+    // refundDestination: string,
+  ): Promise<string> {
+    try {
+      this.logger.log(`Canceling on-chain escrow ${escrowId}`);
+
+      // Create cancel operations
+      const operations = this.escrowOperationsService.createCancelOps(escrowId);
+
+      // Build the transaction
+      const transaction = await this.stellarService.buildTransaction(
+        cancellerPublicKey, // Source account
+        operations,
+      );
+
+      // Submit the transaction to the Stellar network
+      const result: StellarSubmitTransactionResponse =
+        await this.stellarService.submitTransaction(transaction);
+
+      this.logger.log(
+        `Successfully canceled escrow ${escrowId}, transaction: ${result.hash}`,
+      );
+      return result.hash;
+    } catch (error) {
+      this.logger.error(
+        `Failed to cancel on-chain escrow ${escrowId}: ${this.getErrorMessage(error)}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Completes an escrow on the Stellar blockchain
+   * @param escrowId The ID of the escrow to complete
+   * @param completerPublicKey The public key of the account completing
+   * @returns Transaction hash of the completion transaction
+   */
+  async completeOnChainEscrow(
+    escrowId: string,
+    completerPublicKey: string,
+  ): Promise<string> {
+    try {
+      this.logger.log(`Completing on-chain escrow ${escrowId}`);
+
+      // Create completion operations
+      const operations =
+        this.escrowOperationsService.createCompletionOps(escrowId);
+
+      // Build the transaction
+      const transaction = await this.stellarService.buildTransaction(
+        completerPublicKey, // Source account
+        operations,
+      );
+
+      // Submit the transaction to the Stellar network
+      const result: StellarSubmitTransactionResponse =
+        await this.stellarService.submitTransaction(transaction);
+
+      this.logger.log(
+        `Successfully completed escrow ${escrowId}, transaction: ${result.hash}`,
+      );
+      return result.hash;
+    } catch (error) {
+      this.logger.error(
+        `Failed to complete on-chain escrow ${escrowId}: ${this.getErrorMessage(error)}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Monitors the status of an on-chain escrow
+   * @param escrowId The ID of the escrow to monitor
+   * @param accountPublicKey The public key of the account to monitor
+   * @param callback Callback function to handle state changes
+   * @returns EventSource object for stream control
+   */
+  monitorOnChainEscrow(
+    escrowId: string,
+    accountPublicKey: string,
+    callback: (transaction: StellarTransactionResponse) => void,
+  ): EventSource {
+    this.logger.log(
+      `Starting to monitor on-chain escrow ${escrowId} for account: ${accountPublicKey}`,
+    );
+
+    // Create a wrapper callback that filters for our escrow-related transactions
+    const filteredCallback = (transaction: StellarTransactionResponse) => {
+      // Check if this transaction relates to our escrow
+      const isEscrowRelated =
+        transaction.memo &&
+        typeof transaction.memo === 'string' &&
+        transaction.memo.includes(escrowId);
+
+      if (isEscrowRelated) {
+        this.logger.log(
+          `Detected escrow ${escrowId} related transaction: ${transaction.hash}`,
+        );
+        callback(transaction);
+      }
+    };
+
+    // Stream transactions for the account
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return this.stellarService.streamTransactions(
+      accountPublicKey,
+      filteredCallback,
+    );
+  }
+
+  async resolveOnChainDispute(
+    escrowId: string,
+    winnerPublicKey: string,
+    arbitratorPublicKey: string,
+    splitWinnerAmount?: string,
+  ): Promise<string> {
+    try {
+      this.logger.log(
+        `Resolving on-chain dispute for escrow ${escrowId} in favor of ${winnerPublicKey}`,
+      );
+
+      const operations = this.escrowOperationsService.createResolveDisputeOps(
+        escrowId,
+        winnerPublicKey,
+        splitWinnerAmount,
+      );
+
+      const transaction = await this.stellarService.buildTransaction(
+        arbitratorPublicKey,
+        operations,
+      );
+
+      const result = await this.stellarService.submitTransaction(transaction);
+
+      this.logger.log(
+        `Successfully resolved on-chain dispute for escrow ${escrowId}, transaction: ${result.hash}`,
+      );
+      return result.hash;
+    } catch (error) {
+      this.logger.error(
+        `Failed to resolve on-chain dispute for escrow ${escrowId}: ${this.getErrorMessage(error)}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Safely extracts error message from unknown error type
+   */
+  private getErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+    if (typeof error === 'object' && error !== null && 'message' in error) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      return String((error as any).message);
+    }
+    return 'Unknown error';
+  }
+}

@@ -1,0 +1,209 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, LessThan, In, IsNull, Between } from 'typeorm';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { Escrow, EscrowStatus } from '../entities/escrow.entity';
+import { EscrowEvent, EscrowEventType } from '../entities/escrow-event.entity';
+import { EscrowService } from './escrow.service';
+
+@Injectable()
+export class EscrowSchedulerService {
+  private readonly logger = new Logger(EscrowSchedulerService.name);
+
+  constructor(
+    @InjectRepository(Escrow)
+    private escrowRepository: Repository<Escrow>,
+    @InjectRepository(EscrowEvent)
+    private escrowEventRepository: Repository<EscrowEvent>,
+    private escrowService: EscrowService,
+  ) {}
+
+  @Cron(CronExpression.EVERY_HOUR)
+  async handleExpiredEscrows() {
+    this.logger.log('Starting expired escrow processing...');
+
+    try {
+      await this.processExpiredPendingEscrows();
+      await this.processExpiredActiveEscrows();
+
+      this.logger.log('Completed expired escrow processing');
+    } catch (error) {
+      this.logger.error('Error processing expired escrows:', error);
+    }
+  }
+
+  @Cron(CronExpression.EVERY_DAY_AT_9AM)
+  async sendExpirationWarnings() {
+    this.logger.log('Sending 24-hour expiration warnings...');
+
+    try {
+      await this.processExpirationWarnings();
+      this.logger.log('Completed expiration warnings');
+    } catch (error) {
+      this.logger.error('Error sending expiration warnings:', error);
+    }
+  }
+
+  private async processExpiredPendingEscrows() {
+    const now = new Date();
+
+    const expiredPendingEscrows = await this.escrowRepository.find({
+      where: {
+        status: EscrowStatus.PENDING,
+        expiresAt: LessThan(now),
+        isActive: true,
+      },
+      relations: ['creator', 'parties', 'parties.user'],
+    });
+
+    this.logger.log(
+      `Found ${expiredPendingEscrows.length} expired pending escrows`,
+    );
+
+    for (const escrow of expiredPendingEscrows) {
+      try {
+        await this.autoCancelEscrow(escrow);
+      } catch (error) {
+        this.logger.error(`Failed to auto-cancel escrow ${escrow.id}:`, error);
+      }
+    }
+  }
+
+  private async processExpiredActiveEscrows() {
+    const now = new Date();
+
+    const expiredActiveEscrows = await this.escrowRepository.find({
+      where: {
+        status: EscrowStatus.ACTIVE,
+        expiresAt: LessThan(now),
+        isActive: true,
+      },
+      relations: ['creator', 'parties', 'parties.user'],
+    });
+
+    this.logger.log(
+      `Found ${expiredActiveEscrows.length} expired active escrows`,
+    );
+
+    for (const escrow of expiredActiveEscrows) {
+      try {
+        await this.escalateToDispute(escrow);
+      } catch (error) {
+        this.logger.error(
+          `Failed to escalate escrow ${escrow.id} to dispute:`,
+          error,
+        );
+      }
+    }
+  }
+
+  private async processExpirationWarnings() {
+    const now = new Date();
+    const warningThreshold = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+    const escrowsNeedingWarning = await this.escrowRepository.find({
+      where: {
+        status: In([EscrowStatus.PENDING, EscrowStatus.ACTIVE]),
+        expiresAt: Between(now, warningThreshold),
+        expirationNotifiedAt: IsNull(),
+        isActive: true,
+      },
+      relations: ['creator', 'parties', 'parties.user'],
+    });
+
+    this.logger.log(
+      `Found ${escrowsNeedingWarning.length} escrows needing expiration warnings`,
+    );
+
+    for (const escrow of escrowsNeedingWarning) {
+      try {
+        await this.sendExpirationWarning(escrow);
+      } catch (error) {
+        this.logger.error(
+          `Failed to send warning for escrow ${escrow.id}:`,
+          error,
+        );
+      }
+    }
+  }
+
+  private async autoCancelEscrow(escrow: Escrow) {
+    this.logger.log(`Auto-expiring pending escrow: ${escrow.id}`);
+
+    await this.escrowService.expireBySystem(escrow.id, 'EXPIRED_PENDING');
+
+    this.logger.log(`Successfully expired pending escrow: ${escrow.id}`);
+  }
+
+  private async escalateToDispute(escrow: Escrow) {
+    this.logger.log(
+      `Escalating expired active escrow to expired status: ${escrow.id}`,
+    );
+
+    await this.escrowService.expireBySystem(escrow.id, 'EXPIRED_ACTIVE');
+
+    this.logger.log(`Successfully expired active escrow: ${escrow.id}`);
+  }
+
+  private async sendExpirationWarning(escrow: Escrow) {
+    this.logger.log(`Sending expiration warning for escrow: ${escrow.id}`);
+
+    escrow.expirationNotifiedAt = new Date();
+    await this.escrowRepository.save(escrow);
+
+    // Get the last cursor value and increment it for monotonic sequence
+    const lastEvent = await this.escrowEventRepository.findOne({
+      where: {},
+      order: { cursor: 'DESC' },
+    });
+
+    const lastCursor = lastEvent?.cursor ? BigInt(lastEvent.cursor) : BigInt(0);
+    const nextCursor = (lastCursor + BigInt(1)).toString();
+
+    await this.escrowEventRepository.save({
+      escrowId: escrow.id,
+      eventType: EscrowEventType.EXPIRATION_WARNING_SENT,
+      data: {
+        expiresAt: escrow.expiresAt,
+        warnedAt: new Date(),
+      },
+      cursor: nextCursor,
+    });
+
+    await this.escrowService.queueExpirationWarningNotifications(escrow);
+
+    this.logger.log(
+      `Successfully sent expiration warning for escrow: ${escrow.id}`,
+    );
+  }
+
+  async processEscrowManually(escrowId: string): Promise<void> {
+    const escrow = await this.escrowRepository.findOne({
+      where: { id: escrowId },
+      relations: ['creator', 'parties', 'parties.user'],
+    });
+
+    if (!escrow) {
+      throw new Error(`Escrow not found: ${escrowId}`);
+    }
+
+    if (!escrow.expiresAt) {
+      throw new Error(`Escrow ${escrowId} has no expiration date`);
+    }
+
+    const now = new Date();
+    if (escrow.expiresAt > now) {
+      throw new Error(`Escrow ${escrowId} has not expired yet`);
+    }
+
+    if (escrow.status === EscrowStatus.PENDING) {
+      await this.autoCancelEscrow(escrow);
+    } else if (escrow.status === EscrowStatus.ACTIVE) {
+      await this.escalateToDispute(escrow);
+    } else {
+      this.logger.log(
+        `Escrow ${escrowId} already in terminal state: ${escrow.status}`,
+      );
+    }
+  }
+}

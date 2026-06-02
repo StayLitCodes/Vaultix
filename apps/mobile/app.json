@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Vaultix",
+    "slug": "vaultix-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "vaultix",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "io.vaultix.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      },
+      "package": "io.vaultix.mobile"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
