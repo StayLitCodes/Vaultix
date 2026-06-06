@@ -1284,9 +1284,9 @@ impl VaultixEscrow {
         Ok(escrow.status)
     }
 
+    // FIXED: release_milestone with proper authentication for multi-sig threshold amounts
     pub fn release_milestone(env: Env, escrow_id: u64, milestone_index: u32) -> Result<(), Error> {
         ensure_not_paused(&env)?;
-
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
 
         // For amounts exceeding the threshold, check multi-signature requirements
@@ -1300,6 +1300,20 @@ impl VaultixEscrow {
             if escrow.collected_signatures.len() < escrow.required_signatures {
                 return Err(Error::UnauthorizedAccess);
             }
+            // FIX: Require auth from at least one of the collected signers
+            // or from the caller who is trying to release
+            let caller = env.invoker();
+            let mut authorized = false;
+            for signer in escrow.collected_signatures.iter() {
+                if signer == caller {
+                    authorized = true;
+                    break;
+                }
+            }
+            if !authorized {
+                return Err(Error::UnauthorizedAccess);
+            }
+            caller.require_auth();
         } else {
             // For amounts at or below threshold, only depositor can release
             escrow.depositor.require_auth();
