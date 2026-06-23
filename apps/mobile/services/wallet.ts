@@ -59,7 +59,7 @@ export async function connectWithBuiltInWallet(): Promise<{ address: string; met
 export async function signMessage(message: string): Promise<string> {
   const keypair = await ensureLocalWalletKeypair();
   const encoded = new TextEncoder().encode(message);
-  const signature = keypair.sign(encoded);
+  const signature = keypair.sign(encoded as unknown as Buffer);
   return Array.from(signature)
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('');

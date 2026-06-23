@@ -1,24 +1,22 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { ToastProvider } from '../components/Toast';
 
-import { AppState, AppStateStatus, ActivityIndicator, StyleSheet, View } from 'react-native';
+import { AppState, AppStateStatus } from 'react-native';
 import { useBiometricLock } from '../hooks/useBiometricLock';
+import { useAppVersion } from '../hooks/useAppVersion';
 import { MobileLockScreen } from '../components/MobileLockScreen';
+import { UpdatePromptModal } from '../components/UpdatePromptModal';
 import { useEffect, useRef, useState } from 'react';
-import { initializeAuthState } from '../services/auth';
 
 export default function RootLayout() {
   const { isEnabled, isUnlocked, authenticate, lock, disableBiometric } = useBiometricLock();
+  const { needsUpdate, forceUpdate, latestVersion, updateUrl, isLoading } = useAppVersion();
   const appState = useRef(AppState.currentState);
-
-  const [authReady, setAuthReady] = useState(false);
-
-  useEffect(() => {
-    initializeAuthState().finally(() => setAuthReady(true));
-  }, []);
+  const [updateDismissed, setUpdateDismissed] = useState(false);
 
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', nextAppState => {
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
       if (
         appState.current.match(/inactive|background/) &&
         nextAppState === 'active'
@@ -37,25 +35,41 @@ export default function RootLayout() {
     };
   }, [isEnabled, authenticate, lock]);
 
-  if (!authReady) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#6c63ff" />
-      </View>
-    );
-  }
+  // Force update: shown before biometric unlock, cannot be dismissed
+  const showForceUpdate = !isLoading && forceUpdate;
 
-  if (!isUnlocked) {
-    return (
-      <MobileLockScreen 
-        onUnlock={authenticate} 
-        onDisableFallback={disableBiometric} 
-      />
-    );
-  }
+  // Soft update: shown after unlock, dismissible once per session
+  const showSoftUpdate =
+    !isLoading && needsUpdate && !forceUpdate && isUnlocked && !updateDismissed;
 
   return (
-    <>
+    <ToastProvider>
+      {/* Force update gate — renders over everything including biometric lock */}
+      <UpdatePromptModal
+        visible={showForceUpdate}
+        forceUpdate={true}
+        latestVersion={latestVersion}
+        updateUrl={updateUrl}
+        onDismiss={() => {}}
+      />
+
+      {/* Biometric lock gate */}
+      {!showForceUpdate && !isUnlocked && (
+        <MobileLockScreen
+          onUnlock={authenticate}
+          onDisableFallback={disableBiometric}
+        />
+      )}
+
+      {/* Soft update prompt — shown after unlock, dismissible */}
+      <UpdatePromptModal
+        visible={showSoftUpdate}
+        forceUpdate={false}
+        latestVersion={latestVersion}
+        updateUrl={updateUrl}
+        onDismiss={() => setUpdateDismissed(true)}
+      />
+
       <StatusBar style="auto" />
       <Stack
         screenOptions={{
@@ -76,15 +90,6 @@ export default function RootLayout() {
         <Stack.Screen name="escrow/create" options={{ title: 'Create Escrow' }} />
         <Stack.Screen name="escrow/release" options={{ title: 'Release Milestone' }} />
       </Stack>
-    </>
+    </ToastProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#12121f',
-  },
-});

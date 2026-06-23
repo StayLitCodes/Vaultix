@@ -26,6 +26,7 @@ export enum EscrowEventType {
   DISPUTE_RESOLVED = 'dispute_resolved',
   EXPIRED = 'expired',
   EXPIRATION_WARNING_SENT = 'expiration_warning_sent',
+  MILESTONE_RELEASED = 'milestone_released',
 }
 
 @Entity('escrow_events')

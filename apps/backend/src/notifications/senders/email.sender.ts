@@ -100,7 +100,12 @@ export class EmailSender implements NotificationSender {
     const condition = this.readString(payload, 'condition') ?? 'A condition';
     const expiresAt = this.readString(payload, 'expiresAt');
 
+    const role = this.readString(payload, 'role') ?? 'party';
+
     const subjects: Record<NotificationEventType, string> = {
+      [NotificationEventType.PARTY_INVITED]: `You have been invited to escrow: ${escrowTitle}`,
+      [NotificationEventType.PARTY_ACCEPTED]: `Party accepted invitation for escrow ${escrowId}`,
+      [NotificationEventType.PARTY_REJECTED]: `Party rejected invitation for escrow ${escrowId}`,
       [NotificationEventType.ESCROW_CREATED]: `Escrow created: ${escrowTitle} (${escrowId})`,
       [NotificationEventType.ESCROW_FUNDED]: `Escrow funded: ${escrowTitle} (${escrowId})`,
       [NotificationEventType.MILESTONE_RELEASED]: `Milestone released for escrow ${escrowId}`,
@@ -115,6 +120,12 @@ export class EmailSender implements NotificationSender {
     };
 
     const textByEvent: Record<NotificationEventType, string> = {
+      [NotificationEventType.PARTY_INVITED]:
+        `You have been invited to participate as ${role} in escrow "${escrowTitle}" (${escrowId}).` +
+        this.optionalAmount(amount, asset) +
+        (actionUrl ? `` : ' Log in to accept or reject the invitation.'),
+      [NotificationEventType.PARTY_ACCEPTED]: `A party has accepted their ${role} invitation for escrow ${escrowId}.`,
+      [NotificationEventType.PARTY_REJECTED]: `A party has rejected their ${role} invitation for escrow ${escrowId}.`,
       [NotificationEventType.ESCROW_CREATED]:
         `A new escrow (${escrowId}) has been created.` +
         this.optionalAmount(amount, asset),

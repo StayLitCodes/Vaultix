@@ -1,6 +1,6 @@
 /**
  * Welcome / Connect Wallet screen
- * Features: built-in secure mobile wallet connection, external wallet guidance, and recoverable retry flows.
+ * Features: wallet connection simulation, animated branding, navigate to tabs on connect
  */
 import React, { useEffect, useState } from 'react';
 import {
@@ -13,8 +13,7 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { consumePendingRedirect, isAuthenticated, setAuthState } from '../services/auth';
-import { connectWithBuiltInWallet, openExternalWalletGuide } from '../services/wallet';
+import { consumePendingRedirect, isAuthenticated } from '../services/auth';
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -34,8 +33,12 @@ export default function WelcomeScreen() {
   const handleConnectWallet = async () => {
     setConnecting(true);
     try {
-      const result = await connectWithBuiltInWallet();
-      await setAuthState(`vaultix-mobile:${result.address}`, result.address);
+      // Simulate wallet connection – in production this uses @stellar/freighter-api or similar
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      // Store auth token (simulated)
+      (global as Record<string, unknown>).__authToken = 'simulated-jwt-token';
+      (global as Record<string, unknown>).__walletAddress = 'GABCD...XYZ';
 
       const pending = consumePendingRedirect();
       if (pending?.pathname) {
@@ -43,28 +46,10 @@ export default function WelcomeScreen() {
       } else {
         router.replace('/(tabs)/dashboard');
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not connect to wallet.';
-      Alert.alert(
-        'Connection Failed',
-        `${message} Please retry or switch to another wallet option.`,
-        [
-          { text: 'Retry', onPress: handleConnectWallet },
-          { text: 'Open Wallet Guide', onPress: () => openExternalWalletGuide('lobstr') },
-          { text: 'Cancel', style: 'cancel' },
-        ],
-      );
+    } catch {
+      Alert.alert('Connection Failed', 'Could not connect to wallet. Please try again.');
     } finally {
       setConnecting(false);
-    }
-  };
-
-  const handleOpenExternalWallet = async (walletName: 'lobstr' | 'solar') => {
-    try {
-      await openExternalWalletGuide(walletName);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Could not open external wallet.';
-      Alert.alert('External Wallet', message, [{ text: 'OK' }]);
     }
   };
 
@@ -99,33 +84,9 @@ export default function WelcomeScreen() {
               <Text style={styles.connectBtnText}>Connecting…</Text>
             </View>
           ) : (
-            <Text style={styles.connectBtnText}>Connect Built-in Wallet</Text>
+            <Text style={styles.connectBtnText}>Connect Wallet</Text>
           )}
         </TouchableOpacity>
-
-        <Text style={styles.secondaryText}>
-          Vaultix mobile stores your Stellar wallet in the device secure enclave. This is the recommended path for mobile transaction signing.
-        </Text>
-
-        <View style={styles.externalSection}>
-          <Text style={styles.externalTitle}>Prefer an external wallet?</Text>
-          <TouchableOpacity
-            style={styles.externalBtn}
-            onPress={() => handleOpenExternalWallet('lobstr')}
-            accessibilityRole="button"
-            accessibilityLabel="Open Lobstr wallet guide"
-          >
-            <Text style={styles.externalBtnText}>Open Lobstr Wallet</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.externalBtn}
-            onPress={() => handleOpenExternalWallet('solar')}
-            accessibilityRole="button"
-            accessibilityLabel="Open Solar wallet guide"
-          >
-            <Text style={styles.externalBtnText}>Open Solar Wallet</Text>
-          </TouchableOpacity>
-        </View>
 
         <Text style={styles.disclaimer}>
           By connecting, you agree to the Terms of Service and Privacy Policy.
@@ -183,11 +144,6 @@ const styles = StyleSheet.create({
   btnDisabled: { opacity: 0.6 },
   connectBtnText: { color: '#fff', fontWeight: '700', fontSize: 17 },
   connectingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  secondaryText: { color: '#999', fontSize: 12, textAlign: 'center', lineHeight: 18, marginBottom: 14, paddingHorizontal: 6 },
-  externalSection: { width: '100%', padding: 12, backgroundColor: '#16162c', borderRadius: 14, marginBottom: 16 },
-  externalTitle: { color: '#fff', fontSize: 14, fontWeight: '600', marginBottom: 10 },
-  externalBtn: { backgroundColor: '#2c2c50', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 10 },
-  externalBtnText: { color: '#bdbdff', fontWeight: '600', fontSize: 14 },
   disclaimer: { color: '#666', fontSize: 11, textAlign: 'center', lineHeight: 16 },
   skipBtn: { marginTop: 4 },
   skipBtnText: { color: '#888', fontSize: 13, fontWeight: '500' },

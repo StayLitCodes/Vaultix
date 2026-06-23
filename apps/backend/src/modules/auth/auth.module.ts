@@ -6,10 +6,15 @@ import { AuthService } from './services/auth.service';
 import { AuthGuard } from './middleware/auth.guard';
 import { AdminGuard } from './middleware/admin.guard';
 import { UserModule } from '../user/user.module';
+import { IpfsModule } from '../ipfs/ipfs.module';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { EmailVerification } from '../user/entities/email-verification.entity';
 
 @Module({
   imports: [
     UserModule,
+    IpfsModule,
+    TypeOrmModule.forFeature([EmailVerification]),
     JwtModule.registerAsync({
       useFactory: () => ({
         secret:

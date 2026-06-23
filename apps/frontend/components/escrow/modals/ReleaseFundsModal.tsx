@@ -160,7 +160,7 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
     return "Done";
   })();
 
-  const primaryDisabled = isSubmitting || (!connected && step !== "success");
+  const primaryDisabled = isSubmitting;
 
   const showTracker = step === "success" && txHash;
 

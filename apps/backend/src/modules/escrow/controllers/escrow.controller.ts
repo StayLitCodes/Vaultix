@@ -96,6 +96,17 @@ export class EscrowController {
     return this.escrowService.findOverview(userId, query);
   }
 
+  @Get('pending-invitations')
+  @ApiOperation({
+    summary:
+      'List escrows where the authenticated user has a pending party invitation',
+  })
+  async getPendingInvitations(@Request() req: AuthenticatedRequest) {
+    return this.escrowService.getPendingInvitations(
+      this.getAuthenticatedUserId(req),
+    );
+  }
+
   @Get(':id')
   @UseGuards(EscrowAccessGuard)
   async findOne(@Param('id') id: string) {
@@ -150,31 +161,7 @@ export class EscrowController {
     return this.escrowService.findEvents(userId, query, id);
   }
 
-  @Post(':id/parties/:partyId/accept')
-  @UseGuards(EscrowAccessGuard)
-  @ApiOperation({ summary: 'Accept an invitation to join an escrow' })
-  async acceptParty(
-    @Param('id') id: string,
-    @Param('partyId') partyId: string,
-    @Request() req: AuthenticatedRequest,
-  ) {
-    const userId = this.getAuthenticatedUserId(req);
-    const ipAddress = req.ip || req.socket?.remoteAddress;
-    return this.escrowService.acceptParty(id, partyId, userId, ipAddress);
-  }
 
-  @Post(':id/parties/:partyId/reject')
-  @UseGuards(EscrowAccessGuard)
-  @ApiOperation({ summary: 'Reject an invitation to join an escrow' })
-  async rejectParty(
-    @Param('id') id: string,
-    @Param('partyId') partyId: string,
-    @Request() req: AuthenticatedRequest,
-  ) {
-    const userId = this.getAuthenticatedUserId(req);
-    const ipAddress = req.ip || req.socket?.remoteAddress;
-    return this.escrowService.rejectParty(id, partyId, userId, ipAddress);
-  }
 
   @Post(':id/fund')
   @UseGuards(EscrowAccessGuard)
@@ -277,6 +264,55 @@ export class EscrowController {
       escrowId,
       conditionId,
       this.getAuthenticatedUserId(req),
+    );
+  }
+
+  @Post(':id/conditions/:conditionId/release')
+  @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Release a specific milestone payment' })
+  async releaseMilestone(
+    @Param('id') escrowId: string,
+    @Param('conditionId') conditionId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.escrowService.releaseMilestone(
+      escrowId,
+      conditionId,
+      this.getAuthenticatedUserId(req),
+    );
+  }
+
+  @Post(':id/parties/:partyId/accept')
+  @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Accept a party invitation for an escrow' })
+  async acceptPartyInvitation(
+    @Param('id') escrowId: string,
+    @Param('partyId') partyId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.acceptPartyInvitation(
+      escrowId,
+      partyId,
+      this.getAuthenticatedUserId(req),
+      ipAddress,
+    );
+  }
+
+  @Post(':id/parties/:partyId/reject')
+  @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Reject a party invitation for an escrow' })
+  async rejectPartyInvitation(
+    @Param('id') escrowId: string,
+    @Param('partyId') partyId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.rejectPartyInvitation(
+      escrowId,
+      partyId,
+      this.getAuthenticatedUserId(req),
+      ipAddress,
     );
   }
 

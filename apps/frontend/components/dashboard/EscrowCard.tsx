@@ -68,7 +68,7 @@ const EscrowCard: React.FC<EscrowCardProps> = ({ escrow }) => {
           <div className="bg-gray-50 rounded-lg p-2.5">
             <p className="text-xs font-medium text-gray-500 mb-0.5">Amount</p>
             <p className="text-sm font-semibold text-gray-900 truncate">
-              {escrow.amount} <span className="text-gray-500 font-normal">{escrow.asset}</span>
+              {escrow.amount} {escrow.asset}
             </p>
           </div>
           <div className="bg-gray-50 rounded-lg p-2.5">
@@ -100,7 +100,7 @@ const EscrowCard: React.FC<EscrowCardProps> = ({ escrow }) => {
               href={`/escrow/${escrow.id}/confirm`}
               className="min-h-[44px] inline-flex items-center px-3 py-2 rounded-lg text-sm font-medium text-green-700 bg-green-50 border border-green-200 hover:bg-green-100 transition-colors"
             >
-              Confirm
+              Confirm Delivery
             </Link>
             <Link
               href={`/escrow/${escrow.id}/dispute`}

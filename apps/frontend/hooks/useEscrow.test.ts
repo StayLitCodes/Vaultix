@@ -1,17 +1,21 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { useEscrow } from './useEscrow';
-import { http, HttpResponse } from 'msw';
-import { server } from '../mocks/server';
+
+const mockFetch = (response: Partial<Response>) => {
+  global.fetch = jest.fn().mockResolvedValue(response as Response);
+};
 
 describe('useEscrow', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('successfully fetches an escrow', async () => {
     const mockEscrow = { id: 'test-123', title: 'Test Escrow' };
-    
-    server.use(
-      http.get('/api/escrows/test-123', () => {
-        return HttpResponse.json(mockEscrow);
-      })
-    );
+    mockFetch({
+      ok: true,
+      json: async () => mockEscrow,
+    });
 
     const { result } = renderHook(() => useEscrow('test-123'));
 
@@ -24,11 +28,12 @@ describe('useEscrow', () => {
   });
 
   it('handles 404 error correctly', async () => {
-    server.use(
-      http.get('/api/escrows/not-found', () => {
-        return new HttpResponse(null, { status: 404 });
-      })
-    );
+    mockFetch({
+      ok: false,
+      status: 404,
+      statusText: 'Not Found',
+      json: async () => ({ message: '404: Escrow not found' }),
+    });
 
     const { result } = renderHook(() => useEscrow('not-found'));
 
@@ -39,11 +44,12 @@ describe('useEscrow', () => {
   });
 
   it('handles server errors correctly', async () => {
-    server.use(
-      http.get('/api/escrows/error', () => {
-        return new HttpResponse(null, { status: 500 });
-      })
-    );
+    mockFetch({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      json: async () => ({ message: 'Failed to load escrow details' }),
+    });
 
     const { result } = renderHook(() => useEscrow('error'));
 

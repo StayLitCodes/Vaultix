@@ -3132,10 +3132,22 @@
               "map": [
                 {
                   "key": {
-                    "symbol": "operator"
+                    "symbol": "caller"
                   },
                   "val": {
                     "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "caller_role"
+                  },
+                  "val": {
+                    "vec": [
+                      {
+                        "symbol": "Operator"
+                      }
+                    ]
                   }
                 },
                 {

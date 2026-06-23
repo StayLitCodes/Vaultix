@@ -28,7 +28,7 @@ describe('Escrow Validation Schemas', () => {
     it('should reject short description', () => {
       const invalidData = {
         title: 'Project Development',
-        description: 'Short desc',
+        description: 'Too short',
         category: 'service',
       };
       const result = basicInfoSchema.safeParse(invalidData);
@@ -51,8 +51,7 @@ describe('Escrow Validation Schemas', () => {
 
   describe('partiesSchema', () => {
     it('should validate a correct Stellar address', () => {
-      // GBAH... is a valid Stellar prefix
-      const realValidAddress = 'GBAH4VETEJSTLXU7I6I7DTH2W57YI6XWUT2C7O7XWS6QW2LWSXUUT2C7'; 
+      const realValidAddress = 'GDZ667HFMKM7HDKUYM2Q22TX4CSKOAG56ZXQ6MOR6LNOXX5CL6Y4MEEA';
       const result = partiesSchema.safeParse({ counterpartyAddress: realValidAddress });
       expect(result.success).toBe(true);
     });

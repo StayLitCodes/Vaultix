@@ -14,10 +14,18 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { escrowApi } from '../../services/api';
 import { requireAuth } from '../../services/auth';
 import { Escrow, Milestone, Party, EscrowEvent } from '../../types/escrow';
+<<<<<<< HEAD
+import { OfflineBanner } from '../../components/OfflineBanner';
+import { CopyButton } from '../../components/CopyButton';
+import { ShareButton, buildEscrowShareUrl } from '../../components/ShareButton';
+import { useNetworkStatus } from '../../hooks/useNetworkStatus';
+import { toFriendlyError, isOfflineError } from '../../utils/errors';
+=======
 import { useDisputes } from '../../hooks/useDisputes';
 import { RaiseDisputeModal } from '../../components/RaiseDisputeModal';
 import { DisputeDetailsCard } from '../../components/DisputeDetailsCard';
 import { ResolutionSummary } from '../../components/ResolutionSummary';
+>>>>>>> d431ba40ce53cfcf510d9b702e2540ee53b1f9f1
 
 // Simulated current user role – in production this comes from auth context
 const CURRENT_USER_ROLE: 'depositor' | 'recipient' | 'arbitrator' = 'depositor';
@@ -70,11 +78,14 @@ function MilestoneRow({ milestone, canRelease, onRelease }: {
 function PartyRow({ party }: { party: Party }) {
   return (
     <View style={styles.partyRow}>
-      <Text style={styles.partyRole}>{party.role.toUpperCase()}</Text>
-      <Text style={styles.partyAddress} numberOfLines={1}>{party.walletAddress}</Text>
-      <Text style={[styles.partyStatus, party.status === 'accepted' && { color: '#06d6a0' }]}>
-        {party.status}
-      </Text>
+      <View style={styles.partyInfo}>
+        <Text style={styles.partyRole}>{party.role.toUpperCase()}</Text>
+        <Text style={styles.partyAddress} numberOfLines={1}>{party.walletAddress}</Text>
+        <Text style={[styles.partyStatus, party.status === 'accepted' && { color: '#06d6a0' }]}>
+          {party.status}
+        </Text>
+      </View>
+      <CopyButton value={party.walletAddress} label="Copy" compact />
     </View>
   );
 }
@@ -115,9 +126,14 @@ export default function EscrowDetailScreen() {
   const router = useRouter();
   const [escrow, setEscrow] = useState<Escrow | null>(null);
   const [loading, setLoading] = useState(true);
+<<<<<<< HEAD
+  const [error, setError] = useState<{ title: string; message: string } | null>(null);
+  const { isOffline, markOffline, markOnline } = useNetworkStatus();
+=======
   const [error, setError] = useState<string | null>(null);
   const [isDisputeModalVisible, setDisputeModalVisible] = useState(false);
   const { dispute, raiseDispute, hasActiveDispute, isSubmitting } = useDisputes();
+>>>>>>> d431ba40ce53cfcf510d9b702e2540ee53b1f9f1
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -125,12 +141,15 @@ export default function EscrowDetailScreen() {
       setError(null);
       const data = await escrowApi.getById(id);
       setEscrow(data);
-    } catch {
-      setError('Failed to load escrow. Please try again.');
+      markOnline();
+    } catch (err) {
+      const friendly = toFriendlyError(err);
+      setError({ title: friendly.title, message: friendly.message });
+      if (isOfflineError(err)) markOffline();
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, markOnline, markOffline]);
 
   useEffect(() => {
     if (!id) return;
@@ -147,11 +166,16 @@ export default function EscrowDetailScreen() {
   }
   if (error || !escrow) {
     return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>{error ?? 'Escrow not found.'}</Text>
-        <TouchableOpacity style={styles.retryBtn} onPress={load}>
-          <Text style={styles.retryText}>Retry</Text>
-        </TouchableOpacity>
+      <View style={styles.root}>
+        <OfflineBanner visible={isOffline} />
+        <View style={styles.center}>
+          <Text style={styles.errorEmoji}>⚠️</Text>
+          <Text style={styles.errorTitle}>{error?.title ?? 'Not found'}</Text>
+          <Text style={styles.errorMessage}>{error?.message ?? 'Escrow not found.'}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={load}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -164,7 +188,9 @@ export default function EscrowDetailScreen() {
     !hasActiveDispute;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <View style={styles.root}>
+      <OfflineBanner visible={isOffline} />
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>{escrow.title}</Text>
@@ -173,6 +199,12 @@ export default function EscrowDetailScreen() {
         </View>
       </View>
       <Text style={styles.description}>{escrow.description}</Text>
+
+      {/* Share & Copy row */}
+      <View style={styles.shareRow}>
+        <CopyButton value={escrow.id} label="Copy Escrow ID" toastMessage="Escrow ID copied!" variant="ghost" />
+        <ShareButton url={buildEscrowShareUrl(escrow.id)} label="Share Escrow" variant="primary" />
+      </View>
 
       {/* Amount & Deadline */}
       <View style={styles.metaRow}>
@@ -245,6 +277,10 @@ export default function EscrowDetailScreen() {
           <Text style={styles.noActions}>No actions available for this status.</Text>
         )}
       </Section>
+<<<<<<< HEAD
+      </ScrollView>
+    </View>
+=======
 
       <RaiseDisputeModal
         visible={isDisputeModalVisible}
@@ -258,10 +294,12 @@ export default function EscrowDetailScreen() {
         isSubmitting={isSubmitting}
       />
     </ScrollView>
+>>>>>>> d431ba40ce53cfcf510d9b702e2540ee53b1f9f1
   );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#12121f' },
   container: { flex: 1, backgroundColor: '#12121f' },
   content: { padding: 16, paddingBottom: 40 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#12121f' },
@@ -287,9 +325,11 @@ const styles = StyleSheet.create({
   pendingBadge: { backgroundColor: '#2d2d44', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
   pendingText: { color: '#888', fontSize: 12 },
   partyRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e1e30', borderRadius: 10, padding: 12, marginBottom: 8 },
+  partyInfo: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 4 },
   partyRole: { color: '#6c63ff', fontWeight: '700', fontSize: 11, width: 80 },
   partyAddress: { color: '#ccc', fontSize: 12, flex: 1 },
   partyStatus: { color: '#888', fontSize: 11, marginLeft: 8 },
+  shareRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, gap: 8 },
   timelineItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12 },
   timelineDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#6c63ff', marginTop: 4, marginRight: 12 },
   timelineContent: { flex: 1 },
@@ -298,7 +338,9 @@ const styles = StyleSheet.create({
   actionBtn: { borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 10 },
   actionBtnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
   noActions: { color: '#888', fontSize: 13, textAlign: 'center', paddingVertical: 8 },
-  errorText: { color: '#ef476f', fontSize: 15, marginBottom: 16 },
+  errorEmoji: { fontSize: 36, marginBottom: 8 },
+  errorTitle: { color: '#ef476f', fontSize: 16, fontWeight: '700', marginBottom: 6, textAlign: 'center' },
+  errorMessage: { color: '#aaa', fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 16 },
   retryBtn: { backgroundColor: '#6c63ff', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 12 },
   retryText: { color: '#fff', fontWeight: '600' },
   // Skeleton styles

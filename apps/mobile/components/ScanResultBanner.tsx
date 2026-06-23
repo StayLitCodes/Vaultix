@@ -1,5 +1,5 @@
 import React from "react";
-import { View, Text } from "react-native";
+import { StyleSheet, View, Text } from "react-native";
 
 type Props = {
   message: string;
@@ -12,14 +12,34 @@ export default function ScanResultBanner({
 }: Props) {
   return (
     <View
-      className={`
-        px-4 py-3 rounded-xl mt-3
-        ${error ? "bg-red-500" : "bg-green-600"}
-      `}
+      style={[
+        styles.container,
+        error ? styles.errorContainer : styles.successContainer,
+      ]}
     >
-      <Text className="text-white text-sm font-medium">
+      <Text style={styles.message}>
         {message}
       </Text>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    borderRadius: 12,
+    marginTop: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  errorContainer: {
+    backgroundColor: "#ef4444",
+  },
+  successContainer: {
+    backgroundColor: "#16a34a",
+  },
+  message: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "500",
+  },
+});

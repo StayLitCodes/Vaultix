@@ -103,7 +103,7 @@ export default function TransactionTracker({
         <Step label={status === 'failed' ? 'Failed' : 'Confirmed'} active={status === 'confirmed' || status === 'failed'} failed={status === 'failed'} />
       </div>
 
-      <div style={{ marginBottom: 8 }}>
+      <div data-testid="transaction-status" style={{ marginBottom: 8 }}>
         <strong>Current:</strong> {status}
       </div>
 

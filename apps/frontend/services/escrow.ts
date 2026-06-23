@@ -293,7 +293,7 @@ export class EscrowService {
     }
 
     // Add real-time feel by randomly adding a new event if it's the first page
-    if (page === 1 && Math.random() > 0.8) {
+    if (page === 1 && !eventType && Math.random() > 0.8) {
       const newEvent: IEscrowEvent = {
         id: `e-new-${Date.now()}`,
         eventType: "UPDATED",

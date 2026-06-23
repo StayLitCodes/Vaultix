@@ -34,7 +34,7 @@ describe('EscrowOperationsService Integration', () => {
       token,
       milestones,
       deadline,
-      '0'.repeat(64), // Valid hex metadata hash
+      '1'.repeat(64), // Valid non-zero hex metadata hash
     );
 
     const op = ops[0] as any as {

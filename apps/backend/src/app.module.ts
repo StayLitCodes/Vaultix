@@ -11,6 +11,7 @@ import { StellarModule } from './modules/stellar/stellar.module';
 import { WebhookModule } from './modules/webhook/webhook.module';
 import { User } from './modules/user/entities/user.entity';
 import { RefreshToken } from './modules/user/entities/refresh-token.entity';
+import { EmailVerification } from './modules/user/entities/email-verification.entity';
 import { Escrow } from './modules/escrow/entities/escrow.entity';
 import { Party } from './modules/escrow/entities/party.entity';
 import { Condition } from './modules/escrow/entities/condition.entity';
@@ -30,6 +31,8 @@ import { StellarEventModule } from './modules/stellar/stellar-event.module';
 import { AssetsModule } from './modules/assets/assets.module';
 import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
 import { IpfsModule } from './modules/ipfs/ipfs.module';
+import { HealthModule } from './modules/health/health.module';
+import { AppVersionModule } from './app-version/app-version.module';
 import { EscrowGateway } from './gateways/escrow.gateway';
 import stellarConfig from './config/stellar.config';
 import ipfsConfig from './config/ipfs.config';
@@ -52,6 +55,7 @@ import ipfsConfig from './config/ipfs.config';
         entities: [
           User,
           RefreshToken,
+          EmailVerification,
           Escrow,
           Party,
           Condition,
@@ -82,6 +86,8 @@ import ipfsConfig from './config/ipfs.config';
     forwardRef(() => StellarEventModule),
     AssetsModule,
     IpfsModule,
+    HealthModule,
+    AppVersionModule,
     JwtModule.registerAsync({
       useFactory: (configService: ConfigService) => ({
         secret:

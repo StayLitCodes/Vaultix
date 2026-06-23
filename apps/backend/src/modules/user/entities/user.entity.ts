@@ -29,6 +29,25 @@ export class User {
   })
   role!: UserRole;
 
+  // New profile fields
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  displayName?: string;
+
+  @Column({ type: 'varchar', length: 255, nullable: true, unique: true })
+  email?: string;
+
+  @Column({ default: false })
+  emailVerified!: boolean;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  avatarUrl?: string;
+
+  @Column({ type: 'text', nullable: true })
+  bio?: string;
+
+  @Column({ type: 'varchar', length: 20, default: 'XLM' })
+  preferredAsset!: string;
+
   // @ManyToOne(() => Organization, (org: Organization) => org.users, { nullable: false })
   // @JoinColumn({ name: 'org_id' })
   // organization!: Organization;

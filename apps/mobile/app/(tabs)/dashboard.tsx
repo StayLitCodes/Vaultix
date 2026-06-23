@@ -13,8 +13,16 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+<<<<<<< HEAD:apps/mobile/app/dashboard.tsx
+import { escrowApi } from '../services/api';
+import { Escrow, EscrowStatus } from '../types/escrow';
+import { OfflineBanner } from '../components/OfflineBanner';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
+import { toFriendlyError, isOfflineError } from '../utils/errors';
+=======
 import { escrowApi } from '../../services/api';
 import { Escrow, EscrowStatus } from '../../types/escrow';
+>>>>>>> d431ba40ce53cfcf510d9b702e2540ee53b1f9f1:apps/mobile/app/(tabs)/dashboard.tsx
 
 const STATUS_FILTERS: Array<{ label: string; value: EscrowStatus | 'all' }> = [
   { label: 'All', value: 'all' },
@@ -68,11 +76,16 @@ export default function DashboardScreen() {
   const [activeFilter, setActiveFilter] = useState<EscrowStatus | 'all'>('all');
   const [escrows, setEscrows] = useState<Escrow[]>([]);
   const [loading, setLoading] = useState(true);
+<<<<<<< HEAD:apps/mobile/app/dashboard.tsx
+  const [error, setError] = useState<{ title: string; message: string } | null>(null);
+=======
   const [error, setError] = useState<string | null>(null);
+>>>>>>> d431ba40ce53cfcf510d9b702e2540ee53b1f9f1:apps/mobile/app/(tabs)/dashboard.tsx
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasNextPage, setHasNextPage] = useState(false);
   const pageRef = useRef(1);
+  const { isOffline, markOffline, markOnline } = useNetworkStatus();
 
   const fetchEscrows = useCallback(async (status: EscrowStatus | 'all', page: number, append = false) => {
     try {
@@ -81,10 +94,19 @@ export default function DashboardScreen() {
       setEscrows((prev) => (append ? [...prev, ...res.escrows] : res.escrows));
       setHasNextPage(res.hasNextPage);
       pageRef.current = page;
+<<<<<<< HEAD:apps/mobile/app/dashboard.tsx
+      setError(null);
+      markOnline();
+    } catch (err) {
+      const friendly = toFriendlyError(err);
+      setError({ title: friendly.title, message: friendly.message });
+      if (isOfflineError(err)) markOffline();
+=======
     } catch {
       setError('Failed to load escrows. Pull to retry.');
+>>>>>>> d431ba40ce53cfcf510d9b702e2540ee53b1f9f1:apps/mobile/app/(tabs)/dashboard.tsx
     }
-  }, []);
+  }, [markOnline, markOffline]);
 
   useEffect(() => {
     setLoading(true);
@@ -106,6 +128,9 @@ export default function DashboardScreen() {
 
   return (
     <View style={styles.container}>
+<<<<<<< HEAD:apps/mobile/app/dashboard.tsx
+      <OfflineBanner visible={isOffline} />
+=======
       {/* Screen header (tabs hide the stack header) */}
       <View style={styles.screenHeader}>
         <Text style={styles.screenTitle}>Dashboard</Text>
@@ -118,6 +143,7 @@ export default function DashboardScreen() {
           <Text style={styles.createBtnText}>＋</Text>
         </TouchableOpacity>
       </View>
+>>>>>>> d431ba40ce53cfcf510d9b702e2540ee53b1f9f1:apps/mobile/app/(tabs)/dashboard.tsx
 
       {/* Status filter tabs */}
       <FlatList
@@ -147,7 +173,13 @@ export default function DashboardScreen() {
         </View>
       ) : error ? (
         <View style={styles.errorContainer}>
+<<<<<<< HEAD:apps/mobile/app/dashboard.tsx
+          <Text style={styles.errorEmoji}>⚠️</Text>
+          <Text style={styles.errorTitle}>{error.title}</Text>
+          <Text style={styles.errorMessage}>{error.message}</Text>
+=======
           <Text style={styles.errorText}>{error}</Text>
+>>>>>>> d431ba40ce53cfcf510d9b702e2540ee53b1f9f1:apps/mobile/app/(tabs)/dashboard.tsx
           <TouchableOpacity style={styles.retryBtn} onPress={onRefresh}>
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
@@ -216,6 +248,13 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 10, fontWeight: '700' },
   cardAmount: { color: '#6c63ff', fontWeight: '700', fontSize: 18, marginBottom: 4 },
   cardMeta: { color: '#888', fontSize: 12 },
+<<<<<<< HEAD:apps/mobile/app/dashboard.tsx
+  empty: { color: '#888', textAlign: 'center', marginTop: 60, fontSize: 15 },
+  errorContainer: { alignItems: 'center', justifyContent: 'center', marginTop: 60, paddingHorizontal: 32 },
+  errorEmoji: { fontSize: 36, marginBottom: 8 },
+  errorTitle: { color: '#ef476f', fontSize: 16, fontWeight: '700', marginBottom: 6, textAlign: 'center' },
+  errorMessage: { color: '#aaa', fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 16 },
+=======
   emptyContainer: { alignItems: 'center', marginTop: 60 },
   emptyEmoji: { fontSize: 40, marginBottom: 8 },
   empty: { color: '#888', textAlign: 'center', fontSize: 15 },
@@ -224,6 +263,7 @@ const styles = StyleSheet.create({
   emptyCtaText: { color: '#fff', fontWeight: '600' },
   errorContainer: { alignItems: 'center', justifyContent: 'center', marginTop: 60, paddingHorizontal: 32 },
   errorText: { color: '#ef476f', fontSize: 14, textAlign: 'center', marginBottom: 16 },
+>>>>>>> d431ba40ce53cfcf510d9b702e2540ee53b1f9f1:apps/mobile/app/(tabs)/dashboard.tsx
   retryBtn: { backgroundColor: '#6c63ff', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10 },
   retryText: { color: '#fff', fontWeight: '600' },
   skeletonList: { padding: 16 },

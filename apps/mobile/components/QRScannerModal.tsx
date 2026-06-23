@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   Modal,
+  StyleSheet,
   View,
   Text,
   TouchableOpacity,
@@ -80,17 +81,17 @@ export default function QRScannerModal({
   if (permission === false) {
     return (
       <Modal visible={visible} transparent>
-        <View className="flex-1 items-center justify-center bg-black/70 px-6">
-          <View className="bg-white rounded-2xl p-6 w-full">
-            <Text className="text-base font-semibold">
+        <View style={styles.permissionBackdrop}>
+          <View style={styles.permissionCard}>
+            <Text style={styles.permissionTitle}>
               Camera access denied
             </Text>
 
             <TouchableOpacity
               onPress={onClose}
-              className="mt-4 bg-black rounded-xl px-4 py-3"
+              style={styles.permissionButton}
             >
-              <Text className="text-white text-center">
+              <Text style={styles.permissionButtonText}>
                 Close
               </Text>
             </TouchableOpacity>
@@ -102,15 +103,15 @@ export default function QRScannerModal({
 
   return (
     <Modal visible={visible} animationType="slide">
-      <View className="flex-1 bg-black">
+      <View style={styles.scannerContainer}>
 
         <BarCodeScanner
           onBarCodeScanned={handleScan}
           style={{ flex: 1 }}
         />
 
-        <View className="absolute top-16 left-0 right-0 px-5">
-          <Text className="text-white text-center text-lg font-semibold">
+        <View style={styles.header}>
+          <Text style={styles.headerText}>
             Scan Stellar Address or Escrow ID
           </Text>
 
@@ -122,12 +123,12 @@ export default function QRScannerModal({
           )}
         </View>
 
-        <View className="absolute bottom-10 left-0 right-0 px-6">
+        <View style={styles.footer}>
           <TouchableOpacity
             onPress={onClose}
-            className="bg-white rounded-2xl py-4"
+            style={styles.cancelButton}
           >
-            <Text className="text-center font-semibold">
+            <Text style={styles.cancelButtonText}>
               Cancel
             </Text>
           </TouchableOpacity>
@@ -136,3 +137,67 @@ export default function QRScannerModal({
     </Modal>
   );
 }
+
+const styles = StyleSheet.create({
+  permissionBackdrop: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  permissionCard: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 24,
+    width: "100%",
+  },
+  permissionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  permissionButton: {
+    backgroundColor: "#000",
+    borderRadius: 12,
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  permissionButtonText: {
+    color: "#fff",
+    textAlign: "center",
+  },
+  scannerContainer: {
+    backgroundColor: "#000",
+    flex: 1,
+  },
+  header: {
+    left: 0,
+    paddingHorizontal: 20,
+    position: "absolute",
+    right: 0,
+    top: 64,
+  },
+  headerText: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  footer: {
+    bottom: 40,
+    left: 0,
+    paddingHorizontal: 24,
+    position: "absolute",
+    right: 0,
+  },
+  cancelButton: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    paddingVertical: 16,
+  },
+  cancelButtonText: {
+    fontWeight: "600",
+    textAlign: "center",
+  },
+});

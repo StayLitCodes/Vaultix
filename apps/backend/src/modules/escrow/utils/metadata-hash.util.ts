@@ -6,13 +6,19 @@ const BASE32_ALPHABET = 'abcdefghijklmnopqrstuvwxyz234567';
 const BASE58BTC_ALPHABET =
   '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 const HEX_32_RE = /^[0-9a-f]{64}$/;
+const HEX_RE = /^[0-9a-f]+$/i;
+const ZERO_DIGEST_HEX = '0'.repeat(SHA256_DIGEST_LENGTH * 2);
 
 export function normalizeMetadataHash(reference: string): string {
   const value = sanitizeReference(reference);
   const lowered = value.toLowerCase();
 
   if (HEX_32_RE.test(lowered)) {
-    return lowered;
+    return validateDigestHex(lowered);
+  }
+
+  if (HEX_RE.test(value)) {
+    throw new Error('metadata hash must be 64 hex characters');
   }
 
   const cid = extractCid(value);
@@ -20,7 +26,7 @@ export function normalizeMetadataHash(reference: string): string {
     ? extractDigestFromCidV0(cid)
     : extractDigestFromCidV1(cid);
 
-  return bytesToHex(digest);
+  return validateDigestHex(bytesToHex(digest));
 }
 
 function sanitizeReference(reference: string): string {
@@ -198,4 +204,12 @@ function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join(
     '',
   );
+}
+
+function validateDigestHex(digestHex: string): string {
+  if (digestHex === ZERO_DIGEST_HEX) {
+    throw new Error('metadata hash cannot be all zeroes');
+  }
+
+  return digestHex;
 }

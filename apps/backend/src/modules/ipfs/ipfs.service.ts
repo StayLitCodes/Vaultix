@@ -34,7 +34,7 @@ export class IpfsService {
       this.logger.log(`Uploading file to IPFS: ${filename}`);
 
       const formData = new FormData();
-      const blob = new Blob([fileBuffer]);
+      const blob = new Blob([new Uint8Array(fileBuffer)]);
       formData.append('file', blob, filename);
 
       const response = await axios.post<PinataResponse>(

@@ -30,6 +30,24 @@ describe('normalizeMetadataHash', () => {
     expect(normalizeMetadataHash(cid)).toBe(digestHex);
   });
 
+  it('rejects all-zero raw hex digests', () => {
+    expect(() => normalizeMetadataHash('0'.repeat(64))).toThrow('zeroes');
+  });
+
+  it('rejects all-zero cid digests', () => {
+    const cid = `b${encodeBase32(
+      Uint8Array.from([0x01, 0x55, 0x12, 0x20, ...new Uint8Array(32)]),
+    )}`;
+
+    expect(() => normalizeMetadataHash(cid)).toThrow('zeroes');
+  });
+
+  it('rejects malformed raw hex digests', () => {
+    expect(() => normalizeMetadataHash(digestHex.slice(0, 62))).toThrow(
+      '64 hex characters',
+    );
+  });
+
   it('rejects non-sha256 multihashes', () => {
     const cid = `b${encodeBase32(
       Uint8Array.from([0x01, 0x55, 0x13, 0x20, ...digest]),

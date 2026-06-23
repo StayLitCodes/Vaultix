@@ -1,44 +1,72 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import TransactionTracker from './TransactionTracker';
-import { http, HttpResponse } from 'msw';
-import { server } from '../../mocks/server';
 
 describe('TransactionTracker', () => {
-  it('shows pending then confirmed when horizon returns 404 then success', async () => {
-    let call = 0;
-    
-    server.use(
-      http.get('https://horizon-testnet.stellar.org/transactions/SOME_HASH', () => {
-        call += 1;
-        if (call === 1) {
-          return new HttpResponse(null, { status: 404 });
-        }
-        return HttpResponse.json({ successful: true });
-      })
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('shows pending when horizon has not indexed the transaction yet', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      text: async () => '',
+    } as Response);
+
+    render(<TransactionTracker txHash="SOME_HASH" pollInterval={1000} />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('transaction-status')).toHaveTextContent('pending')
     );
+  });
 
-    render(<TransactionTracker txHash="SOME_HASH" pollInterval={50} />);
+  it('shows confirmed when horizon returns a successful transaction', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ successful: true }),
+    } as Response);
 
-    // initial check -> 404 => pending
-    await waitFor(() => expect(screen.getByText(/Current:/)).toHaveTextContent('pending'), { timeout: 1000 });
+    render(<TransactionTracker txHash="SOME_HASH" pollInterval={1000} />);
 
-    // With MSW, we don't necessarily need fake timers for this test since we're using real async wait for status change
-    // But pollInterval is only 50ms, so it should be fast.
+    await waitFor(() =>
+      expect(screen.getByTestId('transaction-status')).toHaveTextContent('confirmed')
+    );
+  });
+
+  it('can move from pending to confirmed as polling catches up', async () => {
+    let call = 0;
+    global.fetch = jest.fn().mockImplementation(async () => {
+      call += 1;
+      return {
+        ok: call > 1,
+        status: call === 1 ? 404 : 200,
+        text: async () => '',
+        json: async () => ({ successful: true }),
+      } as Response;
+    });
+
+    render(<TransactionTracker txHash="SOME_HASH" pollInterval={10} />);
     
-    await waitFor(() => expect(screen.getByText(/Current:/)).toHaveTextContent('confirmed'), { timeout: 2000 });
+    await waitFor(() =>
+      expect(screen.getByTestId('transaction-status')).toHaveTextContent('confirmed')
+    );
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
   it('shows failed when horizon returns error', async () => {
-    server.use(
-      http.get('https://horizon-testnet.stellar.org/transactions/BAD_HASH', () => {
-        return new HttpResponse('server error', { status: 500 });
-      })
-    );
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: async () => 'server error',
+    } as Response);
 
     render(<TransactionTracker txHash="BAD_HASH" pollInterval={50} />);
 
-    await waitFor(() => expect(screen.getByText(/Current:/)).toHaveTextContent('failed'), { timeout: 1000 });
+    await waitFor(() =>
+      expect(screen.getByTestId('transaction-status')).toHaveTextContent('failed')
+    );
     expect(screen.getByText(/server error/)).toBeInTheDocument();
   });
 });

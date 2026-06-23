@@ -16,6 +16,9 @@ jest.mock('next/link', () => {
   );
 });
 
+const VALID_STELLAR_ADDRESS =
+  'GDZ667HFMKM7HDKUYM2Q22TX4CSKOAG56ZXQ6MOR6LNOXX5CL6Y4MEEA';
+
 describe('CreateEscrowWizard', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -45,7 +48,7 @@ describe('CreateEscrowWizard', () => {
     await user.click(screen.getByRole('button', { name: /Next/i }));
 
     await waitFor(() => expect(screen.getByText(/Counterparty Address/i)).toBeInTheDocument());
-    await user.type(screen.getByLabelText(/Counterparty Address/i), 'GBAH4VETEJSTLXU7I6I7DTH2W57YI6XWUT2C7O7XWS6QW2LWSXUUT2C7');
+    await user.type(screen.getByLabelText(/Counterparty Address/i), VALID_STELLAR_ADDRESS);
     await user.click(screen.getByRole('button', { name: /Next/i }));
 
     await waitFor(() => expect(screen.getByText(/Amount/i)).toBeInTheDocument());
@@ -73,7 +76,7 @@ describe('CreateEscrowWizard', () => {
     
     // Step 1: Parties
     await waitFor(() => expect(screen.getByText(/Counterparty Address/i)).toBeInTheDocument());
-    await user.type(screen.getByLabelText(/Counterparty Address/i), 'GBAH4VETEJSTLXU7I6I7DTH2W57YI6XWUT2C7O7XWS6QW2LWSXUUT2C7');
+    await user.type(screen.getByLabelText(/Counterparty Address/i), VALID_STELLAR_ADDRESS);
     await user.click(screen.getByRole('button', { name: /Next/i }));
     
     // Step 2: Terms
@@ -88,7 +91,17 @@ describe('CreateEscrowWizard', () => {
     
     await user.click(screen.getByRole('button', { name: /Next/i }));
     
-    // Step 3: Review
+    // Step 3: Optional milestones
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Milestones' })).toBeInTheDocument()
+    );
+    await user.click(screen.getByRole('button', { name: /Next/i }));
+
+    // Step 4: Optional conditions
+    await waitFor(() => expect(screen.getByText(/Release Conditions/i)).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /Next/i }));
+
+    // Step 5: Review
     await waitFor(() => expect(screen.getByText(/Review & Confirm/i)).toBeInTheDocument());
     expect(screen.getByText('Project Development')).toBeInTheDocument();
   });

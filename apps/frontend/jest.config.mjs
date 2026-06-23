@@ -16,6 +16,7 @@ const customConfig = {
   // Add more setup options before each test is run
   setupFiles: ['<rootDir>/jest.setup.global.mjs'],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
+  testPathIgnorePatterns: ['<rootDir>/e2e/'],
   moduleNameMapper: {
     // Handle module aliases
     '^@/(.*)$': '<rootDir>/$1',
@@ -29,7 +30,7 @@ export default async () => {
     const config = await asyncConfig()
     // Explicitly override transformIgnorePatterns because next/jest can be picky
     config.transformIgnorePatterns = [
-        'node_modules/(?!(msw|@mswjs|@bundled-es-modules|undici|@stellar/freighter-api|until-async)/)',
+        'node_modules/(?!(msw|@mswjs|@bundled-es-modules|undici|@stellar/freighter-api|until-async|rettime|@open-draft)/)',
     ]
     return config
 }

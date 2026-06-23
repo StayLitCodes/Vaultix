@@ -23,7 +23,7 @@ export default function PartiesStep() {
 
         {/* Counterparty Address Field */}
         <Input
-          label="Counterparty Stellar Address"
+          label="Counterparty Address"
           placeholder="G..."
           helperText="Enter the public key (starts with G) of the other party."
           error={errors.counterpartyAddress?.message}

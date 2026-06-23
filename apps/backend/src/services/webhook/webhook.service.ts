@@ -139,7 +139,7 @@ export class WebhookService implements OnModuleDestroy {
       this.logger.log(`Webhook delivered to ${webhook.url}`);
     } catch (err: unknown) {
       let errorMsg = 'Unknown error';
-      let statusCode = null;
+      let statusCode: number | null = null;
 
       if (axios.isAxiosError(err)) {
         errorMsg = err.message;

@@ -2249,11 +2249,10 @@ fn test_refund_expired_blocked_when_fully_released() {
     );
 }
 
-/// Spec: refund_expired is blocked when the contract is paused.
-/// Rationale: paused state indicates platform review; fund drains must be prevented.
-/// Depositors can retry once the contract is unpaused.
+/// Spec: refund_expired is allowed when the contract is paused.
+/// Rationale: safety + fairness guarantee, depositors should be able to get their funds back if deadline is passed.
 #[test]
-fn test_refund_expired_blocked_when_paused() {
+fn test_refund_expired_allowed_when_paused() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -2266,12 +2265,7 @@ fn test_refund_expired_blocked_when_paused() {
     // Advance past deadline
     env.ledger().with_mut(|li| li.timestamp = deadline + 1);
 
-    // Must be rejected with ContractPaused
-    let result = client.try_refund_expired(&escrow_id, &depositor);
-    assert_eq!(result, Err(Ok(Error::ContractPaused)));
-
-    // Unpause — same call must now succeed
-    client.set_paused(&false);
+    // Must succeed even when paused (safety + fairness)
     let result = client.try_refund_expired(&escrow_id, &depositor);
     assert!(result.is_ok());
 }

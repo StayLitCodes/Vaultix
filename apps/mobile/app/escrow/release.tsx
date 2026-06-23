@@ -15,6 +15,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { escrowApi } from '../../services/api';
 import { requireAuth } from '../../services/auth';
 import { TxState, TxStatus } from '../../types/escrow';
+import { toFriendlyError } from '../../utils/errors';
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLLS = 20; // ~60 s timeout
@@ -203,13 +204,14 @@ export default function ReleaseMilestoneScreen() {
 }
 
 function getErrorMessage(err: unknown): string {
+  const friendly = toFriendlyError(err);
+  // For release-specific context, provide more specific messages
   if (err && typeof err === 'object' && 'response' in err) {
-    const axiosErr = err as { response?: { data?: { message?: string }; status?: number } };
-    if (axiosErr.response?.status === 403) return 'Unauthorized: you cannot release this milestone.';
+    const axiosErr = err as { response?: { status?: number } };
+    if (axiosErr.response?.status === 403) return 'You don\'t have permission to release this milestone.';
     if (axiosErr.response?.status === 402) return 'Insufficient balance to complete this transaction.';
-    if (axiosErr.response?.data?.message) return axiosErr.response.data.message;
   }
-  return 'An unexpected error occurred. Please try again.';
+  return friendly.message;
 }
 
 const styles = StyleSheet.create({
