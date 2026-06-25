@@ -252,6 +252,29 @@ export class EscrowOperationsService {
   }
 
   /**
+   * Creates operations for triggering an expired-deadline refund on-chain
+   * Calls the Soroban contract's `refund_expired` function.
+   */
+  createRefundExpiredOps(escrowId: string): StellarSdk.xdr.Operation[] {
+    try {
+      this.logger.log(`Creating refund-expired ops for escrow ID: ${escrowId}`);
+
+      const contract = new StellarSdk.Contract(this.contractId);
+      const op = contract.call(
+        'refund_expired',
+        StellarSdk.xdr.ScVal.scvU64(new StellarSdk.xdr.Uint64(escrowId)),
+      );
+
+      return [op];
+    } catch (error) {
+      this.logger.error(
+        `Failed to create refund-expired ops: ${this.getErrorMessage(error)}`,
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Creates operations for resolving a dispute
    */
   createResolveDisputeOps(

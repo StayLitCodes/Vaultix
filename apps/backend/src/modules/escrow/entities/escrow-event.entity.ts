@@ -28,6 +28,9 @@ export enum EscrowEventType {
   EXPIRED = 'expired',
   EXPIRATION_WARNING_SENT = 'expiration_warning_sent',
   MILESTONE_RELEASED = 'milestone_released',
+  REFUNDED = 'refunded',
+  REFUND_FAILED = 'refund_failed',
+  QUEUED_MANUAL_REFUND = 'queued_manual_refund',
 }
 
 @Entity('escrow_events')

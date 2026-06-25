@@ -220,6 +220,14 @@ export class EscrowGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
 
+  broadcastEscrowRefunded(escrowId: string, data: EscrowEventData): void {
+    this.server.to(`escrow:${escrowId}`).emit('escrow:refunded', {
+      escrowId,
+      ...data,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
   // Get online users (for admin/monitoring)
   getOnlineUsers(): Map<string, string[]> {
     return this.userSocketMap;

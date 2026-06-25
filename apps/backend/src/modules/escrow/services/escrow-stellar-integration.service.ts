@@ -414,6 +414,47 @@ export class EscrowStellarIntegrationService {
     );
   }
 
+  /**
+   * Triggers the on-chain `refund_expired` function for an escrow whose deadline
+   * has passed. The Soroban contract handles fee deduction and fund transfer to
+   * the buyer internally.
+   *
+   * @param escrowId The ID of the escrow to refund
+   * @param callerPublicKey The Stellar public key signing the transaction (platform wallet)
+   * @returns Transaction hash of the refund transaction
+   */
+  async refundExpiredOnChain(
+    escrowId: string,
+    callerPublicKey: string,
+  ): Promise<string> {
+    try {
+      this.logger.log(
+        `Triggering on-chain refund_expired for escrow ${escrowId}`,
+      );
+
+      const operations =
+        this.escrowOperationsService.createRefundExpiredOps(escrowId);
+
+      const transaction = await this.stellarService.buildTransaction(
+        callerPublicKey,
+        operations,
+      );
+
+      const result: StellarSubmitTransactionResponse =
+        await this.stellarService.submitTransaction(transaction);
+
+      this.logger.log(
+        `Successfully refunded expired escrow ${escrowId}, tx hash: ${result.hash}`,
+      );
+      return result.hash;
+    } catch (error) {
+      this.logger.error(
+        `Failed to refund expired escrow ${escrowId}: ${this.getErrorMessage(error)}`,
+      );
+      throw error;
+    }
+  }
+
   async resolveOnChainDispute(
     escrowId: string,
     winnerPublicKey: string,

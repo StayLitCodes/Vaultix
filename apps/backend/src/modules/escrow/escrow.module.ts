@@ -7,6 +7,7 @@ import { EscrowEvent } from './entities/escrow-event.entity';
 import { Dispute } from './entities/dispute.entity';
 import { EscrowService } from './services/escrow.service';
 import { EscrowSchedulerService } from './services/escrow-scheduler.service';
+import { EscrowExpirationService } from './services/escrow-expiration.service';
 import { EscrowController } from './controllers/escrow.controller';
 import { EscrowSchedulerController } from './controllers/escrow-scheduler.controller';
 import { EventsController } from './controllers/events.controller';
@@ -23,6 +24,7 @@ import { EscrowLifecycleService } from './escrow-lifecycle.service';
 import { EscrowFundingService } from './escrow-funding.service';
 import { EscrowDisputeService } from './escrow-dispute.service';
 import { EscrowQueryService } from './escrow-query.service';
+import { EscrowGateway } from '../../gateways/escrow.gateway';
 
 @Module({
   imports: [
@@ -44,6 +46,7 @@ import { EscrowQueryService } from './escrow-query.service';
   providers: [
     EscrowService,
     EscrowSchedulerService,
+    EscrowExpirationService,
     EscrowStellarIntegrationService,
     EscrowAccessGuard,
     EscrowExpireGuard,
@@ -51,10 +54,12 @@ import { EscrowQueryService } from './escrow-query.service';
     EscrowFundingService,
     EscrowDisputeService,
     EscrowQueryService,
+    EscrowGateway,
   ],
   exports: [
     EscrowService,
     EscrowSchedulerService,
+    EscrowExpirationService,
     EscrowLifecycleService,
     EscrowFundingService,
     EscrowDisputeService,

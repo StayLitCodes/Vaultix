@@ -12,6 +12,7 @@ const validTransitions: Record<EscrowStatus, EscrowStatus[]> = {
     EscrowStatus.CANCELLED,
     EscrowStatus.DISPUTED,
     EscrowStatus.EXPIRED,
+    EscrowStatus.REFUNDED,
   ],
   [EscrowStatus.DISPUTED]: [
     EscrowStatus.COMPLETED,
@@ -21,6 +22,7 @@ const validTransitions: Record<EscrowStatus, EscrowStatus[]> = {
   [EscrowStatus.COMPLETED]: [],
   [EscrowStatus.CANCELLED]: [],
   [EscrowStatus.EXPIRED]: [],
+  [EscrowStatus.REFUNDED]: [],
 };
 
 export function canTransition(
@@ -45,6 +47,7 @@ export function isTerminalStatus(status: EscrowStatus): boolean {
   return (
     status === EscrowStatus.COMPLETED ||
     status === EscrowStatus.CANCELLED ||
-    status === EscrowStatus.EXPIRED
+    status === EscrowStatus.EXPIRED ||
+    status === EscrowStatus.REFUNDED
   );
 }
