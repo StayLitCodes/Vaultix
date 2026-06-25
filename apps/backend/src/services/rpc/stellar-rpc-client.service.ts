@@ -65,10 +65,13 @@ export class CircuitBreaker {
     } catch (error) {
       this.failures++;
       this.lastFailureTime = Date.now();
+      this.logger.error(
+        `RPC operation failed (consecutive: ${this.failures}). Error: ${this.getErrorMessage(error)}`,
+      );
       if (this.failures >= this.failureThreshold) {
         this.state = CircuitState.OPEN;
         this.logger.warn(
-          `Circuit breaker OPENED after ${this.failures} failures. Reset in ${this.resetTimeout}ms`,
+          `Circuit breaker OPENED after ${this.failures} consecutive failures. Paused for ${this.resetTimeout}ms`,
         );
       }
       throw error;
@@ -147,8 +150,10 @@ export class StellarRpcClient {
           const errorResponse = this.mapToException(error, operationName);
           const logger = new Logger(StellarRpcClient.name);
           logger.error(
-            `Operation '${operationName}' failed after ${attempt + 1} attempts: ${errorResponse.message} (${latency}ms)`,
-            error instanceof Error ? error.stack : undefined,
+            `Operation '${operationName}' failed after ${attempt + 1} attempts (${latency}ms): ${errorResponse.message}`, {
+              errorCode: errorResponse.errorCode,
+              httpStatus: errorResponse.httpStatus,
+            }, error instanceof Error ? error.stack : undefined,
           );
           return {
             data: null,
@@ -172,12 +177,29 @@ export class StellarRpcClient {
 
   private isRetryableError(error: unknown): boolean {
     if (typeof error === 'object' && error !== null && 'isRetryable' in error) {
-      return error.isRetryable;
+      const isRetryable = error.isRetryable;
+      const is4xxError = typeof error === 'object' && error !== null && 'httpStatus' in error && error.httpStatus >= 400 && error.httpStatus < 500;
+
+      if (is4xxError && !isRetryable) {
+        return false;
+      }
+
+      if (is4xxError) {
+        return false;
+      }
+
+      return isRetryable;
     }
 
     if (StellarSdk.Horizon.ServerError.is(error)) {
       const serverError = error as StellarSdk.Horizon.ServerError;
-      return [408, 429, 503, 504].includes(serverError.response?.status || 0);
+      const status = serverError.response?.status || 0;
+
+      if (status >= 400 && status < 500) {
+        return false;
+      }
+
+      return [408, 429, 503, 504].includes(status);
     }
 
     if (error instanceof Error && error.message.includes('timeout')) {
