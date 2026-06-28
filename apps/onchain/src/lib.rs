@@ -1296,7 +1296,9 @@ impl VaultixEscrow {
             .ok_or(Error::MilestoneNotFound)?;
 
         if milestone.amount > escrow.threshold_amount {
-            // Check if we have enough signatures
+            // For above-threshold amounts, the depositor must still authorise the call.
+            // In addition, enough collected signatures must be present.
+            escrow.depositor.require_auth();
             if escrow.collected_signatures.len() < escrow.required_signatures {
                 return Err(Error::UnauthorizedAccess);
             }
@@ -1349,16 +1351,13 @@ impl VaultixEscrow {
         env: Env,
         escrow_id: u64,
         milestone_index: u32,
-        buyer: Address,
     ) -> Result<(), Error> {
         ensure_not_paused(&env)?;
 
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
-        buyer.require_auth();
+        escrow.depositor.require_auth();
 
-        if escrow.depositor != buyer {
-            return Err(Error::UnauthorizedAccess);
-        }
+        let buyer = escrow.depositor.clone();
         if escrow_status(&escrow) != EscrowStatus::Active {
             return Err(Error::EscrowNotActive);
         }
@@ -1410,12 +1409,14 @@ impl VaultixEscrow {
     pub fn raise_dispute(env: Env, escrow_id: u64, caller: Address) -> Result<(), Error> {
         ensure_not_paused(&env)?;
 
+        // Require auth before any data access to prevent probing escrow membership.
+        caller.require_auth();
+
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
 
         if caller != escrow.depositor && caller != escrow.recipient {
             return Err(Error::UnauthorizedAccess);
         }
-        caller.require_auth();
 
         if escrow_status(&escrow) == EscrowStatus::Disputed {
             return Err(Error::AlreadyInDispute);
@@ -1726,7 +1727,7 @@ impl VaultixEscrow {
         Ok(())
     }
 
-    pub fn refund_expired(env: Env, escrow_id: u64, caller: Address) -> Result<(), Error> {
+    pub fn refund_expired(env: Env, escrow_id: u64) -> Result<(), Error> {
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
 
         // Validate deadline has passed
@@ -1740,11 +1741,8 @@ impl VaultixEscrow {
             return Err(Error::InvalidStatusForRefund);
         }
 
-        // Authorization validation - only buyer can refund
-        caller.require_auth();
-        if caller != escrow.depositor {
-            return Err(Error::Unauthorized);
-        }
+        // Only the depositor can refund an expired escrow; auth derived from stored escrow data.
+        escrow.depositor.require_auth();
 
         // Calculate remaining balance
         let remaining_balance = escrow

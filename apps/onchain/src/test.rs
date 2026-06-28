@@ -923,8 +923,8 @@ fn test_complete_escrow_with_all_releases() {
     client.deposit_funds(&escrow_id);
 
     // Buyer confirms delivery for all milestones
-    client.confirm_delivery(&escrow_id, &0, &depositor);
-    client.confirm_delivery(&escrow_id, &1, &depositor);
+    client.confirm_delivery(&escrow_id, &0);
+    client.confirm_delivery(&escrow_id, &1);
 
     // Verify all funds transferred to recipient
     assert_eq!(token_client.balance(&contract_id), 0);
@@ -1286,7 +1286,7 @@ fn test_raise_dispute_invalid_status() {
     token_client.approve(&depositor, &contract_id, &5000, &200);
     client.deposit_funds(&escrow_id_completed);
     // Mark milestone as released without requiring treasury/fee config
-    client.confirm_delivery(&escrow_id_completed, &0, &depositor);
+    client.confirm_delivery(&escrow_id_completed, &0);
     client.complete_escrow(&escrow_id_completed);
 
     let result_completed = client.try_raise_dispute(&escrow_id_completed, &depositor);
@@ -1704,7 +1704,7 @@ fn test_resolved_is_terminal() {
 
     // refund_expired must be blocked (advance ledger past deadline)
     env.ledger().with_mut(|li| li.timestamp = 1706400001u64);
-    let r = client.try_refund_expired(&escrow_id, &depositor);
+    let r = client.try_refund_expired(&escrow_id);
     assert_eq!(r, Err(Ok(Error::InvalidStatusForRefund)));
 }
 
@@ -1878,20 +1878,24 @@ fn test_invalid_milestone_amount() {
 }
 
 #[test]
-#[should_panic(expected = "Error(Contract, #5)")]
+#[should_panic]
 fn test_unauthorized_confirm_delivery() {
+    // confirm_delivery now derives auth from escrow.depositor stored on-chain.
+    // Calling without depositor's auth must be rejected by the host.
     let env = Env::default();
-    env.mock_all_auths();
+    // Do NOT mock_all_auths — auth is verified for real.
 
     let contract_id = env.register_contract(None, VaultixEscrow);
     let client = VaultixEscrowClient::new(&env, &contract_id);
 
     let buyer = Address::generate(&env);
     let seller = Address::generate(&env);
-    let non_buyer = Address::generate(&env);
     let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
     let escrow_id = 9u64;
 
+    env.mock_all_auths();
+    client.initialize(&treasury, &Some(0));
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&buyer, &10000);
 
@@ -1913,11 +1917,12 @@ fn test_unauthorized_confirm_delivery() {
         &1706400000u64,
         &valid_metadata_hash(&env),
     );
-
     token_client.approve(&buyer, &contract_id, &1000, &200);
     client.deposit_funds(&escrow_id);
 
-    client.confirm_delivery(&escrow_id, &0, &non_buyer);
+    // Call with no auth — must panic because depositor.require_auth() will fail.
+    env.mock_auths(&[]);
+    client.confirm_delivery(&escrow_id, &0);
 }
 
 #[test]
@@ -1961,9 +1966,9 @@ fn test_double_confirm_delivery() {
     token_client.approve(&buyer, &contract_id, &1000, &200);
     client.deposit_funds(&escrow_id);
 
-    client.confirm_delivery(&escrow_id, &0, &buyer);
+    client.confirm_delivery(&escrow_id, &0);
 
-    let result = client.try_confirm_delivery(&escrow_id, &0, &buyer);
+    let result = client.try_confirm_delivery(&escrow_id, &0);
     assert_eq!(result, Err(Ok(Error::MilestoneAlreadyReleased)));
 }
 
@@ -2359,58 +2364,98 @@ fn test_release_milestone_before_deposit() {
 
 #[test]
 fn test_refund_expired_authorization_check() {
-    let env = Env::default();
-    env.mock_all_auths();
+    // Part 1: Without depositor auth, refund_expired should be rejected.
+    {
+        let env = Env::default();
+        // Do NOT mock_all_auths — auth is verified for real.
+        let contract_id = env.register_contract(None, VaultixEscrow);
+        let client = VaultixEscrowClient::new(&env, &contract_id);
 
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+        let depositor = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let admin = Address::generate(&env);
+        let treasury = Address::generate(&env);
+        let escrow_id = 100u64;
 
-    let depositor = Address::generate(&env);
-    let recipient = Address::generate(&env);
-    let unauthorized_caller = Address::generate(&env);
-    let admin = Address::generate(&env);
-    let treasury = Address::generate(&env);
-    let escrow_id = 100u64;
+        env.mock_all_auths();
+        client.initialize(&treasury, &None);
 
-    // Initialize treasury
-    client.initialize(&treasury, &None);
+        let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+        token_admin.mint(&depositor, &10_000);
 
-    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
-    token_admin.mint(&depositor, &10_000);
+        let milestones = vec![
+            &env,
+            Milestone {
+                amount: 10_000,
+                status: MilestoneStatus::Pending,
+                description: symbol_short!("Work"),
+            },
+        ];
 
-    let milestones = vec![
-        &env,
-        Milestone {
-            amount: 10_000,
-            status: MilestoneStatus::Pending,
-            description: symbol_short!("Work"),
-        },
-    ];
+        let deadline = 1000u64;
+        client.create_escrow(
+            &escrow_id,
+            &depositor,
+            &recipient,
+            &token_address,
+            &milestones,
+            &deadline,
+            &valid_metadata_hash(&env),
+        );
+        token_client.approve(&depositor, &contract_id, &10_000, &200);
+        client.deposit_funds(&escrow_id);
+        env.ledger().with_mut(|li| li.timestamp = 2000);
 
-    // Create and fund escrow with deadline in the past
-    let deadline = 1000u64;
-    client.create_escrow(
-        &escrow_id,
-        &depositor,
-        &recipient,
-        &token_address,
-        &milestones,
-        &deadline,
-        &valid_metadata_hash(&env),
-    );
-    token_client.approve(&depositor, &contract_id, &10_000, &200);
-    client.deposit_funds(&escrow_id);
+        // Clear mock auths: call with no auth should fail.
+        env.mock_auths(&[]);
+        let result = client.try_refund_expired(&escrow_id);
+        assert!(result.is_err(), "expected auth failure without depositor auth");
+    }
 
-    // Set time past deadline
-    env.ledger().with_mut(|li| li.timestamp = 2000);
+    // Part 2: With depositor auth, refund_expired should succeed.
+    {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, VaultixEscrow);
+        let client = VaultixEscrowClient::new(&env, &contract_id);
 
-    // Try to refund with unauthorized caller - should fail with Unauthorized error
-    let result = client.try_refund_expired(&escrow_id, &unauthorized_caller);
-    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+        let depositor = Address::generate(&env);
+        let recipient = Address::generate(&env);
+        let admin = Address::generate(&env);
+        let treasury = Address::generate(&env);
+        let escrow_id = 101u64;
 
-    // Refund with authorized caller (depositor) - should succeed
-    let result = client.try_refund_expired(&escrow_id, &depositor);
-    assert!(result.is_ok());
+        client.initialize(&treasury, &None);
+
+        let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+        token_admin.mint(&depositor, &10_000);
+
+        let milestones = vec![
+            &env,
+            Milestone {
+                amount: 10_000,
+                status: MilestoneStatus::Pending,
+                description: symbol_short!("Work"),
+            },
+        ];
+
+        let deadline = 1000u64;
+        client.create_escrow(
+            &escrow_id,
+            &depositor,
+            &recipient,
+            &token_address,
+            &milestones,
+            &deadline,
+            &valid_metadata_hash(&env),
+        );
+        token_client.approve(&depositor, &contract_id, &10_000, &200);
+        client.deposit_funds(&escrow_id);
+        env.ledger().with_mut(|li| li.timestamp = 2000);
+
+        let result = client.try_refund_expired(&escrow_id);
+        assert!(result.is_ok(), "expected success with depositor auth");
+    }
 }
 
 // ===============================================================================
@@ -2483,12 +2528,12 @@ fn test_refund_expired_deadline_not_reached() {
 
     // At exactly the deadline — must be rejected (strict >)
     env.ledger().with_mut(|li| li.timestamp = deadline);
-    let result = client.try_refund_expired(&escrow_id, &depositor);
+    let result = client.try_refund_expired(&escrow_id);
     assert_eq!(result, Err(Ok(Error::DeadlineNotReached)));
 
     // One second before deadline — must also be rejected
     env.ledger().with_mut(|li| li.timestamp = deadline - 1);
-    let result = client.try_refund_expired(&escrow_id, &depositor);
+    let result = client.try_refund_expired(&escrow_id);
     assert_eq!(result, Err(Ok(Error::DeadlineNotReached)));
 }
 
@@ -2508,7 +2553,7 @@ fn test_refund_expired_blocked_when_disputed() {
     // Advance past deadline
     env.ledger().with_mut(|li| li.timestamp = deadline + 1);
 
-    let result = client.try_refund_expired(&escrow_id, &depositor);
+    let result = client.try_refund_expired(&escrow_id);
     assert_eq!(result, Err(Ok(Error::InvalidStatusForRefund)));
 }
 
@@ -2532,7 +2577,7 @@ fn test_refund_expired_blocked_when_fully_released() {
     // Completed escrow must be rejected — the contract returns NoFundsToRefund
     // because total_released == total_amount after all milestones are released.
     // (The status check for Completed also fires, but balance check comes first.)
-    let result = client.try_refund_expired(&escrow_id, &depositor);
+    let result = client.try_refund_expired(&escrow_id);
     assert!(
         result == Err(Ok(Error::InvalidStatusForRefund))
             || result == Err(Ok(Error::NoFundsToRefund)),
@@ -2558,7 +2603,7 @@ fn test_refund_expired_allowed_when_paused() {
     env.ledger().with_mut(|li| li.timestamp = deadline + 1);
 
     // Must succeed even when paused (safety + fairness)
-    let result = client.try_refund_expired(&escrow_id, &depositor);
+    let result = client.try_refund_expired(&escrow_id);
     assert!(result.is_ok());
 }
 
@@ -3029,7 +3074,7 @@ fn test_refund_expired_uses_escrow_fee_override() {
     });
 
     // Refund expired escrow - should use escrow fee (500 bps)
-    client.refund_expired(&escrow_id, &depositor);
+    client.refund_expired(&escrow_id);
 
     // Expected: fee = 10_000 * 500 / 10_000 = 500
     let expected_fee = 500i128;
@@ -3817,7 +3862,7 @@ fn test_full_lifecycle_event_summaries_are_accurate() {
     assert_eq!(release_event.deadline, deadline);
 
     // --- Step 4: Delivery confirm milestone 1 ---
-    client.confirm_delivery(&escrow_id, &1, &depositor);
+    client.confirm_delivery(&escrow_id, &1);
 
     let events = env.events().all();
     let confirm_event: DeliveryConfirmedEvent = events.last().unwrap().2.clone().into_val(&env);
@@ -4007,4 +4052,378 @@ fn test_event_topics_are_backwards_compatible() {
 
         event_idx += 1;
     }
+}
+
+// ===============================================================================
+// Negative auth tests — every state-changing entrypoint must reject an
+// unauthorized caller. Tests use mock_auths(&[]) after setup to ensure the
+// contract enforces require_auth deterministically.
+// ===============================================================================
+
+/// Helper: fully set up a contract with treasury, admin/operator/arbitrator,
+/// a funded escrow (status Active), and returns the key addresses + client.
+fn setup_full_contract_and_funded_escrow(
+    env: &Env,
+) -> (
+    VaultixEscrowClient<'_>,
+    Address, // contract_id
+    Address, // depositor
+    Address, // recipient
+    Address, // admin
+    Address, // operator
+    Address, // arbitrator
+    Address, // treasury
+    Address, // token_address
+    token::Client<'_>,
+    u64, // escrow_id
+) {
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(env, &contract_id);
+
+    let depositor = Address::generate(env);
+    let recipient = Address::generate(env);
+    let admin = Address::generate(env);
+    let operator = Address::generate(env);
+    let arbitrator = Address::generate(env);
+    let treasury = Address::generate(env);
+
+    env.mock_all_auths();
+    client.initialize(&treasury, &Some(0));
+    client.init(&admin, &operator, &arbitrator);
+
+    let (token_client, token_admin, token_address) = create_token_contract(env, &admin);
+    token_admin.mint(&depositor, &50_000);
+
+    let escrow_id = 8_888u64;
+    let milestones = vec![
+        env,
+        Milestone {
+            amount: 10_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &9_999_999_999u64,
+        &valid_metadata_hash(env),
+    );
+    token_client.approve(&depositor, &contract_id, &10_000, &200);
+    client.deposit_funds(&escrow_id);
+
+    (
+        client,
+        contract_id,
+        depositor,
+        recipient,
+        admin,
+        operator,
+        arbitrator,
+        treasury,
+        token_address,
+        token_client,
+        escrow_id,
+    )
+}
+
+#[test]
+#[should_panic]
+fn test_auth_create_escrow_non_depositor_rejected() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let attacker = Address::generate(&env);
+    let admin = Address::generate(&env);
+
+    env.mock_all_auths();
+    let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &10_000);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 1_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    // Authorize only the attacker, not the depositor.
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &attacker,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "create_escrow",
+            args: ().into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    // Should panic: depositor.require_auth() will fail.
+    client.create_escrow(
+        &9_001u64,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &9_999_999_999u64,
+        &valid_metadata_hash(&env),
+    );
+}
+
+#[test]
+#[should_panic]
+fn test_auth_deposit_funds_non_depositor_rejected() {
+    let env = Env::default();
+    let (client, contract_id, depositor, _recipient, _admin, _op, _arb, _treasury, token_address, token_client, escrow_id) =
+        setup_full_contract_and_funded_escrow(&env);
+
+    // Create a fresh unfunded escrow to try depositing into.
+    let new_id = 9_889u64;
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    env.mock_all_auths();
+    let recipient2 = Address::generate(&env);
+    client.create_escrow(
+        &new_id,
+        &depositor,
+        &recipient2,
+        &token_address,
+        &milestones,
+        &9_999_999_999u64,
+        &valid_metadata_hash(&env),
+    );
+    token_client.approve(&depositor, &contract_id, &5_000, &200);
+
+    // Clear auth — no one authorized.
+    env.mock_auths(&[]);
+    client.deposit_funds(&new_id);
+}
+
+#[test]
+#[should_panic]
+fn test_auth_cancel_escrow_non_depositor_rejected() {
+    let env = Env::default();
+    let (client, _contract_id, _depositor, _recipient, _admin, _op, _arb, _treasury, _token_address, _token_client, escrow_id) =
+        setup_full_contract_and_funded_escrow(&env);
+
+    env.mock_auths(&[]);
+    client.cancel_escrow(&escrow_id);
+}
+
+#[test]
+#[should_panic]
+fn test_auth_complete_escrow_non_depositor_rejected() {
+    // complete_escrow requires all milestones released first — use release_milestone
+    let env = Env::default();
+    let (client, _contract_id, _depositor, _recipient, _admin, _op, _arb, _treasury, _token_address, _token_client, escrow_id) =
+        setup_full_contract_and_funded_escrow(&env);
+
+    env.mock_all_auths();
+    client.release_milestone(&escrow_id, &0);
+
+    env.mock_auths(&[]);
+    client.complete_escrow(&escrow_id);
+}
+
+#[test]
+#[should_panic]
+fn test_auth_raise_dispute_non_party_rejected() {
+    let env = Env::default();
+    let (client, _contract_id, _depositor, _recipient, _admin, _op, _arb, _treasury, _token_address, _token_client, escrow_id) =
+        setup_full_contract_and_funded_escrow(&env);
+
+    let outsider = Address::generate(&env);
+    // outsider is neither depositor nor recipient.
+    env.mock_auths(&[]);
+    client.raise_dispute(&escrow_id, &outsider);
+}
+
+#[test]
+fn test_auth_raise_dispute_non_party_error() {
+    // Same as above but verifies the exact error code rather than panic behavior.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _contract_id, _depositor, _recipient, _admin, _op, _arb, _treasury, _token_address, _token_client, escrow_id) =
+        setup_full_contract_and_funded_escrow(&env);
+
+    let outsider = Address::generate(&env);
+    // outsider.require_auth() passes (mock_all_auths), but membership check fails.
+    let result = client.try_raise_dispute(&escrow_id, &outsider);
+    assert_eq!(result, Err(Ok(Error::UnauthorizedAccess)));
+}
+
+#[test]
+#[should_panic]
+fn test_auth_resolve_dispute_non_arbitrator_rejected() {
+    let env = Env::default();
+    let (client, _contract_id, depositor, _recipient, _admin, _op, _arb, _treasury, _token_address, _token_client, escrow_id) =
+        setup_full_contract_and_funded_escrow(&env);
+
+    env.mock_all_auths();
+    client.raise_dispute(&escrow_id, &depositor);
+
+    env.mock_auths(&[]);
+    client.resolve_dispute(&escrow_id, &depositor, &None);
+}
+
+#[test]
+#[should_panic]
+fn test_auth_set_paused_non_operator_rejected() {
+    let env = Env::default();
+    let (client, _contract_id, _depositor, _recipient, _admin, _op, _arb, _treasury, _token_address, _token_client, _escrow_id) =
+        setup_full_contract_and_funded_escrow(&env);
+
+    env.mock_auths(&[]);
+    client.set_paused(&true);
+}
+
+#[test]
+#[should_panic]
+fn test_auth_update_fee_non_operator_rejected() {
+    let env = Env::default();
+    let (client, _contract_id, _depositor, _recipient, _admin, _op, _arb, _treasury, _token_address, _token_client, _escrow_id) =
+        setup_full_contract_and_funded_escrow(&env);
+
+    env.mock_auths(&[]);
+    client.update_fee(&100);
+}
+
+#[test]
+#[should_panic]
+fn test_auth_set_token_fee_non_treasury_rejected() {
+    let env = Env::default();
+    let (client, _contract_id, _depositor, _recipient, _admin, _op, _arb, _treasury, token_address, _token_client, _escrow_id) =
+        setup_full_contract_and_funded_escrow(&env);
+
+    env.mock_auths(&[]);
+    client.set_token_fee(&token_address, &100);
+}
+
+#[test]
+#[should_panic]
+fn test_auth_set_escrow_fee_non_treasury_rejected() {
+    let env = Env::default();
+    let (client, _contract_id, _depositor, _recipient, _admin, _op, _arb, _treasury, _token_address, _token_client, escrow_id) =
+        setup_full_contract_and_funded_escrow(&env);
+
+    env.mock_auths(&[]);
+    client.set_escrow_fee(&escrow_id, &100);
+}
+
+#[test]
+#[should_panic]
+fn test_auth_set_admin_non_admin_rejected() {
+    let env = Env::default();
+    let (client, _contract_id, _depositor, _recipient, _admin, _op, _arb, _treasury, _token_address, _token_client, _escrow_id) =
+        setup_full_contract_and_funded_escrow(&env);
+
+    let new_admin = Address::generate(&env);
+    env.mock_auths(&[]);
+    client.set_admin(&new_admin);
+}
+
+#[test]
+#[should_panic]
+fn test_auth_configure_multisig_non_depositor_rejected() {
+    // configure_multisig is only allowed on Created (unfunded) escrows.
+    let env = Env::default();
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+
+    env.mock_all_auths();
+    client.initialize(&treasury, &Some(0));
+
+    let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &5_000);
+
+    let escrow_id = 9_002u64;
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &9_999_999_999u64,
+        &valid_metadata_hash(&env),
+    );
+
+    env.mock_auths(&[]);
+    client.configure_multisig(&escrow_id, &5_000, &2);
+}
+
+#[test]
+#[should_panic]
+fn test_auth_collect_signature_non_signer_rejected() {
+    // collect_signature(signer) calls signer.require_auth().
+    // If auth is not provided for the signer, it must be rejected.
+    let env = Env::default();
+    let (client, _contract_id, _depositor, _recipient, _admin, _op, _arb, _treasury, _token_address, _token_client, escrow_id) =
+        setup_full_contract_and_funded_escrow(&env);
+
+    let signer = Address::generate(&env);
+    env.mock_auths(&[]);
+    client.collect_signature(&escrow_id, &signer);
+}
+
+#[test]
+#[should_panic]
+fn test_auth_release_milestone_non_depositor_rejected() {
+    let env = Env::default();
+    let (client, _contract_id, _depositor, _recipient, _admin, _op, _arb, _treasury, _token_address, _token_client, escrow_id) =
+        setup_full_contract_and_funded_escrow(&env);
+
+    env.mock_auths(&[]);
+    client.release_milestone(&escrow_id, &0);
+}
+
+#[test]
+#[should_panic]
+fn test_auth_confirm_delivery_non_depositor_rejected() {
+    let env = Env::default();
+    let (client, _contract_id, _depositor, _recipient, _admin, _op, _arb, _treasury, _token_address, _token_client, escrow_id) =
+        setup_full_contract_and_funded_escrow(&env);
+
+    env.mock_auths(&[]);
+    client.confirm_delivery(&escrow_id, &0);
+}
+
+#[test]
+#[should_panic]
+fn test_auth_refund_expired_non_depositor_rejected() {
+    let env = Env::default();
+    let (client, _contract_id, _depositor, _recipient, _admin, _op, _arb, _treasury, _token_address, _token_client, escrow_id) =
+        setup_full_contract_and_funded_escrow(&env);
+
+    // Advance past deadline (9_999_999_999)
+    env.ledger().with_mut(|li| li.timestamp = 10_000_000_000u64);
+    env.mock_auths(&[]);
+    client.refund_expired(&escrow_id);
 }

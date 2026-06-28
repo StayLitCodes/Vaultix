@@ -439,7 +439,7 @@ fn test_refund_expired_uses_escrow_fee_override() {
     });
 
     // Refund expired escrow - should use escrow fee (500 bps)
-    client.refund_expired(&escrow_id, &depositor);
+    client.refund_expired(&escrow_id);
 
     // Expected: fee = 10_000 * 500 / 10_000 = 500
     let expected_fee = 500i128;
