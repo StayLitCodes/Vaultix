@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { WebhookService } from './webhook.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Webhook } from '../../modules/webhook/webhook.entity';
+import { WebhookDelivery } from '../../modules/webhook/webhook-delivery.entity';
 import { Repository } from 'typeorm';
 import axios from 'axios';
 import { WebhookEvent } from '../../types/webhook/webhook.types';
@@ -17,6 +18,7 @@ const mockedAxios = axios as jest.Mocked<typeof axios>;
 describe('WebhookService', () => {
   let service: WebhookService;
   let repo: jest.Mocked<Repository<Webhook>>;
+  let deliveryRepo: jest.Mocked<Repository<WebhookDelivery>>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -30,6 +32,18 @@ describe('WebhookService', () => {
             create: jest.fn(),
             save: jest.fn(),
             delete: jest.fn(),
+            update: jest.fn(),
+          },
+        },
+        {
+          provide: getRepositoryToken(WebhookDelivery),
+          useValue: {
+            find: jest.fn(),
+            findOne: jest.fn(),
+            create: jest.fn(),
+            save: jest.fn(),
+            delete: jest.fn(),
+            update: jest.fn(),
           },
         },
       ],
@@ -37,12 +51,13 @@ describe('WebhookService', () => {
 
     service = module.get<WebhookService>(WebhookService);
     repo = module.get(getRepositoryToken(Webhook));
+    deliveryRepo = module.get(getRepositoryToken(WebhookDelivery));
   });
 
   const mockWebhook = {
     id: 'w1',
     user: { id: 'u1' },
-    url: 'http://test.com',
+    url: 'https://test.com',
     secret: 'test-secret',
     events: ['escrow.created'],
     isActive: true,
@@ -54,7 +69,7 @@ describe('WebhookService', () => {
       repo.create.mockReturnValue(mockWebhook as any);
       repo.save.mockResolvedValue(mockWebhook as any);
 
-      const result = await service.createWebhook('u1', 'test.com', 'secret', [
+      const result = await service.createWebhook('u1', 'https://test.com', 'secret', [
         'escrow.created',
       ]);
 
@@ -62,11 +77,25 @@ describe('WebhookService', () => {
       expect(result).toEqual(mockWebhook);
     });
 
+    it('should generate a signing secret when none is provided', async () => {
+      repo.find.mockResolvedValue([]);
+      repo.create.mockReturnValue(mockWebhook as any);
+      repo.save.mockResolvedValue(mockWebhook as any);
+
+      await service.createWebhook('u1', 'https://test.com', undefined as any, [
+        'escrow.created',
+      ]);
+
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ secret: expect.any(String) }),
+      );
+    });
+
     it('should throw if too many events', async () => {
       await expect(
         service.createWebhook(
           'u1',
-          'test.com',
+          'https://test.com',
           'secret',
           Array(10).fill('escrow.created') as any,
         ),
@@ -76,7 +105,7 @@ describe('WebhookService', () => {
     it('should throw if user exceeds webhook limit', async () => {
       repo.find.mockResolvedValue(Array(11).fill(mockWebhook) as any);
       await expect(
-        service.createWebhook('u1', 'test.com', 'secret', ['escrow.created']),
+        service.createWebhook('u1', 'https://test.com', 'secret', ['escrow.created']),
       ).rejects.toThrow(UnprocessableEntityException);
     });
   });
@@ -149,6 +178,17 @@ describe('WebhookService', () => {
         expect.anything(),
         2,
       );
+    });
+  });
+
+  describe('deliveries', () => {
+    it('should return deliveries for a webhook owned by the user', async () => {
+      repo.findOne.mockResolvedValue(mockWebhook as any);
+      deliveryRepo.find.mockResolvedValue([{ id: 'd1' }] as any);
+
+      const result = await service.getWebhookDeliveries('u1', 'w1');
+
+      expect(result).toHaveLength(1);
     });
   });
 
