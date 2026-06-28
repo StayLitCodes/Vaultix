@@ -100,3 +100,61 @@ export interface IAuditLogFilters {
   page?: number;
   pageSize?: number;
 }
+
+export interface IAdminDispute {
+  id: string;
+  escrowId: string;
+  escrow: IAdminEscrow;
+  filedByUserId: string;
+  filedBy: {
+    id: string;
+    walletAddress: string;
+  };
+  reason: string;
+  evidence: string[] | null;
+  status: 'open' | 'under_review' | 'resolved';
+  resolvedByUserId?: string | null;
+  resolvedBy?: {
+    id: string;
+    walletAddress: string;
+  } | null;
+  resolutionNotes?: string | null;
+  sellerPercent?: number | null;
+  buyerPercent?: number | null;
+  outcome?: 'released_to_seller' | 'refunded_to_buyer' | 'split' | null;
+  resolvedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolutionHistory?: {
+    resolvedAt: string;
+    outcome: string;
+    notes: string;
+    resolvedBy: string;
+    sellerPercent?: number;
+    buyerPercent?: number;
+  }[];
+  timeline?: {
+    id: string;
+    type: string;
+    title: string;
+    description: string;
+    timestamp: string;
+    actor: string;
+  }[];
+  communicationLog?: {
+    id: string;
+    sender: string;
+    message: string;
+    timestamp: string;
+  }[];
+}
+
+export interface IAdminDisputeResponse {
+  disputes: IAdminDispute[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
+}

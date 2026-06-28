@@ -80,78 +80,83 @@ export class EscrowService {
     creatorId: string,
     ipAddress?: string,
   ): Promise<Escrow> {
-    const escrow = this.escrowRepository.create({
-      title: dto.title,
-      description: dto.description,
-      amount: dto.amount,
-      assetCode: dto.asset?.code || 'XLM',
-      assetIssuer: dto.asset?.issuer || undefined,
-      type: dto.type,
-      creatorId,
-      expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
-      metadataHash: dto.metadataHash,
-    } as Partial<Escrow>);
+    try {
+      const escrow = this.escrowRepository.create({
+        title: dto.title,
+        description: dto.description,
+        amount: dto.amount,
+        assetCode: dto.asset?.code || 'XLM',
+        assetIssuer: dto.asset?.issuer || undefined,
+        type: dto.type,
+        creatorId,
+        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+        metadataHash: dto.metadataHash,
+      } as Partial<Escrow>);
 
-    const savedEscrow = (await this.escrowRepository.save(
-      escrow,
-    )) as unknown as Escrow;
+      const savedEscrow = (await this.escrowRepository.save(
+        escrow,
+      )) as unknown as Escrow;
 
-    const parties = dto.parties.map((partyDto) =>
-      this.partyRepository.create({
-        escrowId: savedEscrow.id,
-        userId: partyDto.userId,
-        role: partyDto.role,
-        status: partyDto.userId === creatorId ? PartyStatus.ACCEPTED : PartyStatus.PENDING,
-      }),
-    );
-    await this.partyRepository.save(parties);
-
-    // Notify each invited party (fire-and-forget; failures must not block escrow creation)
-    for (const partyDto of dto.parties) {
-      const invitedUser = await this.userRepository.findOne({
-        where: { id: partyDto.userId },
-      });
-      this.notificationService
-        .handleEscrowEvent(
-          partyDto.userId,
-          NotificationEventType.PARTY_INVITED,
-          {
-            escrowId: savedEscrow.id,
-            escrowTitle: savedEscrow.title,
-            role: partyDto.role,
-            invitedBy: creatorId,
-            email: invitedUser?.email ?? undefined,
-          },
-        )
-        .catch(() => undefined);
-    }
-
-    if (dto.conditions && dto.conditions.length > 0) {
-      const conditions = dto.conditions.map((conditionDto) =>
-        this.conditionRepository.create({
+      const parties = dto.parties.map((partyDto) =>
+        this.partyRepository.create({
           escrowId: savedEscrow.id,
-          description: conditionDto.description,
-          type: conditionDto.type,
-          metadata: conditionDto.metadata,
+          userId: partyDto.userId,
+          role: partyDto.role,
+          status: partyDto.userId === creatorId ? PartyStatus.ACCEPTED : PartyStatus.PENDING,
         }),
       );
-      await this.conditionRepository.save(conditions);
+      await this.partyRepository.save(parties);
+
+      // Notify each invited party (fire-and-forget; failures must not block escrow creation)
+      for (const partyDto of dto.parties) {
+        const invitedUser = await this.userRepository.findOne({
+          where: { id: partyDto.userId },
+        });
+        this.notificationService
+          .handleEscrowEvent(
+            partyDto.userId,
+            NotificationEventType.PARTY_INVITED,
+            {
+              escrowId: savedEscrow.id,
+              escrowTitle: savedEscrow.title,
+              role: partyDto.role,
+              invitedBy: creatorId,
+              email: invitedUser?.email ?? undefined,
+            },
+          )
+          .catch(() => undefined);
+      }
+
+      if (dto.conditions && dto.conditions.length > 0) {
+        const conditions = dto.conditions.map((conditionDto) =>
+          this.conditionRepository.create({
+            escrowId: savedEscrow.id,
+            description: conditionDto.description,
+            type: conditionDto.type,
+            metadata: conditionDto.metadata,
+          }),
+        );
+        await this.conditionRepository.save(conditions);
+      }
+
+      await this.logEvent(
+        savedEscrow.id,
+        EscrowEventType.CREATED,
+        creatorId,
+        { dto },
+        ipAddress,
+      );
+
+      // Dispatch webhook for escrow.created
+      await this.webhookService.dispatchEvent('escrow.created', {
+        escrowId: savedEscrow.id,
+      });
+
+      return await this.findOne(savedEscrow.id);
+    } catch (e) {
+      console.error('ESCROW_CREATE_ERROR_TRACE:', e);
+      throw e;
     }
-
-    await this.logEvent(
-      savedEscrow.id,
-      EscrowEventType.CREATED,
-      creatorId,
-      { dto },
-      ipAddress,
-    );
-
-    // Dispatch webhook for escrow.created
-    await this.webhookService.dispatchEvent('escrow.created', {
-      escrowId: savedEscrow.id,
-    });
-
-    return this.findOne(savedEscrow.id);
   }
 
   async findOverview(

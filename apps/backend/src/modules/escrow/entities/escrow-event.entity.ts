@@ -6,6 +6,7 @@ import {
   ManyToOne,
   JoinColumn,
   Index,
+  Generated,
 } from 'typeorm';
 import { Escrow } from './escrow.entity';
 
@@ -61,6 +62,7 @@ export class EscrowEvent {
   // Monotonic cursor for incremental sync
   // Auto-incrementing sequence number for ordering events
   @Column({ type: 'bigint', name: 'cursor' })
+  @Generated('increment')
   @Index()
   cursor: string;
 }

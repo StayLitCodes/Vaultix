@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '@/app/contexts/ToastProvider';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { WebSocketProvider } from '@/app/contexts/WebSocketContext';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
@@ -21,7 +22,9 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       <ThemeProvider>
         <ToastProvider>
           <ErrorBoundary>
-            {children}
+            <WebSocketProvider>
+              {children}
+            </WebSocketProvider>
           </ErrorBoundary>
         </ToastProvider>
       </ThemeProvider>

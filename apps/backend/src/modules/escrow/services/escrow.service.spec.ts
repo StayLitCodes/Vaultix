@@ -276,7 +276,10 @@ describe('EscrowService', () => {
     } as Party;
 
     it('sets status to ACCEPTED and records respondedAt', async () => {
-      partyRepository.findOne.mockResolvedValue({ ...pendingParty, status: PartyStatus.PENDING });
+      partyRepository.findOne.mockResolvedValue({
+        ...pendingParty,
+        status: PartyStatus.PENDING,
+      });
       partyRepository.save.mockResolvedValue({
         ...pendingParty,
         status: PartyStatus.ACCEPTED,
@@ -286,7 +289,7 @@ describe('EscrowService', () => {
       userRepository.findOne.mockResolvedValue({
         id: 'user-456',
         email: 'seller@test.com',
-      });
+      } as User);
 
       const result = await service.acceptPartyInvitation(
         'escrow-123',
@@ -304,7 +307,10 @@ describe('EscrowService', () => {
     });
 
     it('notifies the escrow creator on acceptance', async () => {
-      partyRepository.findOne.mockResolvedValue({ ...pendingParty, status: PartyStatus.PENDING });
+      partyRepository.findOne.mockResolvedValue({
+        ...pendingParty,
+        status: PartyStatus.PENDING,
+      });
       partyRepository.save.mockResolvedValue({
         ...pendingParty,
         status: PartyStatus.ACCEPTED,
@@ -314,7 +320,7 @@ describe('EscrowService', () => {
       userRepository.findOne.mockResolvedValue({
         id: 'user-456',
         email: 'seller@test.com',
-      });
+      } as User);
 
       await service.acceptPartyInvitation(
         'escrow-123',
@@ -331,7 +337,10 @@ describe('EscrowService', () => {
     });
 
     it('throws ForbiddenException when user is not the party', async () => {
-      partyRepository.findOne.mockResolvedValue({ ...pendingParty, status: PartyStatus.PENDING });
+      partyRepository.findOne.mockResolvedValue({
+        ...pendingParty,
+        status: PartyStatus.PENDING,
+      });
 
       await expect(
         service.acceptPartyInvitation('escrow-123', 'party-123', 'wrong-user'),
@@ -372,7 +381,10 @@ describe('EscrowService', () => {
     } as Party;
 
     it('sets status to REJECTED and records respondedAt', async () => {
-      partyRepository.findOne.mockResolvedValue({ ...pendingSellerParty, status: PartyStatus.PENDING });
+      partyRepository.findOne.mockResolvedValue({
+        ...pendingSellerParty,
+        status: PartyStatus.PENDING,
+      });
       partyRepository.save.mockResolvedValue({
         ...pendingSellerParty,
         status: PartyStatus.REJECTED,
@@ -383,7 +395,7 @@ describe('EscrowService', () => {
       userRepository.findOne.mockResolvedValue({
         id: 'user-456',
         email: 'seller@test.com',
-      });
+      } as User);
 
       const result = await service.rejectPartyInvitation(
         'escrow-123',
@@ -401,7 +413,10 @@ describe('EscrowService', () => {
     });
 
     it('auto-cancels the escrow when a required party rejects', async () => {
-      partyRepository.findOne.mockResolvedValue({ ...pendingSellerParty, status: PartyStatus.PENDING });
+      partyRepository.findOne.mockResolvedValue({
+        ...pendingSellerParty,
+        status: PartyStatus.PENDING,
+      });
       partyRepository.save.mockResolvedValue({
         ...pendingSellerParty,
         status: PartyStatus.REJECTED,
@@ -411,7 +426,10 @@ describe('EscrowService', () => {
       const updateMock = jest.fn().mockResolvedValue({});
       escrowRepository.update = updateMock;
       webhookService.dispatchEvent = jest.fn().mockResolvedValue(undefined);
-      userRepository.findOne.mockResolvedValue({ id: 'user-456', email: null });
+      userRepository.findOne.mockResolvedValue({
+        id: 'user-456',
+        email: undefined,
+      } as User);
 
       await service.rejectPartyInvitation(
         'escrow-123',
@@ -426,7 +444,10 @@ describe('EscrowService', () => {
     });
 
     it('throws ForbiddenException when user is not the party', async () => {
-      partyRepository.findOne.mockResolvedValue({ ...pendingSellerParty, status: PartyStatus.PENDING });
+      partyRepository.findOne.mockResolvedValue({
+        ...pendingSellerParty,
+        status: PartyStatus.PENDING,
+      });
 
       await expect(
         service.rejectPartyInvitation('escrow-123', 'party-123', 'wrong-user'),
@@ -443,7 +464,7 @@ describe('EscrowService', () => {
           escrow: { id: 'escrow-123' },
         },
       ];
-      partyRepository.find.mockResolvedValue(pendingParties);
+      partyRepository.find.mockResolvedValue(pendingParties as Party[]);
 
       const result = await service.getPendingInvitations('user-456');
 
@@ -469,7 +490,7 @@ describe('EscrowService', () => {
       const escrowWithPendingSeller = {
         ...mockEscrow,
         status: EscrowStatus.PENDING,
-        stellarTxHash: null,
+        stellarTxHash: undefined,
         amount: 100,
         parties: [
           {
@@ -484,7 +505,9 @@ describe('EscrowService', () => {
           },
         ],
       };
-      escrowRepository.findOne.mockResolvedValue(escrowWithPendingSeller);
+      escrowRepository.findOne.mockResolvedValue(
+        escrowWithPendingSeller as Escrow,
+      );
 
       await expect(
         service.fund(
