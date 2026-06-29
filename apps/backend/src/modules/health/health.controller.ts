@@ -1,4 +1,9 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, HttpStatus } from '@nestjs/common';
+import {
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import {
   HealthCheck,
   HealthCheckService,
@@ -23,6 +28,7 @@ interface HealthInfo {
 }
 
 @Controller('health')
+@ApiTags('health')
 export class HealthController {
   constructor(
     private health: HealthCheckService,
@@ -34,6 +40,9 @@ export class HealthController {
 
   @Get()
   @HealthCheck()
+  @ApiOperation({ summary: 'Perform a health check for the backend service' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Service health status' })
+  @ApiResponse({ status: HttpStatus.INTERNAL_SERVER_ERROR, description: 'Service health check failed' })
   async check(): Promise<HealthCheckResult> {
     return this.health.check([
       () => this.checkDatabase(),
@@ -43,17 +52,24 @@ export class HealthController {
   }
 
   @Get('live')
+  @ApiOperation({ summary: 'Check whether the service is live' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Service is alive' })
   live(): { status: string } {
     return { status: 'ok' };
   }
 
   @Get('ready')
   @HealthCheck()
+  @ApiOperation({ summary: 'Check whether the service is ready to serve traffic' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Service is ready' })
+  @ApiResponse({ status: HttpStatus.SERVICE_UNAVAILABLE, description: 'Service is not ready' })
   async ready(): Promise<HealthCheckResult> {
     return this.health.check([() => this.checkDatabase()]);
   }
 
   @Get('info')
+  @ApiOperation({ summary: 'Get deployment and runtime information' })
+  @ApiResponse({ status: HttpStatus.OK, description: 'Runtime information retrieved successfully' })
   async info(): Promise<HealthInfo> {
     const activeEscrows = await this.escrowRepository.count({
       where: { status: EscrowStatus.ACTIVE },

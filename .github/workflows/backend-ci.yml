@@ -39,5 +39,8 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Swagger coverage check
+        run: npm test -- --runInBand src/swagger-docs.spec.ts
+
       - name: Test
         run: npm run test

@@ -21,8 +21,12 @@ import { ThrottlerGuard } from '@nestjs/throttler';
 import { Request as ExpressRequest } from 'express';
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiOkResponse,
   ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { AuthGuard } from '../../auth/middleware/auth.guard';
@@ -50,7 +54,7 @@ interface AuthenticatedRequest extends ExpressRequest {
 
 @Controller('escrows')
 @ApiTags('escrows')
-@ApiBearerAuth()
+@ApiBearerAuth('access-token')
 @UseGuards(ThrottlerGuard, AuthGuard)
 export class EscrowController {
   constructor(private readonly escrowService: EscrowService) {}
@@ -65,6 +69,12 @@ export class EscrowController {
   }
 
   @Post()
+  @ApiOperation({ summary: 'Create a new escrow' })
+  @ApiBody({ type: CreateEscrowDto, description: 'Escrow creation payload' })
+  @ApiResponse({ status: 201, description: 'Escrow created successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid escrow payload' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 409, description: 'Escrow conflicts with an existing resource' })
   async create(
     @Body() dto: CreateEscrowDto,
     @Request() req: AuthenticatedRequest,
@@ -75,6 +85,12 @@ export class EscrowController {
   }
 
   @Get()
+  @ApiOperation({ summary: 'List escrows for the authenticated user' })
+  @ApiQuery({ name: 'page', required: false, description: 'Page number' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Page size' })
+  @ApiQuery({ name: 'status', required: false, description: 'Filter by escrow status' })
+  @ApiResponse({ status: 200, description: 'Escrows retrieved successfully' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
   async findAll(
     @Query() query: ListEscrowsDto,
     @Request() req: AuthenticatedRequest,
@@ -109,12 +125,26 @@ export class EscrowController {
 
   @Get(':id')
   @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Get a single escrow by ID' })
+  @ApiParam({ name: 'id', description: 'Escrow ID' })
+  @ApiResponse({ status: 200, description: 'Escrow retrieved successfully' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Escrow not found' })
   async findOne(@Param('id') id: string) {
     return this.escrowService.findOne(id);
   }
 
   @Patch(':id')
   @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Update an escrow by ID' })
+  @ApiParam({ name: 'id', description: 'Escrow ID' })
+  @ApiBody({ type: UpdateEscrowDto, description: 'Escrow update payload' })
+  @ApiResponse({ status: 200, description: 'Escrow updated successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid update payload' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Escrow not found' })
   async update(
     @Param('id') id: string,
     @Body() dto: UpdateEscrowDto,
@@ -127,6 +157,14 @@ export class EscrowController {
 
   @Post(':id/cancel')
   @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Cancel an escrow by ID' })
+  @ApiParam({ name: 'id', description: 'Escrow ID' })
+  @ApiBody({ type: CancelEscrowDto, description: 'Escrow cancellation payload' })
+  @ApiResponse({ status: 200, description: 'Escrow cancelled successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid cancellation payload' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Escrow not found' })
   async cancel(
     @Param('id') id: string,
     @Body() dto: CancelEscrowDto,
@@ -139,6 +177,14 @@ export class EscrowController {
 
   @Post(':id/expire')
   @UseGuards(EscrowExpireGuard)
+  @ApiOperation({ summary: 'Expire an escrow by ID' })
+  @ApiParam({ name: 'id', description: 'Escrow ID' })
+  @ApiBody({ type: ExpireEscrowDto, description: 'Escrow expiration payload' })
+  @ApiResponse({ status: 200, description: 'Escrow expired successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid expiration payload' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Escrow not found' })
   async expire(
     @Param('id') id: string,
     @Body() dto: ExpireEscrowDto,
@@ -152,6 +198,14 @@ export class EscrowController {
 
   @Get(':id/events')
   @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'List events for an escrow' })
+  @ApiParam({ name: 'id', description: 'Escrow ID' })
+  @ApiQuery({ name: 'page', required: false, description: 'Page number' })
+  @ApiQuery({ name: 'limit', required: false, description: 'Page size' })
+  @ApiResponse({ status: 200, description: 'Escrow events retrieved successfully' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Escrow not found' })
   async findEscrowEvents(
     @Param('id') id: string,
     @Query() query: ListEventsDto,
@@ -163,6 +217,14 @@ export class EscrowController {
 
   @Post(':id/fund')
   @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Fund an escrow' })
+  @ApiParam({ name: 'id', description: 'Escrow ID' })
+  @ApiBody({ type: FundEscrowDto, description: 'Funding request payload' })
+  @ApiResponse({ status: 200, description: 'Escrow funded successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid funding payload' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Escrow not found' })
   async fund(
     @Param('id') id: string,
     @Body() dto: FundEscrowDto,
@@ -180,6 +242,12 @@ export class EscrowController {
 
   @Post(':id/release')
   @UseGuards(AuthGuard)
+  @ApiOperation({ summary: 'Release funds for an escrow' })
+  @ApiParam({ name: 'id', description: 'Escrow ID' })
+  @ApiResponse({ status: 200, description: 'Escrow released successfully' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Escrow not found' })
   async releaseEscrow(
     @Param('id') id: string,
     @Req() req: AuthenticatedRequest,
@@ -199,6 +267,15 @@ export class EscrowController {
 
   @Post(':id/conditions/:conditionId/fulfill')
   @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Fulfill an escrow condition' })
+  @ApiParam({ name: 'id', description: 'Escrow ID' })
+  @ApiParam({ name: 'conditionId', description: 'Condition ID' })
+  @ApiBody({ type: FulfillConditionDto, description: 'Condition fulfillment payload' })
+  @ApiResponse({ status: 200, description: 'Condition fulfilled successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid fulfillment payload' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Condition or escrow not found' })
   async fulfillCondition(
     @Param('id') escrowId: string,
     @Param('conditionId') conditionId: string,
@@ -218,6 +295,13 @@ export class EscrowController {
 
   @Post(':id/conditions/:conditionId/confirm')
   @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Confirm a fulfilled condition' })
+  @ApiParam({ name: 'id', description: 'Escrow ID' })
+  @ApiParam({ name: 'conditionId', description: 'Condition ID' })
+  @ApiResponse({ status: 200, description: 'Condition confirmed successfully' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Condition or escrow not found' })
   async confirmCondition(
     @Param('id') escrowId: string,
     @Param('conditionId') conditionId: string,
@@ -321,6 +405,14 @@ export class EscrowController {
    */
   @Post(':id/dispute')
   @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'File a dispute for an escrow' })
+  @ApiParam({ name: 'id', description: 'Escrow ID' })
+  @ApiBody({ type: FileDisputeDto, description: 'Dispute filing payload' })
+  @ApiResponse({ status: 200, description: 'Dispute filed successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid dispute payload' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Escrow not found' })
   async fileDispute(
     @Param('id') id: string,
     @Body() dto: FileDisputeDto,
@@ -341,6 +433,12 @@ export class EscrowController {
    */
   @Get(':id/dispute')
   @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Get the dispute record for an escrow' })
+  @ApiParam({ name: 'id', description: 'Escrow ID' })
+  @ApiResponse({ status: 200, description: 'Dispute retrieved successfully' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Escrow or dispute not found' })
   async getDispute(@Param('id') id: string) {
     return this.escrowService.getDispute(id);
   }
@@ -352,6 +450,14 @@ export class EscrowController {
    */
   @Post(':id/dispute/resolve')
   @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Resolve an escrow dispute' })
+  @ApiParam({ name: 'id', description: 'Escrow ID' })
+  @ApiBody({ type: ResolveDisputeDto, description: 'Dispute resolution payload' })
+  @ApiResponse({ status: 200, description: 'Dispute resolved successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid dispute resolution payload' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Escrow or dispute not found' })
   async resolveDispute(
     @Param('id') id: string,
     @Body() dto: ResolveDisputeDto,
@@ -368,6 +474,13 @@ export class EscrowController {
   @Post(':id/evidence')
   @UseGuards(EscrowAccessGuard)
   @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Upload evidence for an escrow' })
+  @ApiParam({ name: 'id', description: 'Escrow ID' })
+  @ApiResponse({ status: 201, description: 'Evidence uploaded successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid evidence file upload' })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Escrow not found' })
   async uploadEvidence(
     @Param('id') id: string,
     @Request() req: AuthenticatedRequest,
