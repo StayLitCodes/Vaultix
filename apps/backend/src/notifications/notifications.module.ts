@@ -8,6 +8,8 @@ import { NotificationController } from './notifications.controller';
 import { NotificationService } from './notifications.service';
 import { PreferenceService } from './preference.service';
 import { EmailSender } from './senders/email.sender';
+import { EmailService } from './senders/email.service';
+import { EmailTemplateService } from './senders/email-template.service';
 import { WebhookSender } from './senders/webhook.sender';
 
 @Module({
@@ -20,9 +22,11 @@ import { WebhookSender } from './senders/webhook.sender';
   providers: [
     NotificationService,
     PreferenceService,
+    EmailTemplateService,
+    EmailService,
     EmailSender,
     WebhookSender,
   ],
-  exports: [NotificationService, PreferenceService],
+  exports: [NotificationService, PreferenceService, EmailService],
 })
 export class NotificationsModule {}
