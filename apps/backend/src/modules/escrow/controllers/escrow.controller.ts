@@ -17,7 +17,7 @@ import {
   FileTypeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { Request as ExpressRequest } from 'express';
 import {
   ApiBearerAuth,
@@ -48,10 +48,13 @@ interface AuthenticatedRequest extends ExpressRequest {
   user: { sub?: string; userId?: string; walletAddress: string };
 }
 
+// GET endpoints inherit the global 100/min IP-based default.
+// POST /escrows carries a tighter per-user limit via @Throttle below.
 @Controller('escrows')
 @ApiTags('escrows')
 @ApiBearerAuth()
-@UseGuards(ThrottlerGuard, AuthGuard)
+@UseGuards(AuthGuard)
+@SkipThrottle({ user: true }) // skip user throttler by default; re-enabled on POST /escrows
 export class EscrowController {
   constructor(private readonly escrowService: EscrowService) {}
 
@@ -65,6 +68,8 @@ export class EscrowController {
   }
 
   @Post()
+  @SkipThrottle({ user: false }) // re-enable the user throttler for this endpoint
+  @Throttle({ user: { limit: 20, ttl: 60_000 } })
   async create(
     @Body() dto: CreateEscrowDto,
     @Request() req: AuthenticatedRequest,

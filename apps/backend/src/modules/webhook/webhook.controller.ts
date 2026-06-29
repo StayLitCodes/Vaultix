@@ -7,12 +7,11 @@ import {
   Param,
   Req,
   UseGuards,
-  UseInterceptors,
 } from '@nestjs/common';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { WebhookService } from '../../services/webhook/webhook.service';
 import { WebhookEvent } from '../../types/webhook/webhook.types';
 import { AuthGuard } from '../auth/middleware/auth.guard';
-import { ThrottlerGuard } from '@nestjs/throttler';
 
 class CreateWebhookDto {
   url: string;
@@ -20,18 +19,22 @@ class CreateWebhookDto {
   events: WebhookEvent[];
 }
 
+// GET/DELETE inherit the global 100/min IP-based default.
+// POST /webhooks applies a stricter per-user limit.
 @Controller('webhooks')
 @UseGuards(AuthGuard)
+@SkipThrottle({ user: true })
 export class WebhookController {
   constructor(private readonly webhookService: WebhookService) {}
 
   @Post()
-  @UseInterceptors(ThrottlerGuard)
+  @SkipThrottle({ user: false })
+  @Throttle({ user: { limit: 10, ttl: 60_000 } })
   async create(
-    @Req() req: { user: { id: string } },
+    @Req() req: { user: { id: string; sub?: string; userId?: string } },
     @Body() dto: CreateWebhookDto,
   ) {
-    const userId = req?.user?.id;
+    const userId = req?.user?.id ?? req?.user?.sub ?? req?.user?.userId;
     if (!userId) throw new Error('User ID missing');
     return this.webhookService.createWebhook(
       userId,
@@ -42,15 +45,20 @@ export class WebhookController {
   }
 
   @Get()
-  async list(@Req() req: { user: { id: string } }) {
-    const userId = req?.user?.id;
+  async list(
+    @Req() req: { user: { id: string; sub?: string; userId?: string } },
+  ) {
+    const userId = req?.user?.id ?? req?.user?.sub ?? req?.user?.userId;
     if (!userId) throw new Error('User ID missing');
     return this.webhookService.getUserWebhooks(userId);
   }
 
   @Delete(':id')
-  async remove(@Req() req: { user: { id: string } }, @Param('id') id: string) {
-    const userId = req?.user?.id;
+  async remove(
+    @Req() req: { user: { id: string; sub?: string; userId?: string } },
+    @Param('id') id: string,
+  ) {
+    const userId = req?.user?.id ?? req?.user?.sub ?? req?.user?.userId;
     if (!userId) throw new Error('User ID missing');
     await this.webhookService.deleteWebhook(userId, id);
     return { success: true };

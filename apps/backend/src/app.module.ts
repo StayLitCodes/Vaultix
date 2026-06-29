@@ -1,8 +1,11 @@
+import { APP_GUARD } from '@nestjs/core';
 import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { JwtModule } from '@nestjs/jwt';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { VaultixThrottlerGuard } from './common/guards/vaultix-throttler.guard';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AuthModule } from './modules/auth/auth.module';
@@ -43,6 +46,19 @@ import ipfsConfig from './config/ipfs.config';
       isGlobal: true,
       load: [stellarConfig, ipfsConfig],
     }),
+    ThrottlerModule.forRoot([
+      {
+        name: 'default',
+        ttl: 60_000,
+        limit: process.env.NODE_ENV === 'test' ? 10_000 : 100,
+      },
+      {
+        name: 'user',
+        ttl: 60_000,
+        // Effectively unlimited by default; specific endpoints override this.
+        limit: process.env.NODE_ENV === 'test' ? 10_000 : 10_000,
+      },
+    ]),
     ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -101,7 +117,8 @@ import ipfsConfig from './config/ipfs.config';
   controllers: [AppController],
   providers: [
     AppService,
-    EscrowGateway, // WebSocket Gateway for real-time updates
+    EscrowGateway,
+    { provide: APP_GUARD, useClass: VaultixThrottlerGuard },
   ],
 })
 export class AppModule {}

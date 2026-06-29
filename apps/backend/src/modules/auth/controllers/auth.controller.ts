@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { AuthService } from '../services/auth.service';
 import {
   ChallengeDto,
@@ -26,14 +26,16 @@ import { UpdateProfileDto } from '../dto/profile.dto';
 import { AuthGuard } from '../middleware/auth.guard';
 import { AuthThrottlerGuard } from '../middleware/auth-throttler.guard';
 
+// Auth endpoints are IP-only — skip the user-based throttler for the whole controller.
 @Controller('auth')
 @UseGuards(AuthThrottlerGuard)
+@SkipThrottle({ user: true })
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('challenge')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async challenge(@Body() challengeDto: ChallengeDto) {
     return this.authService.generateChallenge(challengeDto.walletAddress);
   }

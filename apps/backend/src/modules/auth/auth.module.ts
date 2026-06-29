@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
-import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthController } from './controllers/auth.controller';
 import { AuthService } from './services/auth.service';
 import { AuthGuard } from './middleware/auth.guard';
@@ -21,12 +20,6 @@ import { EmailVerification } from '../user/entities/email-verification.entity';
           process.env.JWT_SECRET || 'your-secret-key-change-in-production',
       }),
     }),
-    ThrottlerModule.forRoot([
-      {
-        ttl: 60000,
-        limit: process.env.NODE_ENV === 'test' ? 1000 : 10,
-      },
-    ]),
   ],
   controllers: [AuthController],
   providers: [AuthService, AuthGuard, AdminGuard],
