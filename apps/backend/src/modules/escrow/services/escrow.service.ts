@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   ConflictException,
   UnprocessableEntityException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository, SelectQueryBuilder } from 'typeorm';
@@ -44,6 +45,7 @@ import { IpfsService } from '../../ipfs/ipfs.service';
 import { AllowedAsset } from '../../assets/entities/allowed-asset.entity';
 import { NotificationService } from '../../../notifications/notifications.service';
 import { NotificationEventType } from '../../../notifications/enums/notification-event.enum';
+import { EventsGateway } from '../../../gateways/escrow.gateway';
 
 @Injectable()
 export class EscrowService {
@@ -67,6 +69,7 @@ export class EscrowService {
     private readonly webhookService: WebhookService,
     private readonly ipfsService: IpfsService,
     private readonly notificationService: NotificationService,
+    @Optional() private readonly eventsGateway?: EventsGateway,
   ) {}
 
   async create(
@@ -446,6 +449,11 @@ export class EscrowService {
     await this.webhookService.dispatchEvent('escrow.cancelled', {
       escrowId: id,
     });
+    this.eventsGateway?.broadcastEscrowStatusChanged(id, {
+      previousStatus: escrow.status,
+      newStatus: EscrowStatus.CANCELLED,
+      actorId: userId,
+    });
 
     return this.findOne(id);
   }
@@ -531,6 +539,7 @@ export class EscrowService {
       );
 
     const fundedAt = new Date();
+    const previousStatus = escrow.status;
     await this.escrowRepository.update(id, {
       stellarTxHash,
       fundedAt,
@@ -547,6 +556,11 @@ export class EscrowService {
     await this.webhookService.dispatchEvent('escrow.funded', {
       escrowId: id,
       stellarTxHash,
+    });
+    this.eventsGateway?.broadcastEscrowStatusChanged(id, {
+      previousStatus,
+      newStatus: EscrowStatus.ACTIVE,
+      actorId: userId,
     });
 
     return this.findOne(id);
@@ -626,6 +640,7 @@ export class EscrowService {
       escrow.creatorId,
     );
 
+    const previousStatus = escrow.status;
     escrow.status = EscrowStatus.COMPLETED;
     escrow.isReleased = true;
     escrow.releaseTransactionHash = txHash;
@@ -638,6 +653,11 @@ export class EscrowService {
     await this.webhookService.dispatchEvent('escrow.released', {
       escrowId: escrow.id,
       txHash,
+    });
+    this.eventsGateway?.broadcastEscrowStatusChanged(escrow.id, {
+      previousStatus,
+      newStatus: EscrowStatus.COMPLETED,
+      actorId: currentUserId,
     });
 
     return escrow;
@@ -718,6 +738,10 @@ export class EscrowService {
     // Dispatch webhook for condition fulfillment
     await this.webhookService.dispatchEvent('condition.fulfilled', {
       escrowId,
+      conditionId,
+      fulfilledBy: userId,
+    });
+    this.eventsGateway?.broadcastConditionFulfilled(escrowId, {
       conditionId,
       fulfilledBy: userId,
     });
@@ -815,6 +839,11 @@ export class EscrowService {
     // Dispatch webhook for condition confirmation
     await this.webhookService.dispatchEvent('condition.confirmed', {
       escrowId,
+      conditionId,
+      confirmedBy: userId,
+      allConditionsMet,
+    });
+    this.eventsGateway?.broadcastConditionConfirmed(escrowId, {
       conditionId,
       confirmedBy: userId,
       allConditionsMet,
@@ -970,6 +999,15 @@ export class EscrowService {
       escrowId,
       disputeId: savedDispute.id,
     });
+    this.eventsGateway?.broadcastDisputeFiled(escrowId, {
+      disputeId: savedDispute.id,
+      filedBy: userId,
+    });
+    this.eventsGateway?.broadcastEscrowStatusChanged(escrowId, {
+      previousStatus: escrow.status,
+      newStatus: EscrowStatus.DISPUTED,
+      actorId: userId,
+    });
 
     return this.disputeRepository.findOne({
       where: { id: savedDispute.id },
@@ -1070,6 +1108,16 @@ export class EscrowService {
       escrowId,
       disputeId: resolved.id,
       outcome: dto.outcome,
+    });
+    this.eventsGateway?.broadcastDisputeResolved(escrowId, {
+      disputeId: resolved.id,
+      outcome: dto.outcome,
+      resolvedBy: arbitratorUserId,
+    });
+    this.eventsGateway?.broadcastEscrowStatusChanged(escrowId, {
+      previousStatus: escrow.status,
+      newStatus: nextEscrowStatus,
+      actorId: arbitratorUserId,
     });
 
     return this.disputeRepository.findOne({
@@ -1410,6 +1458,12 @@ export class EscrowService {
     await this.webhookService.dispatchEvent('escrow.expired', {
       escrowId: escrow.id,
       reason: options.webhookReason,
+    });
+    this.eventsGateway?.broadcastEscrowStatusChanged(escrow.id, {
+      previousStatus: escrow.status,
+      newStatus: EscrowStatus.EXPIRED,
+      actorId: options.actorId,
+      reason: options.reason,
     });
 
     return this.findOne(escrow.id);

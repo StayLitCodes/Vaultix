@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   NotificationChannel,
@@ -12,6 +12,7 @@ import { WebhookSender } from './senders/webhook.sender';
 import { Repository, IsNull } from 'typeorm';
 import { EmailSender } from './senders/email.sender';
 import { PreferenceService } from './preference.service';
+import { EventsGateway } from '../gateways/escrow.gateway';
 
 @Injectable()
 export class NotificationService {
@@ -24,6 +25,7 @@ export class NotificationService {
     private preferenceService: PreferenceService,
     emailSender: EmailSender,
     webhookSender: WebhookSender,
+    @Optional() private readonly eventsGateway?: EventsGateway,
   ) {
     this.senders = new Map([
       [NotificationChannel.EMAIL, emailSender],
@@ -42,7 +44,7 @@ export class NotificationService {
       if (!pref.enabled) continue;
       if (!pref.eventTypes.includes(eventType)) continue;
 
-      await this.repo.save(
+      const notification = await this.repo.save(
         this.repo.create({
           userId,
           eventType,
@@ -51,6 +53,12 @@ export class NotificationService {
           status: NotificationStatus.PENDING,
         }),
       );
+
+      this.eventsGateway?.broadcastNotification(userId, {
+        notificationId: notification.id,
+        eventType,
+        payload,
+      });
     }
   }
 

@@ -1,75 +1,79 @@
-import {
-  WebSocketGateway,
-  WebSocketServer,
-  SubscribeMessage,
-  OnGatewayConnection,
-  OnGatewayDisconnect,
-} from '@nestjs/websockets';
-import { Server, Socket } from 'socket.io';
 import { Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import {
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
+} from '@nestjs/websockets';
+import { Server, Socket } from 'socket.io';
 
 interface EscrowEventData {
   [key: string]: unknown;
 }
 
 @WebSocketGateway({
+  namespace: '/events',
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3001',
+    origin: process.env.FRONTEND_URL?.split(',') || ['http://localhost:3001'],
     credentials: true,
   },
-  namespace: 'escrow',
 })
-export class EscrowGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  private readonly logger = new Logger(EscrowGateway.name);
-  private userSocketMap: Map<string, string[]> = new Map(); // userId -> socketIds[]
-  private socketUserMap: Map<string, string> = new Map(); // socketId -> userId
-  private socketEscrowMap: Map<string, string[]> = new Map(); // socketId -> escrowIds[]
+  private readonly logger = new Logger(EventsGateway.name);
+  private readonly userSocketMap = new Map<string, Set<string>>();
+  private readonly socketUserMap = new Map<string, string>();
+  private readonly socketEscrowMap = new Map<string, Set<string>>();
 
-  constructor(private jwtService: JwtService) {}
+  constructor(private readonly jwtService: JwtService) {}
 
-  handleConnection(client: Socket) {
+  async handleConnection(client: Socket): Promise<void> {
     try {
-      // Extract token from handshake
       const token =
-        (client.handshake.auth.token as string) ||
+        (client.handshake.auth?.token as string) ||
         (client.handshake.headers.authorization as string)?.split(' ')[1];
 
       if (!token) {
         this.logger.warn(
-          `Connection rejected: No token provided (${client.id})`,
+          `Connection rejected: no token provided (${client.id})`,
         );
         client.disconnect();
         return;
       }
 
-      // Verify JWT
-      const decoded: { sub?: string; userId?: string } =
-        this.jwtService.verify(token);
-      const userId: string | undefined = decoded?.sub || decoded?.userId;
+      const decoded = this.jwtService.verify(token) as {
+        sub?: string;
+        userId?: string;
+        id?: string;
+      };
+      const userId = decoded?.sub || decoded?.userId || decoded?.id;
 
       if (!userId) {
-        this.logger.warn(`Connection rejected: Invalid token (${client.id})`);
+        this.logger.warn(`Connection rejected: invalid token (${client.id})`);
         client.disconnect();
         return;
       }
 
-      // Store connection mapping
       this.socketUserMap.set(client.id, userId);
-      const userSockets: string[] = this.userSocketMap.get(userId) || [];
-      userSockets.push(client.id);
-      this.userSocketMap.set(userId, userSockets);
+      const socketsForUser =
+        this.userSocketMap.get(userId) || new Set<string>();
+      socketsForUser.add(client.id);
+      this.userSocketMap.set(userId, socketsForUser);
 
+      await client.join(`user:${userId}`);
       this.logger.log(`Client connected: ${client.id} (user: ${userId})`);
-
-      // Send connection success
-      client.emit('connected', { userId, socketId: client.id });
+      client.emit('connected', {
+        userId,
+        socketId: client.id,
+        namespace: '/events',
+      });
     } catch (error: unknown) {
       this.logger.error(
-        `Connection rejected: Invalid token (${client.id})`,
+        `Connection rejected: invalid token (${client.id})`,
         error,
       );
       client.disconnect();
@@ -78,19 +82,21 @@ export class EscrowGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   handleDisconnect(client: Socket): void {
     const userId = this.socketUserMap.get(client.id);
-    if (userId) {
-      // Remove from user mapping
-      const userSockets = this.userSocketMap.get(userId) || [];
-      const updatedSockets = userSockets.filter((id) => id !== client.id);
-      if (updatedSockets.length === 0) {
-        this.userSocketMap.delete(userId);
-      } else {
-        this.userSocketMap.set(userId, updatedSockets);
-      }
-      this.socketUserMap.delete(client.id);
 
-      // Clean up escroom subscriptions
-      const escrowIds = this.socketEscrowMap.get(client.id) || [];
+    if (userId) {
+      const socketsForUser = this.userSocketMap.get(userId);
+      if (socketsForUser) {
+        socketsForUser.delete(client.id);
+        if (socketsForUser.size === 0) {
+          this.userSocketMap.delete(userId);
+        } else {
+          this.userSocketMap.set(userId, socketsForUser);
+        }
+      }
+
+      this.socketUserMap.delete(client.id);
+      const escrowIds =
+        this.socketEscrowMap.get(client.id) || new Set<string>();
       escrowIds.forEach((escrowId) => {
         void client.leave(`escrow:${escrowId}`);
       });
@@ -101,138 +107,109 @@ export class EscrowGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('joinEscrow')
-  handleJoinEscrow(client: Socket, escrowId: string): void {
-    const room = `escrow:${escrowId}`;
-    void client.join(room);
-
-    // Track subscription
-    const escrowIds: string[] = this.socketEscrowMap.get(client.id) || [];
-    if (!escrowIds.includes(escrowId)) {
-      escrowIds.push(escrowId);
-      this.socketEscrowMap.set(client.id, escrowIds);
+  async handleJoinEscrow(client: Socket, escrowId: string): Promise<void> {
+    if (!escrowId) {
+      return;
     }
+
+    const room = `escrow:${escrowId}`;
+    await client.join(room);
+
+    const escrowIds = this.socketEscrowMap.get(client.id) || new Set<string>();
+    escrowIds.add(escrowId);
+    this.socketEscrowMap.set(client.id, escrowIds);
 
     this.logger.log(`Client ${client.id} joined escrow room: ${escrowId}`);
     client.emit('joinedEscrow', { escrowId });
   }
 
   @SubscribeMessage('leaveEscrow')
-  handleLeaveEscrow(client: Socket, escrowId: string): void {
-    const room = `escrow:${escrowId}`;
-    void client.leave(room);
+  async handleLeaveEscrow(client: Socket, escrowId: string): Promise<void> {
+    if (!escrowId) {
+      return;
+    }
 
-    // Remove from tracking
-    const escrowIds: string[] = this.socketEscrowMap.get(client.id) || [];
-    const updatedEscrowIds = escrowIds.filter((id) => id !== escrowId);
-    this.socketEscrowMap.set(client.id, updatedEscrowIds);
+    await client.leave(`escrow:${escrowId}`);
+
+    const escrowIds = this.socketEscrowMap.get(client.id);
+    if (escrowIds) {
+      escrowIds.delete(escrowId);
+      if (escrowIds.size === 0) {
+        this.socketEscrowMap.delete(client.id);
+      } else {
+        this.socketEscrowMap.set(client.id, escrowIds);
+      }
+    }
 
     this.logger.log(`Client ${client.id} left escrow room: ${escrowId}`);
   }
 
-  // Broadcast methods - called from EscrowService
+  @SubscribeMessage('reconnect')
+  async handleReconnect(
+    client: Socket,
+    payload: { escrowIds?: string[] },
+  ): Promise<void> {
+    if (payload?.escrowIds?.length) {
+      for (const escrowId of payload.escrowIds) {
+        await this.handleJoinEscrow(client, escrowId);
+      }
+    }
+
+    const userId = this.socketUserMap.get(client.id);
+    client.emit('reconnected', { userId, socketId: client.id });
+  }
+
   broadcastEscrowStatusChanged(escrowId: string, data: EscrowEventData): void {
-    this.server.to(`escrow:${escrowId}`).emit('escrow:status_changed', {
-      escrowId,
-      ...data,
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  broadcastMilestoneReleased(escrowId: string, data: EscrowEventData): void {
-    this.server.to(`escrow:${escrowId}`).emit('escrow:milestone_released', {
-      escrowId,
-      ...data,
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  broadcastDisputeFiled(escrowId: string, data: EscrowEventData): void {
-    this.server.to(`escrow:${escrowId}`).emit('escrow:dispute_filed', {
-      escrowId,
-      ...data,
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  broadcastDisputeResolved(escrowId: string, data: EscrowEventData): void {
-    this.server.to(`escrow:${escrowId}`).emit('escrow:dispute_resolved', {
-      escrowId,
-      ...data,
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  broadcastPartyJoined(escrowId: string, data: EscrowEventData): void {
-    this.server.to(`escrow:${escrowId}`).emit('escrow:party_joined', {
-      escrowId,
-      ...data,
-      timestamp: new Date().toISOString(),
-    });
+    this.emitToEscrowRoom('escrow.status_changed', escrowId, data);
   }
 
   broadcastConditionFulfilled(escrowId: string, data: EscrowEventData): void {
-    this.server.to(`escrow:${escrowId}`).emit('escrow:condition_fulfilled', {
-      escrowId,
-      ...data,
-      timestamp: new Date().toISOString(),
-    });
+    this.emitToEscrowRoom('escrow.condition_fulfilled', escrowId, data);
   }
 
   broadcastConditionConfirmed(escrowId: string, data: EscrowEventData): void {
-    this.server.to(`escrow:${escrowId}`).emit('escrow:condition_confirmed', {
-      escrowId,
-      ...data,
-      timestamp: new Date().toISOString(),
-    });
+    this.emitToEscrowRoom('escrow.condition_confirmed', escrowId, data);
+  }
+
+  broadcastDisputeFiled(escrowId: string, data: EscrowEventData): void {
+    this.emitToEscrowRoom('escrow.dispute_filed', escrowId, data);
+  }
+
+  broadcastDisputeResolved(escrowId: string, data: EscrowEventData): void {
+    this.emitToEscrowRoom('escrow.dispute_resolved', escrowId, data);
   }
 
   broadcastNotification(userId: string, data: EscrowEventData): void {
-    const socketIds = this.userSocketMap.get(userId) || [];
-    socketIds.forEach((socketId) => {
-      this.server.to(socketId).emit('notification:new', {
-        ...data,
-        timestamp: new Date().toISOString(),
-      });
-    });
-  }
-
-  broadcastEscrowFunded(escrowId: string, data: EscrowEventData): void {
-    this.server.to(`escrow:${escrowId}`).emit('escrow:funded', {
-      escrowId,
+    const payload = {
       ...data,
+      userId,
       timestamp: new Date().toISOString(),
-    });
+    };
+
+    this.server.to(`user:${userId}`).emit('notification.new', payload);
   }
 
-  broadcastEscrowCompleted(escrowId: string, data: EscrowEventData): void {
-    this.server.to(`escrow:${escrowId}`).emit('escrow:completed', {
-      escrowId,
-      ...data,
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  broadcastEscrowCancelled(escrowId: string, data: EscrowEventData): void {
-    this.server.to(`escrow:${escrowId}`).emit('escrow:cancelled', {
-      escrowId,
-      ...data,
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  // Get online users (for admin/monitoring)
-  getOnlineUsers(): Map<string, string[]> {
+  getOnlineUsers(): Map<string, Set<string>> {
     return this.userSocketMap;
   }
 
-  // Get user's socket IDs
   getUserSockets(userId: string): string[] {
-    return this.userSocketMap.get(userId) || [];
+    return Array.from(this.userSocketMap.get(userId) || []);
   }
 
-  // Check if user is online
   isUserOnline(userId: string): boolean {
-    const sockets = this.userSocketMap.get(userId) || [];
-    return sockets.length > 0;
+    return (this.userSocketMap.get(userId)?.size || 0) > 0;
+  }
+
+  private emitToEscrowRoom(
+    eventName: string,
+    escrowId: string,
+    data: EscrowEventData,
+  ): void {
+    this.server.to(`escrow:${escrowId}`).emit(eventName, {
+      escrowId,
+      ...data,
+      timestamp: new Date().toISOString(),
+    });
   }
 }

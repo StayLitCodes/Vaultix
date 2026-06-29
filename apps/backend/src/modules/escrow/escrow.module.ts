@@ -23,6 +23,7 @@ import { EscrowLifecycleService } from './escrow-lifecycle.service';
 import { EscrowFundingService } from './escrow-funding.service';
 import { EscrowDisputeService } from './escrow-dispute.service';
 import { EscrowQueryService } from './escrow-query.service';
+import { EventsModule } from '../../gateways/events.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { EscrowQueryService } from './escrow-query.service';
       AllowedAsset,
     ]),
     AuthModule,
+    EventsModule,
     WebhookModule,
     IpfsModule,
     NotificationsModule,
