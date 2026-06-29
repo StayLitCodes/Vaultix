@@ -34,6 +34,8 @@ import { IpfsModule } from './modules/ipfs/ipfs.module';
 import { HealthModule } from './modules/health/health.module';
 import { AppVersionModule } from './app-version/app-version.module';
 import { EscrowGateway } from './gateways/escrow.gateway';
+import { UploadModule } from './modules/upload/upload.module';
+import { DisputeEvidence } from './modules/upload/entities/dispute-evidence.entity';
 import stellarConfig from './config/stellar.config';
 import ipfsConfig from './config/ipfs.config';
 
@@ -61,6 +63,7 @@ import ipfsConfig from './config/ipfs.config';
           Condition,
           EscrowEvent,
           Dispute,
+          DisputeEvidence,
           Notification,
           NotificationPreference,
           ApiKey,
@@ -88,6 +91,7 @@ import ipfsConfig from './config/ipfs.config';
     IpfsModule,
     HealthModule,
     AppVersionModule,
+    UploadModule,
     JwtModule.registerAsync({
       useFactory: (configService: ConfigService) => ({
         secret:
