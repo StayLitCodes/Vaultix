@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as crypto from 'crypto';
@@ -127,7 +131,10 @@ export class AuthService {
     return user;
   }
 
-  async updateProfile(userId: string, updateProfileDto: UpdateProfileDto): Promise<User> {
+  async updateProfile(
+    userId: string,
+    updateProfileDto: UpdateProfileDto,
+  ): Promise<User> {
     const user = await this.userService.findById(userId);
     if (!user) {
       throw new UnauthorizedException('User not found');
@@ -141,13 +148,19 @@ export class AuthService {
     return this.userService.update(userId, updateProfileDto);
   }
 
-  async uploadAvatar(userId: string, file: { buffer: Buffer; originalname: string }): Promise<User> {
+  async uploadAvatar(
+    userId: string,
+    file: { buffer: Buffer; originalname: string },
+  ): Promise<User> {
     const user = await this.userService.findById(userId);
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
 
-    const cid = await this.ipfsService.uploadFile(file.buffer, file.originalname);
+    const cid = await this.ipfsService.uploadFile(
+      file.buffer,
+      file.originalname,
+    );
     const avatarUrl = this.ipfsService.getGatewayUrl(cid);
 
     return this.userService.update(userId, { avatarUrl });

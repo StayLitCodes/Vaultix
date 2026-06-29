@@ -192,24 +192,47 @@ function Toggle({
 function NotificationPrefsSection() {
   const [prefs, setPrefs] = useState(DEFAULT_PREFS);
   const [saved, setSaved] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+
+  useEffect(() => {
+    const savedSound = localStorage.getItem('vaultix_sound_enabled');
+    if (savedSound !== null) {
+      setSoundEnabled(savedSound !== 'false');
+    }
+  }, []);
 
   const toggle = (index: number, field: "email" | "inApp") => {
     setPrefs((prev) =>
-      prev.map((p, i) => (i === index ? { ...p, [field]: !p[field] } : p)),
+      prev.map((p, i) => (i === index ? { ...p, [field]: !p[field] } : p))
     );
     setSaved(false);
   };
 
+  const handleToggleSound = () => {
+    const nextVal = !soundEnabled;
+    setSoundEnabled(nextVal);
+    localStorage.setItem('vaultix_sound_enabled', String(nextVal));
+    setSaved(false);
+  };
+
   const handleSave = () => {
-    // In production: POST /notifications/preferences with prefs
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
   return (
     <SectionCard title="Notification Preferences" icon={Bell}>
-      <div className="space-y-3">
-        <div className="grid grid-cols-[1fr_auto_auto] gap-x-6 text-xs text-gray-400 font-medium uppercase tracking-wider px-1">
+      <div className="space-y-4">
+        {/* Sound toggle */}
+        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+          <div>
+            <span className="text-sm font-medium text-gray-700 block">Notification Sound</span>
+            <span className="text-xs text-gray-400">Play a chime when a new notification is received</span>
+          </div>
+          <Toggle checked={soundEnabled} onChange={handleToggleSound} />
+        </div>
+
+        <div className="grid grid-cols-[1fr_auto_auto] gap-x-6 text-xs text-gray-400 font-medium uppercase tracking-wider px-1 pt-1">
           <span>Event</span>
           <span>Email</span>
           <span>In-app</span>

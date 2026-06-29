@@ -54,6 +54,9 @@ export class Party {
   })
   status: PartyStatus;
 
+  @Column({ type: 'datetime', nullable: true })
+  respondedAt: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 }

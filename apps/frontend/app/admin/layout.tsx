@@ -13,17 +13,18 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
-  X,
+  Scale,
+  Coins,
 } from 'lucide-react';
 
-const ADMIN_WALLET_ADDRESSES = [
-  'GADMIN', // Placeholder: in production, fetch from backend
-];
+
 
 const navItems = [
   { href: '/admin', label: 'Overview', icon: LayoutDashboard },
   { href: '/admin/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/admin/escrows', label: 'Escrows', icon: Shield },
+  { href: '/admin/disputes', label: 'Disputes', icon: Scale },
+  { href: '/admin/assets', label: 'Assets', icon: Coins },
   { href: '/admin/users', label: 'Users', icon: Users },
   { href: '/admin/audit-logs', label: 'Audit Logs', icon: FileText },
 ];

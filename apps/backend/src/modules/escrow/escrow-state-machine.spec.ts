@@ -1,3 +1,16 @@
+/**
+ * Escrow State Transition Table:
+ * 
+ * Current Status | Allowed New Statuses
+ * ----------------|---------------------
+ * PENDING         | ACTIVE, CANCELLED, EXPIRED
+ * ACTIVE          | COMPLETED, CANCELLED, DISPUTED, EXPIRED
+ * DISPUTED        | COMPLETED, CANCELLED, EXPIRED
+ * COMPLETED       | (None)
+ * CANCELLED       | (None)
+ * EXPIRED         | (None)
+ */
+
 import { BadRequestException } from '@nestjs/common';
 import { EscrowStatus } from './entities/escrow.entity';
 import {
@@ -114,6 +127,10 @@ describe('EscrowStateMachine', () => {
       expect(canTransition(EscrowStatus.EXPIRED, EscrowStatus.COMPLETED)).toBe(
         false,
       );
+    });
+
+    it('should return false for invalid current status', () => {
+      expect(canTransition('INVALID' as any, EscrowStatus.ACTIVE)).toBe(false);
     });
   });
 

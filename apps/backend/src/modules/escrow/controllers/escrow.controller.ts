@@ -11,13 +11,15 @@ import {
   Req,
   ForbiddenException,
   UseInterceptors,
-  UploadedFile,
+  UploadedFiles,
   ParseFilePipe,
   MaxFileSizeValidator,
   FileTypeValidator,
+  Res,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { ThrottlerGuard } from '@nestjs/throttler';
+import { Response } from 'express';
 import { Request as ExpressRequest } from 'express';
 import {
   ApiBearerAuth,
@@ -29,6 +31,7 @@ import { AuthGuard } from '../../auth/middleware/auth.guard';
 import { EscrowAccessGuard } from '../guards/escrow-access.guard';
 import { EscrowExpireGuard } from '../guards/escrow-expire.guard';
 import { EscrowService } from '../services/escrow.service';
+import { EscrowEvidenceService } from '../services/escrow-evidence.service';
 import { CreateEscrowDto } from '../dto/create-escrow.dto';
 import { UpdateEscrowDto } from '../dto/update-escrow.dto';
 import { ListEscrowsDto } from '../dto/list-escrows.dto';
@@ -43,6 +46,10 @@ import { FileDisputeDto, ResolveDisputeDto } from '../dto/dispute.dto';
 import { FundEscrowDto } from '../dto/fund-escrow.dto';
 import { ExpireEscrowDto } from '../dto/expire-escrow.dto';
 import { ProposeMilestoneChangeDto } from '../dto/milestone-change.dto';
+import {
+  EvidenceFileMetadataDto,
+  UploadEvidenceResponseDto,
+} from '../dto/upload-evidence.dto';
 
 interface AuthenticatedRequest extends ExpressRequest {
   user: { sub?: string; userId?: string; walletAddress: string };
@@ -53,7 +60,10 @@ interface AuthenticatedRequest extends ExpressRequest {
 @ApiBearerAuth()
 @UseGuards(ThrottlerGuard, AuthGuard)
 export class EscrowController {
-  constructor(private readonly escrowService: EscrowService) {}
+  constructor(
+    private readonly escrowService: EscrowService,
+    private readonly evidenceService: EscrowEvidenceService,
+  ) {}
 
   private getAuthenticatedUserId(req: AuthenticatedRequest): string {
     const userId = req.user.sub ?? req.user.userId;
@@ -94,6 +104,17 @@ export class EscrowController {
   ) {
     const userId = this.getAuthenticatedUserId(req);
     return this.escrowService.findOverview(userId, query);
+  }
+
+  @Get('pending-invitations')
+  @ApiOperation({
+    summary:
+      'List escrows where the authenticated user has a pending party invitation',
+  })
+  async getPendingInvitations(@Request() req: AuthenticatedRequest) {
+    return this.escrowService.getPendingInvitations(
+      this.getAuthenticatedUserId(req),
+    );
   }
 
   @Get(':id')
@@ -269,6 +290,40 @@ export class EscrowController {
     );
   }
 
+  @Post(':id/parties/:partyId/accept')
+  @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Accept a party invitation for an escrow' })
+  async acceptPartyInvitation(
+    @Param('id') escrowId: string,
+    @Param('partyId') partyId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.acceptPartyInvitation(
+      escrowId,
+      partyId,
+      this.getAuthenticatedUserId(req),
+      ipAddress,
+    );
+  }
+
+  @Post(':id/parties/:partyId/reject')
+  @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Reject a party invitation for an escrow' })
+  async rejectPartyInvitation(
+    @Param('id') escrowId: string,
+    @Param('partyId') partyId: string,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.rejectPartyInvitation(
+      escrowId,
+      partyId,
+      this.getAuthenticatedUserId(req),
+      ipAddress,
+    );
+  }
+
   /**
    * POST /escrows/:id/dispute
    * File a dispute against an active escrow. Only a buyer or seller party may call this.
@@ -320,25 +375,65 @@ export class EscrowController {
       ipAddress,
     );
   }
+  /**
+   * POST /escrows/:id/evidence
+   * Upload evidence files for a dispute. Accepts up to 5 files, max 10MB each.
+   * Only dispute parties may call this.
+   */
   @Post(':id/evidence')
   @UseGuards(EscrowAccessGuard)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FilesInterceptor('files', 5))
+  @ApiOperation({ summary: 'Upload evidence files for a dispute' })
+  @ApiOkResponse({ type: UploadEvidenceResponseDto })
   async uploadEvidence(
     @Param('id') id: string,
     @Request() req: AuthenticatedRequest,
-    @UploadedFile(
+    @UploadedFiles(
       new ParseFilePipe({
         validators: [
-          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB
+          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB per file
           new FileTypeValidator({
-            fileType: /(jpg|jpeg|png|pdf|txt|doc|docx)$/,
+            fileType: /(pdf|png|jpg|jpeg|doc|docx)$/,
           }),
         ],
       }),
     )
-    file: { buffer: Buffer; originalname: string },
-  ) {
+    files: Express.Multer.File[],
+  ): Promise<UploadEvidenceResponseDto> {
     const userId = this.getAuthenticatedUserId(req);
-    return this.escrowService.uploadEvidence(id, userId, file);
+    return this.evidenceService.uploadEvidence(id, files, userId);
+  }
+
+  /**
+   * GET /escrows/:id/evidence
+   * Get all evidence file metadata for a dispute. Accessible to dispute parties.
+   */
+  @Get(':id/evidence')
+  @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Get evidence files for a dispute' })
+  @ApiOkResponse({ type: [EvidenceFileMetadataDto] })
+  async getEvidence(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+  ): Promise<EvidenceFileMetadataDto[]> {
+    const userId = this.getAuthenticatedUserId(req);
+    return this.evidenceService.getEvidence(id, userId);
+  }
+
+  /**
+   * GET /escrows/:id/evidence/:cid
+   * Stream evidence file from IPFS by CID. Accessible to dispute parties.
+   */
+  @Get(':id/evidence/:cid')
+  @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Stream evidence file from IPFS' })
+  async getEvidenceFile(
+    @Param('id') id: string,
+    @Param('cid') cid: string,
+    @Request() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ): Promise<void> {
+    const userId = this.getAuthenticatedUserId(req);
+    await this.evidenceService.getEvidenceFile(id, cid, userId, res);
   }
 }

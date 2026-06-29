@@ -12,6 +12,7 @@ import { NotificationPreference } from './notifications/entities/notification-pr
 import { ApiKey } from './api-key/entities/api-key.entity';
 import { AdminAuditLog } from './modules/admin/entities/admin-audit-log.entity';
 import { Webhook } from './modules/webhook/webhook.entity';
+import { WebhookDelivery } from './modules/webhook/entities/webhook-delivery.entity';
 import { StellarEvent } from './modules/stellar/entities/stellar-event.entity';
 import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
 
@@ -33,6 +34,7 @@ export default new DataSource({
     ApiKey,
     AdminAuditLog,
     Webhook,
+    WebhookDelivery,
     StellarEvent,
     AllowedAsset,
   ],

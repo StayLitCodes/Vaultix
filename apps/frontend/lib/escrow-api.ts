@@ -174,6 +174,28 @@ export const revokeApiKey = (id: string): Promise<IApiKey> =>
     method: "DELETE",
   });
 
+// Per-escrow events (timeline)
+export interface IEscrowEventsResponse {
+  data: IEventResponse[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export const fetchEscrowEvents = (
+  escrowId: string,
+  params: { page?: number; limit?: number; sortOrder?: "ASC" | "DESC" } = {},
+): Promise<IEscrowEventsResponse> => {
+  const qp = new URLSearchParams();
+  if (params.page) qp.set("page", String(params.page));
+  if (params.limit) qp.set("limit", String(params.limit));
+  if (params.sortOrder) qp.set("sortOrder", params.sortOrder);
+  const qs = qp.toString();
+  return request<IEscrowEventsResponse>(
+    `/escrows/${escrowId}/events${qs ? `?${qs}` : ""}`,
+  );
+};
+
 // Global Events / Transaction History
 export interface IEventResponse {
   id: string;

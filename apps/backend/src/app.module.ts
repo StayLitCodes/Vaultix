@@ -25,6 +25,7 @@ import { NotificationPreference } from './notifications/entities/notification-pr
 import { ApiKey } from './api-key/entities/api-key.entity';
 import { AdminAuditLog } from './modules/admin/entities/admin-audit-log.entity';
 import { Webhook } from './modules/webhook/webhook.entity';
+import { WebhookDelivery } from './modules/webhook/entities/webhook-delivery.entity';
 import { StellarEvent } from './modules/stellar/entities/stellar-event.entity';
 import { AdminModule } from './modules/admin/admin.module';
 import { StellarEventModule } from './modules/stellar/stellar-event.module';
@@ -66,6 +67,7 @@ import ipfsConfig from './config/ipfs.config';
           ApiKey,
           AdminAuditLog,
           Webhook,
+          WebhookDelivery,
           StellarEvent,
           AllowedAsset,
         ],

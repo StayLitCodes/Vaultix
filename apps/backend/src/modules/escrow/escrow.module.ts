@@ -16,12 +16,14 @@ import { AuthModule } from '../auth/auth.module';
 import { EscrowStellarIntegrationService } from './services/escrow-stellar-integration.service';
 import { WebhookModule } from '../webhook/webhook.module';
 import { IpfsModule } from '../ipfs/ipfs.module';
+import { NotificationsModule } from '../../notifications/notifications.module';
 import { User } from '../user/entities/user.entity';
 import { AllowedAsset } from '../assets/entities/allowed-asset.entity';
 import { EscrowLifecycleService } from './escrow-lifecycle.service';
 import { EscrowFundingService } from './escrow-funding.service';
 import { EscrowDisputeService } from './escrow-dispute.service';
 import { EscrowQueryService } from './escrow-query.service';
+import { EscrowEvidenceService } from './services/escrow-evidence.service';
 
 @Module({
   imports: [
@@ -37,6 +39,7 @@ import { EscrowQueryService } from './escrow-query.service';
     AuthModule,
     WebhookModule,
     IpfsModule,
+    NotificationsModule,
   ],
   controllers: [EscrowController, EscrowSchedulerController, EventsController],
   providers: [
@@ -49,6 +52,7 @@ import { EscrowQueryService } from './escrow-query.service';
     EscrowFundingService,
     EscrowDisputeService,
     EscrowQueryService,
+    EscrowEvidenceService,
   ],
   exports: [
     EscrowService,
@@ -57,6 +61,7 @@ import { EscrowQueryService } from './escrow-query.service';
     EscrowFundingService,
     EscrowDisputeService,
     EscrowQueryService,
+    EscrowEvidenceService,
   ],
 })
 export class EscrowModule {}

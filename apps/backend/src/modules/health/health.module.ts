@@ -6,10 +6,7 @@ import { User } from '../user/entities/user.entity';
 import { Escrow } from '../escrow/entities/escrow.entity';
 
 @Module({
-  imports: [
-    TerminusModule,
-    TypeOrmModule.forFeature([User, Escrow]),
-  ],
+  imports: [TerminusModule, TypeOrmModule.forFeature([User, Escrow])],
   controllers: [HealthController],
 })
 export class HealthModule {}

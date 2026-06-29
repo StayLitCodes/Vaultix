@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { AdminService } from '@/services/admin';
 import { IAdminEscrow, IAdminEscrowResponse } from '@/types/admin';
+import EscrowTimeline from '@/components/escrow/EscrowTimeline';
 
 const STATUS_CONFIG: Record<string, { color: string; bg: string; icon: React.ElementType }> = {
   ACTIVE: { color: 'text-emerald-400', bg: 'bg-emerald-500/10', icon: CheckCircle2 },
@@ -82,6 +83,16 @@ function EscrowDetailModal({ escrow, onClose, onConsistencyCheck }: {
               ))}
             </div>
           </div>
+          {/* Activity Timeline */}
+          <div className="border-t border-white/5 pt-4">
+            <EscrowTimeline
+              escrowId={escrow.id}
+              escrowStatus={escrow.status}
+              hasConditions={(escrow.parties?.length ?? 0) > 0}
+              className="bg-transparent border-white/5 shadow-none p-0"
+            />
+          </div>
+
           <div className="border-t border-white/5 pt-4">
             <button
               onClick={handleCheck}

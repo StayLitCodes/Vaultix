@@ -88,7 +88,9 @@ describe('AuthService', () => {
     userService = module.get(UserService);
     jwtService = module.get(JwtService);
     configService = module.get(ConfigService);
-    emailVerificationRepository = module.get(getRepositoryToken(EmailVerification));
+    emailVerificationRepository = module.get(
+      getRepositoryToken(EmailVerification),
+    );
     ipfsService = module.get(IpfsService);
   });
 
@@ -128,9 +130,9 @@ describe('AuthService', () => {
     it('should throw UnauthorizedException if user not found', async () => {
       userService.findByWalletAddress.mockResolvedValue(null);
 
-      await expect(
-        service.verifySignature('sig', 'GD...123'),
-      ).rejects.toThrow(UnauthorizedException);
+      await expect(service.verifySignature('sig', 'GD...123')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should return tokens on valid signature', async () => {
@@ -138,10 +140,7 @@ describe('AuthService', () => {
       userService.update.mockResolvedValue(mockUser as any);
       userService.createRefreshToken.mockResolvedValue({} as any);
 
-      const result = await service.verifySignature(
-        'sig',
-        'GD...123',
-      );
+      const result = await service.verifySignature('sig', 'GD...123');
 
       expect(result).toHaveProperty('accessToken');
       expect(result).toHaveProperty('refreshToken');

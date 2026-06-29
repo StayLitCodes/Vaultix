@@ -39,6 +39,8 @@ export function getPauseState(): PauseState {
  */
 export function assertNotPaused(): void {
   if (paused) {
-    throw new Error(`System is paused (since ${pausedAt?.toISOString()}, by ${pausedBy})`);
+    throw new Error(
+      `System is paused (since ${pausedAt?.toISOString()}, by ${pausedBy})`,
+    );
   }
 }

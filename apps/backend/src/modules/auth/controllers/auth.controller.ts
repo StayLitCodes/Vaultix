@@ -79,7 +79,10 @@ export class AuthController {
     @Req() req: Request & { user: { userId: string } },
     @Body() updateProfileDto: UpdateProfileDto,
   ) {
-    const user = await this.authService.updateProfile(req.user.userId, updateProfileDto);
+    const user = await this.authService.updateProfile(
+      req.user.userId,
+      updateProfileDto,
+    );
     return {
       id: user.id,
       walletAddress: user.walletAddress,
@@ -109,7 +112,9 @@ export class AuthController {
   @Post('profile/verify-email')
   @UseGuards(AuthGuard)
   @HttpCode(HttpStatus.OK)
-  async sendEmailVerification(@Req() req: Request & { user: { userId: string } }) {
+  async sendEmailVerification(
+    @Req() req: Request & { user: { userId: string } },
+  ) {
     await this.authService.sendEmailVerification(req.user.userId);
     return { message: 'Verification email sent' };
   }
