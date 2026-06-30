@@ -1,20 +1,62 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan } from 'typeorm';
 import { Escrow, EscrowStatus } from '../../escrow/entities/escrow.entity';
-import { Dispute, DisputeStatus } from '../../escrow/entities/dispute.entity';
+import { Dispute, DisputeStatus, DisputeOutcome } from '../../escrow/entities/dispute.entity';
 import { User } from '../../user/entities/user.entity';
 
-export interface AnalyticsOverview {
-  escrows: Record<string, number>;
-  volume: {
-    totalCompleted: number;
-    platformFeesCollected: number;
-  };
-  users: {
-    activeLast30Days: number;
-    newLast30Days: number;
-  };
+export interface ChartData {
+  labels: string[];
+  values: number[];
+}
+
+export interface VolumeMetrics {
+  totalVolume: number;
+  averageAmount: number;
+  medianAmount: number;
+}
+
+export interface ActivityMetrics {
+  created: number;
+  active: number;
+  completed: number;
+  disputed: number;
+  cancelled: number;
+  refunded: number;
+  expired: number;
+  total: number;
+}
+
+export interface PerformanceMetrics {
+  avgTimeToFundingDays: number;
+  avgTimeToCompletionDays: number;
+  avgDisputeResolutionDays: number;
+}
+
+export interface UserMetrics {
+  total: number;
+  active30d: number;
+  new7d: number;
+  new30d: number;
+  new90d: number;
+}
+
+export interface DisputeMetrics {
+  totalDisputes: number;
+  disputeRate: number;
+  resolutionRate: number;
+  avgResolutionTimeDays: number;
+  winRate: number;
+  outcomeDistribution: Record<string, number>;
+}
+
+export interface SummaryAnalytics {
+  volume: VolumeMetrics;
+  activity: ActivityMetrics;
+  performance: PerformanceMetrics;
+  users: UserMetrics;
+  disputes: DisputeMetrics;
+  generatedAt: string;
 }
 
 export interface VolumeStat {
@@ -23,11 +65,14 @@ export interface VolumeStat {
   volume: number;
 }
 
-export interface DisputeMetrics {
-  totalDisputes: number;
-  disputeRate: number;
-  avgResolutionTimeDays: number;
-  outcomeDistribution: Record<string, number>;
+export interface VolumeTimeSeries {
+  daily30d: ChartData;
+  daily90d: ChartData;
+  monthly12m: ChartData;
+}
+
+export interface UserTimeSeries {
+  weeklyActive12w: ChartData;
 }
 
 export interface TopUser {
@@ -39,9 +84,9 @@ export interface TopUser {
 
 @Injectable()
 export class AnalyticsService {
-  private readonly logger = new Logger(AnalyticsService.name);
   private cache = new Map<string, { data: unknown; expiry: number }>();
-  private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  private readonly SUMMARY_TTL = 5 * 60 * 1000;
+  private readonly TIMESERIES_TTL = 15 * 60 * 1000;
 
   constructor(
     @InjectRepository(Escrow)
@@ -52,70 +97,281 @@ export class AnalyticsService {
     private userRepository: Repository<User>,
   ) {}
 
-  private getFromCache(key: string): unknown {
+  private getFromCache<T>(key: string): T | null {
     const cached = this.cache.get(key);
     if (cached && cached.expiry > Date.now()) {
-      return cached.data;
+      return cached.data as T;
     }
     return null;
   }
 
-  private setCache(key: string, data: unknown): void {
-    this.cache.set(key, {
-      data,
-      expiry: Date.now() + this.CACHE_TTL,
-    });
+  private setCache(key: string, data: unknown, ttl: number): void {
+    this.cache.set(key, { data, expiry: Date.now() + ttl });
   }
 
-  async getOverview(): Promise<AnalyticsOverview> {
-    const cacheKey = 'analytics_overview';
-    const cached = this.getFromCache(cacheKey);
-    if (cached) return cached as AnalyticsOverview;
+  private daysAgo(days: number): Date {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    return d;
+  }
 
-    const last30Days = new Date();
-    last30Days.setDate(last30Days.getDate() - 30);
+  async getSummary(): Promise<SummaryAnalytics> {
+    const cacheKey = 'analytics_summary';
+    const cached = this.getFromCache<SummaryAnalytics>(cacheKey);
+    if (cached) return cached;
 
-    const [escrowsByStatus, totalVolumeRaw, activeUsersCount, newUsersCount] =
+    const [volume, activity, performance, users, disputes] = await Promise.all([
+      this.getVolumeMetrics(),
+      this.getActivityMetrics(),
+      this.getPerformanceMetrics(),
+      this.getUserMetrics(),
+      this.getDisputeMetrics(),
+    ]);
+
+    const summary: SummaryAnalytics = {
+      volume,
+      activity,
+      performance,
+      users,
+      disputes,
+      generatedAt: new Date().toISOString(),
+    };
+
+    this.setCache(cacheKey, summary, this.SUMMARY_TTL);
+    return summary;
+  }
+
+  async getVolumeMetrics(): Promise<VolumeMetrics> {
+    const cacheKey = 'analytics_volume_metrics';
+    const cached = this.getFromCache<VolumeMetrics>(cacheKey);
+    if (cached) return cached;
+
+    const rows = await this.escrowRepository
+      .createQueryBuilder('escrow')
+      .select('escrow.amount', 'amount')
+      .where('escrow.status = :status', { status: EscrowStatus.COMPLETED })
+      .getRawMany<{ amount: string }>();
+
+    const amounts = rows.map((r) => parseFloat(r.amount || '0')).sort((a, b) => a - b);
+    const total = amounts.reduce((sum, v) => sum + v, 0);
+    const avg = amounts.length > 0 ? total / amounts.length : 0;
+
+    let median = 0;
+    if (amounts.length > 0) {
+      const mid = Math.floor(amounts.length / 2);
+      median =
+        amounts.length % 2 !== 0
+          ? amounts[mid]
+          : (amounts[mid - 1] + amounts[mid]) / 2;
+    }
+
+    const metrics: VolumeMetrics = {
+      totalVolume: parseFloat(total.toFixed(7)),
+      averageAmount: parseFloat(avg.toFixed(7)),
+      medianAmount: parseFloat(median.toFixed(7)),
+    };
+
+    this.setCache(cacheKey, metrics, this.SUMMARY_TTL);
+    return metrics;
+  }
+
+  async getActivityMetrics(): Promise<ActivityMetrics> {
+    const cacheKey = 'analytics_activity';
+    const cached = this.getFromCache<ActivityMetrics>(cacheKey);
+    if (cached) return cached;
+
+    const rows = await this.escrowRepository
+      .createQueryBuilder('escrow')
+      .select('escrow.status', 'status')
+      .addSelect('COUNT(*)', 'count')
+      .groupBy('escrow.status')
+      .getRawMany<{ status: string; count: string }>();
+
+    const counts = rows.reduce<Record<string, number>>((acc, r) => {
+      acc[r.status] = parseInt(r.count);
+      return acc;
+    }, {});
+
+    const metrics: ActivityMetrics = {
+      created: counts[EscrowStatus.PENDING] ?? 0,
+      active: counts[EscrowStatus.ACTIVE] ?? 0,
+      completed: counts[EscrowStatus.COMPLETED] ?? 0,
+      disputed: counts[EscrowStatus.DISPUTED] ?? 0,
+      cancelled: counts[EscrowStatus.CANCELLED] ?? 0,
+      refunded: counts[EscrowStatus.CANCELLED] ?? 0,
+      expired: counts[EscrowStatus.EXPIRED] ?? 0,
+      total: rows.reduce((sum, r) => sum + parseInt(r.count), 0),
+    };
+
+    this.setCache(cacheKey, metrics, this.SUMMARY_TTL);
+    return metrics;
+  }
+
+  async getPerformanceMetrics(): Promise<PerformanceMetrics> {
+    const cacheKey = 'analytics_performance';
+    const cached = this.getFromCache<PerformanceMetrics>(cacheKey);
+    if (cached) return cached;
+
+    const [fundingRaw, completionRaw, disputeRaw] = await Promise.all([
+      this.escrowRepository
+        .createQueryBuilder('escrow')
+        .select(
+          'AVG(julianday(escrow.fundedAt) - julianday(escrow.createdAt))',
+          'avgDays',
+        )
+        .where('escrow.fundedAt IS NOT NULL')
+        .getRawOne<{ avgDays: string | null }>(),
+      this.escrowRepository
+        .createQueryBuilder('escrow')
+        .select(
+          'AVG(julianday(escrow.updatedAt) - julianday(escrow.createdAt))',
+          'avgDays',
+        )
+        .where('escrow.status = :status', { status: EscrowStatus.COMPLETED })
+        .getRawOne<{ avgDays: string | null }>(),
+      this.disputeRepository
+        .createQueryBuilder('dispute')
+        .select(
+          'AVG(julianday(dispute.resolvedAt) - julianday(dispute.createdAt))',
+          'avgDays',
+        )
+        .where('dispute.status = :status', { status: DisputeStatus.RESOLVED })
+        .getRawOne<{ avgDays: string | null }>(),
+    ]);
+
+    const metrics: PerformanceMetrics = {
+      avgTimeToFundingDays: parseFloat(
+        parseFloat(fundingRaw?.avgDays || '0').toFixed(2),
+      ),
+      avgTimeToCompletionDays: parseFloat(
+        parseFloat(completionRaw?.avgDays || '0').toFixed(2),
+      ),
+      avgDisputeResolutionDays: parseFloat(
+        parseFloat(disputeRaw?.avgDays || '0').toFixed(2),
+      ),
+    };
+
+    this.setCache(cacheKey, metrics, this.SUMMARY_TTL);
+    return metrics;
+  }
+
+  async getUserMetrics(): Promise<UserMetrics> {
+    const cacheKey = 'analytics_users';
+    const cached = this.getFromCache<UserMetrics>(cacheKey);
+    if (cached) return cached;
+
+    const [total, active30d, new7d, new30d, new90d] = await Promise.all([
+      this.userRepository.count(),
+      this.userRepository.count({ where: { updatedAt: MoreThan(this.daysAgo(30)) } }),
+      this.userRepository.count({ where: { createdAt: MoreThan(this.daysAgo(7)) } }),
+      this.userRepository.count({ where: { createdAt: MoreThan(this.daysAgo(30)) } }),
+      this.userRepository.count({ where: { createdAt: MoreThan(this.daysAgo(90)) } }),
+    ]);
+
+    const metrics: UserMetrics = { total, active30d, new7d, new30d, new90d };
+    this.setCache(cacheKey, metrics, this.SUMMARY_TTL);
+    return metrics;
+  }
+
+  async getDisputeMetrics(): Promise<DisputeMetrics> {
+    const cacheKey = 'analytics_disputes';
+    const cached = this.getFromCache<DisputeMetrics>(cacheKey);
+    if (cached) return cached;
+
+    const [totalEscrows, totalDisputes, resolvedCount, outcomes, avgResolutionRaw, buyerWins] =
       await Promise.all([
-        this.escrowRepository
-          .createQueryBuilder('escrow')
-          .select('escrow.status', 'status')
+        this.escrowRepository.count(),
+        this.disputeRepository.count(),
+        this.disputeRepository.count({ where: { status: DisputeStatus.RESOLVED } }),
+        this.disputeRepository
+          .createQueryBuilder('dispute')
+          .select('dispute.outcome', 'outcome')
           .addSelect('COUNT(*)', 'count')
-          .groupBy('escrow.status')
-          .getRawMany<{ status: string; count: string }>(),
-        this.escrowRepository
-          .createQueryBuilder('escrow')
-          .select('SUM(escrow.amount)', 'total')
-          .where('escrow.status = :status', { status: EscrowStatus.COMPLETED })
-          .getRawOne<{ total: string | null }>(),
-        this.userRepository.count({
-          where: { updatedAt: MoreThan(last30Days) },
-        }),
-        this.userRepository.count({
-          where: { createdAt: MoreThan(last30Days) },
+          .where('dispute.status = :status', { status: DisputeStatus.RESOLVED })
+          .groupBy('dispute.outcome')
+          .getRawMany<{ outcome: string | null; count: string }>(),
+        this.disputeRepository
+          .createQueryBuilder('dispute')
+          .select(
+            'AVG(julianday(dispute.resolvedAt) - julianday(dispute.createdAt))',
+            'avgDays',
+          )
+          .where('dispute.status = :status', { status: DisputeStatus.RESOLVED })
+          .getRawOne<{ avgDays: string | null }>(),
+        this.disputeRepository.count({
+          where: { status: DisputeStatus.RESOLVED, outcome: DisputeOutcome.REFUNDED_TO_BUYER },
         }),
       ]);
 
-    const totalVolume = parseFloat(totalVolumeRaw?.total || '0');
-    const platformFees = totalVolume * 0.01; // Assuming 1% platform fee
+    const disputeRate = totalEscrows > 0 ? (totalDisputes / totalEscrows) * 100 : 0;
+    const resolutionRate = totalDisputes > 0 ? (resolvedCount / totalDisputes) * 100 : 0;
+    const winRate = resolvedCount > 0 ? (buyerWins / resolvedCount) * 100 : 0;
 
-    const stats = {
-      escrows: escrowsByStatus.reduce((acc: Record<string, number>, curr) => {
-        acc[curr.status] = parseInt(curr.count);
-        return acc;
-      }, {}),
-      volume: {
-        totalCompleted: totalVolume,
-        platformFeesCollected: platformFees,
-      },
-      users: {
-        activeLast30Days: activeUsersCount,
-        newLast30Days: newUsersCount,
+    const metrics: DisputeMetrics = {
+      totalDisputes,
+      disputeRate: parseFloat(disputeRate.toFixed(2)),
+      resolutionRate: parseFloat(resolutionRate.toFixed(2)),
+      avgResolutionTimeDays: parseFloat(
+        parseFloat(avgResolutionRaw?.avgDays || '0').toFixed(2),
+      ),
+      winRate: parseFloat(winRate.toFixed(2)),
+      outcomeDistribution: outcomes.reduce<Record<string, number>>(
+        (acc, curr) => {
+          if (curr.outcome) acc[curr.outcome] = parseInt(curr.count);
+          return acc;
+        },
+        {},
+      ),
+    };
+
+    this.setCache(cacheKey, metrics, this.SUMMARY_TTL);
+    return metrics;
+  }
+
+  async getVolumeTimeSeries(from?: string, to?: string): Promise<VolumeTimeSeries> {
+    const cacheKey = `analytics_volume_ts_${from}_${to}`;
+    const cached = this.getFromCache<VolumeTimeSeries>(cacheKey);
+    if (cached) return cached;
+
+    const [daily30, daily90, monthly12] = await Promise.all([
+      this.queryVolumeSeries('%Y-%m-%d', this.daysAgo(30), from, to),
+      this.queryVolumeSeries('%Y-%m-%d', this.daysAgo(90), from, to),
+      this.queryVolumeSeries('%Y-%m', this.daysAgo(365), from, to),
+    ]);
+
+    const result: VolumeTimeSeries = {
+      daily30d: this.toChartData(daily30),
+      daily90d: this.toChartData(daily90),
+      monthly12m: this.toChartData(monthly12),
+    };
+
+    this.setCache(cacheKey, result, this.TIMESERIES_TTL);
+    return result;
+  }
+
+  async getUserTimeSeries(): Promise<UserTimeSeries> {
+    const cacheKey = 'analytics_user_ts';
+    const cached = this.getFromCache<UserTimeSeries>(cacheKey);
+    if (cached) return cached;
+
+    const weeks = await this.userRepository
+      .createQueryBuilder('user')
+      .select("strftime('%Y-%W', user.updatedAt)", 'week')
+      .addSelect('COUNT(DISTINCT user.id)', 'count')
+      .where('user.updatedAt > :since', { since: this.daysAgo(84) })
+      .groupBy('week')
+      .orderBy('week', 'ASC')
+      .getRawMany<{ week: string; count: string }>();
+
+    const result: UserTimeSeries = {
+      weeklyActive12w: {
+        labels: weeks.map((w) => w.week),
+        values: weeks.map((w) => parseInt(w.count)),
       },
     };
 
-    this.setCache(cacheKey, stats);
-    return stats;
+    this.setCache(cacheKey, result, this.TIMESERIES_TTL);
+    return result;
   }
 
   async getVolumeStats(
@@ -124,23 +380,15 @@ export class AnalyticsService {
     to?: string,
   ): Promise<VolumeStat[]> {
     const cacheKey = `analytics_volume_${period}_${from}_${to}`;
-    const cached = this.getFromCache(cacheKey);
-    if (cached) return cached as VolumeStat[];
+    const cached = this.getFromCache<VolumeStat[]>(cacheKey);
+    if (cached) return cached;
 
-    let dateFormat: string;
-    switch (period) {
-      case 'daily':
-        dateFormat = '%Y-%m-%d';
-        break;
-      case 'weekly':
-        dateFormat = '%Y-%W';
-        break;
-      case 'monthly':
-        dateFormat = '%Y-%m';
-        break;
-      default:
-        dateFormat = '%Y-%m-%d';
-    }
+    const formatMap: Record<string, string> = {
+      daily: '%Y-%m-%d',
+      weekly: '%Y-%W',
+      monthly: '%Y-%m',
+    };
+    const dateFormat = formatMap[period] ?? '%Y-%m-%d';
 
     const query = this.escrowRepository
       .createQueryBuilder('escrow')
@@ -166,66 +414,15 @@ export class AnalyticsService {
       volume: parseFloat(r.volume || '0'),
     }));
 
-    this.setCache(cacheKey, stats);
-    return stats;
-  }
-
-  async getDisputeMetrics(): Promise<DisputeMetrics> {
-    const cacheKey = 'analytics_disputes';
-    const cached = this.getFromCache(cacheKey);
-    if (cached) return cached as DisputeMetrics;
-
-    const [totalEscrows, totalDisputes, outcomes, avgResolutionRaw] =
-      await Promise.all([
-        this.escrowRepository.count(),
-        this.disputeRepository.count(),
-        this.disputeRepository
-          .createQueryBuilder('dispute')
-          .select('dispute.outcome', 'outcome')
-          .addSelect('COUNT(*)', 'count')
-          .where('dispute.status = :status', { status: DisputeStatus.RESOLVED })
-          .groupBy('dispute.outcome')
-          .getRawMany<{ outcome: string | null; count: string }>(),
-        this.disputeRepository
-          .createQueryBuilder('dispute')
-          .select(
-            'AVG(julianday(dispute.resolvedAt) - julianday(dispute.createdAt))',
-            'avgDays',
-          )
-          .where('dispute.status = :status', { status: DisputeStatus.RESOLVED })
-          .getRawOne<{ avgDays: string | null }>(),
-      ]);
-
-    const disputeRate =
-      totalEscrows > 0 ? (totalDisputes / totalEscrows) * 100 : 0;
-
-    const stats = {
-      totalDisputes,
-      disputeRate: parseFloat(disputeRate.toFixed(2)),
-      avgResolutionTimeDays: parseFloat(
-        parseFloat(avgResolutionRaw?.avgDays || '0').toFixed(2),
-      ),
-      outcomeDistribution: outcomes.reduce(
-        (acc: Record<string, number>, curr) => {
-          if (curr.outcome) {
-            acc[curr.outcome] = parseInt(curr.count);
-          }
-          return acc;
-        },
-        {},
-      ),
-    };
-
-    this.setCache(cacheKey, stats);
+    this.setCache(cacheKey, stats, this.TIMESERIES_TTL);
     return stats;
   }
 
   async getTopUsers(limit: number = 10): Promise<TopUser[]> {
     const cacheKey = `analytics_top_users_${limit}`;
-    const cached = this.getFromCache(cacheKey);
-    if (cached) return cached as TopUser[];
+    const cached = this.getFromCache<TopUser[]>(cacheKey);
+    if (cached) return cached;
 
-    // Use QueryBuilder to join Escrow and Party to find top users by volume
     const topUsers = await this.userRepository
       .createQueryBuilder('user')
       .leftJoin('escrow_parties', 'party', 'party.userId = user.id')
@@ -234,7 +431,7 @@ export class AnalyticsService {
       .addSelect('COUNT(DISTINCT escrow.id)', 'escrowCount')
       .addSelect('SUM(escrow.amount)', 'totalVolume')
       .addSelect(
-        'SUM(CASE WHEN escrow.status = :completed THEN 1 ELSE 0 END) * 1.0 / COUNT(escrow.id)',
+        'SUM(CASE WHEN escrow.status = :completed THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(escrow.id), 0)',
         'completionRate',
       )
       .setParameter('completed', EscrowStatus.COMPLETED)
@@ -252,12 +449,44 @@ export class AnalyticsService {
       walletAddress: u.walletAddress,
       escrowCount: parseInt(u.escrowCount),
       totalVolume: parseFloat(u.totalVolume || '0'),
-      completionRate: parseFloat(
-        parseFloat(u.completionRate || '0').toFixed(2),
-      ),
+      completionRate: parseFloat(parseFloat(u.completionRate || '0').toFixed(4)),
     }));
 
-    this.setCache(cacheKey, stats);
+    this.setCache(cacheKey, stats, this.SUMMARY_TTL);
     return stats;
+  }
+
+  // Keep legacy method for backwards compat
+  async getOverview() {
+    return this.getSummary();
+  }
+
+  private async queryVolumeSeries(
+    fmt: string,
+    since: Date,
+    from?: string,
+    to?: string,
+  ) {
+    const query = this.escrowRepository
+      .createQueryBuilder('escrow')
+      .select(`strftime('${fmt}', escrow.createdAt)`, 'bucket')
+      .addSelect('SUM(escrow.amount)', 'volume')
+      .groupBy('bucket')
+      .orderBy('bucket', 'ASC');
+
+    if (from && to) {
+      query.where('escrow.createdAt BETWEEN :from AND :to', { from, to });
+    } else {
+      query.where('escrow.createdAt >= :since', { since: since.toISOString() });
+    }
+
+    return query.getRawMany<{ bucket: string; volume: string | null }>();
+  }
+
+  private toChartData(rows: { bucket: string; volume: string | null }[]): ChartData {
+    return {
+      labels: rows.map((r) => r.bucket),
+      values: rows.map((r) => parseFloat(r.volume || '0')),
+    };
   }
 }

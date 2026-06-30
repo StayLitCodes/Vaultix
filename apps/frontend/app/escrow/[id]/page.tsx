@@ -8,7 +8,7 @@ import { useWallet } from "@/hooks/useWallet";
 import EscrowHeader from "@/components/escrow/detail/EscrowHeader";
 import PartiesSection from "@/components/escrow/detail/PartiesSection";
 import TermsSection from "@/components/escrow/detail/TermsSection";
-import TimelineSection from "@/components/escrow/detail/TimelineSection";
+import EscrowTimeline from "@/components/escrow/EscrowTimeline";
 import ActivityFeed from "@/components/common/ActivityFeed";
 import ConditionsList from "@/components/escrow/ConditionsList";
 import { IParty } from "@/types/escrow";
@@ -163,7 +163,12 @@ const EscrowDetailPage = () => {
               currentParty={currentParty}
               onConditionsUpdated={refetch}
             />
-            <TimelineSection escrow={escrow} />
+            <EscrowTimeline
+              escrowId={escrow.id}
+              escrowStatus={escrow.status}
+              hasConditions={(escrow.conditions?.length ?? 0) > 0}
+              initialEvents={escrow.events}
+            />
             <ActivityFeed escrowId={id as string} />
           </div>
 

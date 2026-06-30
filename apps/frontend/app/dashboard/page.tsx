@@ -9,12 +9,15 @@ import { useEscrows } from "../../hooks/useEscrows";
 import ActivityFeed from "@/components/common/ActivityFeed";
 import Link from "next/link";
 import { PlusCircle, Activity, X } from "lucide-react";
+import { useEscrowWebSocket } from "@/hooks/useEscrowWebSocket";
 
 function DashboardContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
   const [showActivity, setShowActivity] = useState(false);
+
+  useEscrowWebSocket();
 
   const activeStatuses =
     searchParams.get("status")?.split(",").filter(Boolean) || [];

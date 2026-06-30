@@ -1416,6 +1416,298 @@ fn test_resolve_dispute_while_paused() {
     assert_eq!(escrow.resolution, Resolution::Depositor);
 }
 
+// ── Dispute resolution: split, bounds, and terminal-state tests ────────────
+
+/// Split where recipient is the winner.
+/// Verifies exact-amount distribution and correct Resolution::Split accounting.
+#[test]
+fn test_resolve_dispute_split_recipient_wins() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let escrow_id = 500u64;
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &3000);
+
+    client.init(&admin, &operator, &arbitrator);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 3000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1706400000u64,
+        &valid_metadata_hash(&env),
+    );
+    token_client.approve(&depositor, &contract_id, &3000, &200);
+    client.deposit_funds(&escrow_id);
+    client.raise_dispute(&escrow_id, &recipient);
+
+    // Recipient wins 2000, depositor gets back 1000
+    client.resolve_dispute(&escrow_id, &recipient, &Some(2000));
+
+    let escrow = client.get_escrow(&escrow_id);
+    assert_eq!(escrow.status, EscrowStatus::Resolved);
+    assert_eq!(escrow.resolution, Resolution::Split);
+    // total_released tracks recipient payments only
+    assert_eq!(escrow.total_released, 2000);
+
+    assert_eq!(token_client.balance(&recipient), 2000);
+    assert_eq!(token_client.balance(&depositor), 1000);
+    assert_eq!(token_client.balance(&contract_id), 0);
+}
+
+/// Split where depositor is the winner.
+/// Verifies exact-amount distribution when winner is the depositor.
+#[test]
+fn test_resolve_dispute_split_depositor_wins() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let escrow_id = 501u64;
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &3000);
+
+    client.init(&admin, &operator, &arbitrator);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 3000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1706400000u64,
+        &valid_metadata_hash(&env),
+    );
+    token_client.approve(&depositor, &contract_id, &3000, &200);
+    client.deposit_funds(&escrow_id);
+    client.raise_dispute(&escrow_id, &depositor);
+
+    // Depositor wins 2000, recipient gets 1000
+    client.resolve_dispute(&escrow_id, &depositor, &Some(2000));
+
+    let escrow = client.get_escrow(&escrow_id);
+    assert_eq!(escrow.status, EscrowStatus::Resolved);
+    assert_eq!(escrow.resolution, Resolution::Split);
+    // total_released tracks recipient payments; recipient got the "other" share
+    assert_eq!(escrow.total_released, 1000);
+
+    assert_eq!(token_client.balance(&depositor), 2000);
+    assert_eq!(token_client.balance(&recipient), 1000);
+    assert_eq!(token_client.balance(&contract_id), 0);
+}
+
+/// Negative split_winner_amount must be rejected before any transfer occurs.
+#[test]
+fn test_resolve_dispute_split_negative_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let escrow_id = 502u64;
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &1000);
+
+    client.init(&admin, &operator, &arbitrator);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 1000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1706400000u64,
+        &valid_metadata_hash(&env),
+    );
+    token_client.approve(&depositor, &contract_id, &1000, &200);
+    client.deposit_funds(&escrow_id);
+    client.raise_dispute(&escrow_id, &depositor);
+
+    let result = client.try_resolve_dispute(&escrow_id, &recipient, &Some(-1));
+    assert_eq!(result, Err(Ok(Error::InvalidMilestoneAmount)));
+
+    // No funds should have moved
+    assert_eq!(token_client.balance(&contract_id), 1000);
+}
+
+/// split_winner_amount exceeding the outstanding balance must be rejected.
+#[test]
+fn test_resolve_dispute_split_exceeds_outstanding() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let escrow_id = 503u64;
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &1000);
+
+    client.init(&admin, &operator, &arbitrator);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 1000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1706400000u64,
+        &valid_metadata_hash(&env),
+    );
+    token_client.approve(&depositor, &contract_id, &1000, &200);
+    client.deposit_funds(&escrow_id);
+    client.raise_dispute(&escrow_id, &depositor);
+
+    // 1001 > 1000 outstanding
+    let result = client.try_resolve_dispute(&escrow_id, &recipient, &Some(1001));
+    assert_eq!(result, Err(Ok(Error::InvalidMilestoneAmount)));
+
+    // No funds should have moved
+    assert_eq!(token_client.balance(&contract_id), 1000);
+}
+
+/// After resolution, every state-changing path must be blocked.
+/// Verifies that Resolved is a true terminal state.
+#[test]
+fn test_resolved_is_terminal() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    client.initialize(&treasury, &Some(0));
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let escrow_id = 504u64;
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &2000);
+
+    client.init(&admin, &operator, &arbitrator);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 2000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1706400000u64,
+        &valid_metadata_hash(&env),
+    );
+    token_client.approve(&depositor, &contract_id, &2000, &200);
+    client.deposit_funds(&escrow_id);
+    client.raise_dispute(&escrow_id, &depositor);
+
+    // Resolve: recipient wins all
+    client.resolve_dispute(&escrow_id, &recipient, &None);
+    assert_eq!(client.get_escrow(&escrow_id).status, EscrowStatus::Resolved);
+
+    // raise_dispute must be blocked
+    let r = client.try_raise_dispute(&escrow_id, &depositor);
+    assert_eq!(r, Err(Ok(Error::InvalidEscrowStatus)));
+
+    // resolve_dispute again must be blocked (not Disputed)
+    let r = client.try_resolve_dispute(&escrow_id, &recipient, &None);
+    assert_eq!(r, Err(Ok(Error::InvalidEscrowStatus)));
+
+    // cancel_escrow must be blocked
+    let r = client.try_cancel_escrow(&escrow_id);
+    assert_eq!(r, Err(Ok(Error::InvalidEscrowStatus)));
+
+    // release_milestone must be blocked
+    let r = client.try_release_milestone(&escrow_id, &0);
+    assert_eq!(r, Err(Ok(Error::EscrowNotActive)));
+
+    // refund_expired must be blocked (advance ledger past deadline)
+    env.ledger().with_mut(|li| li.timestamp = 1706400001u64);
+    let r = client.try_refund_expired(&escrow_id, &depositor);
+    assert_eq!(r, Err(Ok(Error::InvalidStatusForRefund)));
+}
+
 #[test]
 #[should_panic(expected = "Error(Contract, #2)")]
 fn test_duplicate_escrow_id() {

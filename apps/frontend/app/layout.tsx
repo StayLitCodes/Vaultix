@@ -32,9 +32,17 @@ export default function RootLayout({
             __html: `
               (function() {
                 try {
-                  var theme = localStorage.getItem('vaultix_theme');
+                  var theme = localStorage.getItem('vaultix-theme');
                   var systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-                  if (theme === 'dark' || (!theme && systemDark)) {
+                  var finalTheme = 'light';
+                  if (theme === 'dark') {
+                    finalTheme = 'dark';
+                  } else if (theme === 'light') {
+                    finalTheme = 'light';
+                  } else {
+                    finalTheme = systemDark ? 'dark' : 'light';
+                  }
+                  if (finalTheme === 'dark') {
                     document.documentElement.classList.add('dark');
                   } else {
                     document.documentElement.classList.remove('dark');

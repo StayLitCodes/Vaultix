@@ -1,6 +1,8 @@
 import React from 'react';
 import { AlertTriangle, Clock, CheckCircle, XCircle, ShareIcon } from 'lucide-react';
 import { IEscrowExtended } from '@/types/escrow';
+import { useToast } from '@/hooks/useToast';
+import CountdownTimer from '../CountdownTimer';
 
 interface EscrowHeaderProps {
   escrow: IEscrowExtended;
@@ -31,11 +33,15 @@ const EscrowHeader: React.FC<EscrowHeaderProps> = ({ escrow, userRole, connected
   const statusKey = escrow.status.toLowerCase();
   const statusStyle = STATUS_STYLES[statusKey] || 'bg-gray-100 text-gray-800 dark:bg-zinc-850 dark:text-gray-300';
   const statusIcon = STATUS_ICONS[statusKey] || <Clock className="h-3.5 w-3.5" />;
+  const { success } = useToast();
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href);
-    alert('Link copied to clipboard!');
+    success('Link copied to clipboard!');
   };
+
+  const isPaused = escrow.status.toLowerCase() === 'disputed';
+  const hasDeadline = escrow.expiresAt || escrow.deadline;
 
   return (
     <div className="bg-card text-card-foreground rounded-xl shadow-sm border border-border p-4 sm:p-6">
@@ -51,6 +57,17 @@ const EscrowHeader: React.FC<EscrowHeaderProps> = ({ escrow, userRole, connected
       </div>
 
       <p className="text-muted-foreground text-sm sm:text-base mb-4">{escrow.description}</p>
+
+      {/* Countdown Timer */}
+      {hasDeadline && (
+        <div className="mb-4">
+          <CountdownTimer
+            escrow={escrow}
+            isPaused={isPaused}
+            userRole={userRole}
+          />
+        </div>
+      )}
 
       {/* Metadata chips */}
       <div className="flex flex-wrap gap-2 mb-4">

@@ -24,7 +24,8 @@ import { EscrowLifecycleService } from './escrow-lifecycle.service';
 import { EscrowFundingService } from './escrow-funding.service';
 import { EscrowDisputeService } from './escrow-dispute.service';
 import { EscrowQueryService } from './escrow-query.service';
-import { EscrowGateway } from '../../gateways/escrow.gateway';
+import { EscrowEvidenceService } from './services/escrow-evidence.service';
+import { EscrowIpfsSyncService } from './services/escrow-ipfs-sync.service';
 
 @Module({
   imports: [
@@ -54,7 +55,8 @@ import { EscrowGateway } from '../../gateways/escrow.gateway';
     EscrowFundingService,
     EscrowDisputeService,
     EscrowQueryService,
-    EscrowGateway,
+    EscrowEvidenceService,
+    EscrowIpfsSyncService,
   ],
   exports: [
     EscrowService,
@@ -64,6 +66,8 @@ import { EscrowGateway } from '../../gateways/escrow.gateway';
     EscrowFundingService,
     EscrowDisputeService,
     EscrowQueryService,
+    EscrowEvidenceService,
+    EscrowIpfsSyncService,
   ],
 })
 export class EscrowModule {}

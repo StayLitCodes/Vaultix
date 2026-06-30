@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { User, Copy, Check, Bell, Shield } from "lucide-react";
+import Link from "next/link";
+import { User, Copy, Check, Bell, Shield, Settings as SettingsIcon, ArrowRight } from "lucide-react";
 import { useWallet } from "@/app/contexts/WalletContext";
 import ApiKeyManager from "@/components/settings/ApiKeyManager";
 
@@ -266,6 +267,29 @@ function ApiKeysSection() {
   return <ApiKeyManager />;
 }
 
+// ── Templates Link Section ─────────────────────────────────────────────────
+
+function TemplatesLinkSection() {
+  return (
+    <Link href="/settings/templates">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden hover:border-blue-300 transition-colors">
+        <div className="px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-50 rounded-lg">
+              <SettingsIcon className="w-4 h-4 text-blue-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-800">Manage Templates</h3>
+              <p className="text-xs text-gray-500">Create, edit, and delete your custom escrow templates</p>
+            </div>
+          </div>
+          <ArrowRight className="w-4 h-4 text-gray-400" />
+        </div>
+      </div>
+    </Link>
+  );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -278,6 +302,7 @@ export default function SettingsPage() {
         </div>
 
         <ProfileSection />
+        <TemplatesLinkSection />
         <NotificationPrefsSection />
         <ApiKeysSection />
       </div>
