@@ -1215,19 +1215,27 @@ fn test_raise_dispute_happy_path() {
         .iter()
         .all(|m| m.status == MilestoneStatus::Disputed || m.status == MilestoneStatus::Released));
 
-    // Verify DisputeRaised event
+    // Verify DisputeRaised event — it is now followed by a SignatureReset event,
+    // so we look for the second-to-last event.
     let events = env.events().all();
     assert!(events.len() > events_before);
-    let event = events.last().unwrap();
-    let expected_topics: soroban_sdk::Vec<soroban_sdk::Val> = (
-        Symbol::new(&env, "Vaultix"),
-        Symbol::new(&env, "v1"),
-        Symbol::new(&env, "DisputeRaised"),
-    )
-        .into_val(&env);
-    assert_eq!(event.1, expected_topics);
 
-    let actual_payload: DisputeRaisedEvent = event.2.into_val(&env);
+    // Find the DisputeRaised event specifically
+    let dispute_event = events
+        .iter()
+        .filter(|e| {
+            let expected_topics: soroban_sdk::Vec<soroban_sdk::Val> = (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "v1"),
+                Symbol::new(&env, "DisputeRaised"),
+            )
+                .into_val(&env);
+            e.1 == expected_topics
+        })
+        .last()
+        .unwrap();
+
+    let actual_payload: DisputeRaisedEvent = dispute_event.2.clone().into_val(&env);
     assert_eq!(
         actual_payload,
         DisputeRaisedEvent {
@@ -1242,6 +1250,25 @@ fn test_raise_dispute_happy_path() {
             timestamp: 0,
         }
     );
+
+    // Also verify the SignatureReset event follows immediately
+    let reset_event = events
+        .iter()
+        .filter(|e| {
+            let expected_topics: soroban_sdk::Vec<soroban_sdk::Val> = (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "v1"),
+                Symbol::new(&env, "SignatureReset"),
+            )
+                .into_val(&env);
+            e.1 == expected_topics
+        })
+        .last()
+        .unwrap();
+
+    let reset_payload: SignatureResetEvent = reset_event.2.clone().into_val(&env);
+    assert_eq!(reset_payload.escrow_id, escrow_id);
+    assert_eq!(reset_payload.reason, Symbol::new(&env, "dispute"));
 }
 
 #[test]
@@ -3810,7 +3837,24 @@ fn test_full_lifecycle_event_summaries_are_accurate() {
     client.release_milestone(&escrow_id, &0);
 
     let events = env.events().all();
-    let release_event: MilestoneReleasedEvent = events.last().unwrap().2.clone().into_val(&env);
+    // release_milestone now emits MilestoneReleased followed by SignatureReset,
+    // so we look for MilestoneReleasedEvent by topic rather than using .last()
+    let release_event: MilestoneReleasedEvent = events
+        .iter()
+        .filter(|e| {
+            let t: soroban_sdk::Vec<soroban_sdk::Val> = (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "v1"),
+                Symbol::new(&env, "MilestoneReleased"),
+            )
+                .into_val(&env);
+            e.1 == t
+        })
+        .last()
+        .unwrap()
+        .2
+        .clone()
+        .into_val(&env);
     assert_eq!(release_event.status, EscrowStatus::Active);
     assert_eq!(release_event.total_amount, 10000);
     assert_eq!(release_event.total_released, 4000);
@@ -3820,7 +3864,23 @@ fn test_full_lifecycle_event_summaries_are_accurate() {
     client.confirm_delivery(&escrow_id, &1, &depositor);
 
     let events = env.events().all();
-    let confirm_event: DeliveryConfirmedEvent = events.last().unwrap().2.clone().into_val(&env);
+    // confirm_delivery also emits a trailing SignatureReset, search by topic
+    let confirm_event: DeliveryConfirmedEvent = events
+        .iter()
+        .filter(|e| {
+            let t: soroban_sdk::Vec<soroban_sdk::Val> = (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "v1"),
+                Symbol::new(&env, "DeliveryConfirmed"),
+            )
+                .into_val(&env);
+            e.1 == t
+        })
+        .last()
+        .unwrap()
+        .2
+        .clone()
+        .into_val(&env);
     assert_eq!(confirm_event.status, EscrowStatus::Active);
     assert_eq!(confirm_event.total_amount, 10000);
     assert_eq!(confirm_event.total_released, 10000);
@@ -4007,4 +4067,722 @@ fn test_event_topics_are_backwards_compatible() {
 
         event_idx += 1;
     }
+}
+
+// ============================================================
+// Multi-sig safety tests
+// ============================================================
+
+/// Helper: standard contract setup used across multi-sig tests.
+fn setup_multisig_env(
+    env: &Env,
+) -> (
+    Address, // contract_id
+    Address, // depositor
+    Address, // recipient
+    Address, // third_party (extra signer)
+    Address, // token_address
+) {
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(env, &contract_id);
+
+    let treasury = Address::generate(env);
+    client.initialize(&treasury, &Some(0)); // 0 fee for clean math
+
+    let admin = Address::generate(env);
+    let operator = Address::generate(env);
+    let arbitrator = Address::generate(env);
+    client.init(&admin, &operator, &arbitrator);
+
+    let depositor = Address::generate(env);
+    let recipient = Address::generate(env);
+    let third_party = Address::generate(env);
+
+    let (_, token_admin, token_address) = create_token_contract(env, &admin);
+    token_admin.mint(&depositor, &50_000);
+
+    (contract_id, depositor, recipient, third_party, token_address)
+}
+
+// ─────────────────────────────────────────────────────────────
+// Task 7: duplicate signer rejection
+// ─────────────────────────────────────────────────────────────
+
+#[test]
+fn test_collect_signature_duplicate_signer_is_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (contract_id, depositor, recipient, _third_party, token_address) =
+        setup_multisig_env(&env);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let escrow_id = 200u64;
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 10_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1_706_400_000u64,
+        &valid_metadata_hash(&env),
+    );
+
+    // First signature succeeds
+    client.collect_signature(&escrow_id, &depositor);
+
+    let escrow = client.get_escrow(&escrow_id);
+    assert_eq!(escrow.collected_signatures.len(), 1);
+
+    // Attempting the same signer again must return DuplicateSigner
+    let result = client.try_collect_signature(&escrow_id, &depositor);
+    assert_eq!(result, Err(Ok(Error::DuplicateSigner)));
+
+    // Signature count must remain 1
+    let escrow = client.get_escrow(&escrow_id);
+    assert_eq!(escrow.collected_signatures.len(), 1);
+}
+
+#[test]
+fn test_collect_signature_different_signers_are_all_accepted() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (contract_id, depositor, recipient, third_party, token_address) =
+        setup_multisig_env(&env);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let escrow_id = 201u64;
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 10_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1_706_400_000u64,
+        &valid_metadata_hash(&env),
+    );
+
+    client.collect_signature(&escrow_id, &depositor);
+    client.collect_signature(&escrow_id, &third_party);
+
+    let escrow = client.get_escrow(&escrow_id);
+    assert_eq!(escrow.collected_signatures.len(), 2);
+    assert_eq!(escrow.collected_signatures.get(0).unwrap(), depositor);
+    assert_eq!(escrow.collected_signatures.get(1).unwrap(), third_party);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Task 8: signature reset after milestone release (replay prevention)
+// ─────────────────────────────────────────────────────────────
+
+#[test]
+fn test_signatures_are_cleared_after_milestone_release() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (contract_id, depositor, recipient, third_party, token_address) =
+        setup_multisig_env(&env);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let token_client = token::Client::new(&env, &token_address);
+    let escrow_id = 202u64;
+
+    // Two equal milestones, each above the threshold
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("M1"),
+        },
+        Milestone {
+            amount: 5_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("M2"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1_706_400_000u64,
+        &valid_metadata_hash(&env),
+    );
+
+    // threshold = 3000, need 2 sigs for anything above it
+    client.configure_multisig(&escrow_id, &3_000, &2);
+
+    token_client.approve(&depositor, &contract_id, &50_000, &200);
+    client.deposit_funds(&escrow_id);
+
+    // --- Release milestone 0 ---
+    client.collect_signature(&escrow_id, &depositor);
+    client.collect_signature(&escrow_id, &third_party);
+
+    // Verify 2 signatures collected before release
+    let escrow_before = client.get_escrow(&escrow_id);
+    assert_eq!(escrow_before.collected_signatures.len(), 2);
+
+    client.release_milestone(&escrow_id, &0);
+
+    // After release, signatures must be cleared
+    let escrow_after = client.get_escrow(&escrow_id);
+    assert_eq!(
+        escrow_after.collected_signatures.len(),
+        0,
+        "signatures must be cleared after milestone release"
+    );
+
+    // --- Attempting to release milestone 1 without new signatures must fail ---
+    let result = client.try_release_milestone(&escrow_id, &1);
+    assert_eq!(
+        result,
+        Err(Ok(Error::UnauthorizedAccess)),
+        "old signatures must not carry over to the next milestone"
+    );
+
+    // --- Collecting fresh signatures and releasing milestone 1 must succeed ---
+    client.collect_signature(&escrow_id, &depositor);
+    client.collect_signature(&escrow_id, &third_party);
+
+    client.release_milestone(&escrow_id, &1);
+
+    let escrow_final = client.get_escrow(&escrow_id);
+    assert_eq!(
+        escrow_final.milestones.get(1).unwrap().status,
+        MilestoneStatus::Released
+    );
+    // Signatures cleared again
+    assert_eq!(escrow_final.collected_signatures.len(), 0);
+}
+
+#[test]
+fn test_signature_reset_event_emitted_on_milestone_release() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (contract_id, depositor, recipient, third_party, token_address) =
+        setup_multisig_env(&env);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let token_client = token::Client::new(&env, &token_address);
+    let escrow_id = 203u64;
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 10_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1_706_400_000u64,
+        &valid_metadata_hash(&env),
+    );
+    client.configure_multisig(&escrow_id, &3_000, &2);
+    token_client.approve(&depositor, &contract_id, &50_000, &200);
+    client.deposit_funds(&escrow_id);
+
+    client.collect_signature(&escrow_id, &depositor);
+    client.collect_signature(&escrow_id, &third_party);
+
+    let events_before = env.events().all().len();
+    client.release_milestone(&escrow_id, &0);
+
+    // Find the SignatureReset event after release
+    let events = env.events().all();
+    let reset_events: std::vec::Vec<_> = events
+        .iter()
+        .skip(events_before as usize)
+        .filter(|e| {
+            let expected_topics: soroban_sdk::Vec<soroban_sdk::Val> = (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "v1"),
+                Symbol::new(&env, "SignatureReset"),
+            )
+                .into_val(&env);
+            e.1 == expected_topics
+        })
+        .collect();
+
+    assert_eq!(reset_events.len(), 1, "one SignatureReset event expected");
+    let payload: SignatureResetEvent = reset_events[0].2.clone().into_val(&env);
+    assert_eq!(payload.escrow_id, escrow_id);
+    assert_eq!(payload.reason, Symbol::new(&env, "milestone"));
+}
+
+// ─────────────────────────────────────────────────────────────
+// Task 9: signature reset on dispute / cancel / refund_expired
+// ─────────────────────────────────────────────────────────────
+
+#[test]
+fn test_signatures_cleared_on_dispute_raise() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (contract_id, depositor, recipient, third_party, token_address) =
+        setup_multisig_env(&env);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let token_client = token::Client::new(&env, &token_address);
+    let escrow_id = 204u64;
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 10_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1_706_400_000u64,
+        &valid_metadata_hash(&env),
+    );
+    client.configure_multisig(&escrow_id, &3_000, &2);
+    token_client.approve(&depositor, &contract_id, &50_000, &200);
+    client.deposit_funds(&escrow_id);
+
+    // Collect partial signatures before dispute
+    client.collect_signature(&escrow_id, &depositor);
+    client.collect_signature(&escrow_id, &third_party);
+
+    let escrow_before = client.get_escrow(&escrow_id);
+    assert_eq!(escrow_before.collected_signatures.len(), 2);
+
+    client.raise_dispute(&escrow_id, &depositor);
+
+    let escrow_after = client.get_escrow(&escrow_id);
+    assert_eq!(
+        escrow_after.collected_signatures.len(),
+        0,
+        "signatures must be cleared when a dispute is raised"
+    );
+    assert_eq!(escrow_after.status, EscrowStatus::Disputed);
+
+    // Verify SignatureReset event with reason "dispute"
+    let events = env.events().all();
+    let reset_events: std::vec::Vec<_> = events
+        .iter()
+        .filter(|e| {
+            let expected_topics: soroban_sdk::Vec<soroban_sdk::Val> = (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "v1"),
+                Symbol::new(&env, "SignatureReset"),
+            )
+                .into_val(&env);
+            e.1 == expected_topics
+        })
+        .collect();
+
+    assert!(!reset_events.is_empty(), "SignatureReset event expected");
+    let payload: SignatureResetEvent = reset_events.last().unwrap().2.clone().into_val(&env);
+    assert_eq!(payload.escrow_id, escrow_id);
+    assert_eq!(payload.reason, Symbol::new(&env, "dispute"));
+}
+
+#[test]
+fn test_signatures_cleared_on_cancel_active() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (contract_id, depositor, recipient, third_party, token_address) =
+        setup_multisig_env(&env);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let token_client = token::Client::new(&env, &token_address);
+    let escrow_id = 205u64;
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 10_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1_706_400_000u64,
+        &valid_metadata_hash(&env),
+    );
+    token_client.approve(&depositor, &contract_id, &50_000, &200);
+    client.deposit_funds(&escrow_id);
+
+    // Collect a signature before cancellation
+    client.collect_signature(&escrow_id, &depositor);
+    client.collect_signature(&escrow_id, &third_party);
+
+    client.cancel_escrow(&escrow_id);
+
+    let escrow_after = client.get_escrow(&escrow_id);
+    assert_eq!(
+        escrow_after.collected_signatures.len(),
+        0,
+        "signatures must be cleared when escrow is cancelled"
+    );
+    assert_eq!(escrow_after.status, EscrowStatus::Cancelled);
+
+    // Verify SignatureReset event with reason "cancel"
+    let events = env.events().all();
+    let reset_events: std::vec::Vec<_> = events
+        .iter()
+        .filter(|e| {
+            let expected_topics: soroban_sdk::Vec<soroban_sdk::Val> = (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "v1"),
+                Symbol::new(&env, "SignatureReset"),
+            )
+                .into_val(&env);
+            e.1 == expected_topics
+        })
+        .collect();
+
+    assert!(!reset_events.is_empty(), "SignatureReset event expected");
+    let payload: SignatureResetEvent = reset_events.last().unwrap().2.clone().into_val(&env);
+    assert_eq!(payload.escrow_id, escrow_id);
+    assert_eq!(payload.reason, Symbol::new(&env, "cancel"));
+}
+
+#[test]
+fn test_signatures_cleared_on_refund_expired() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (contract_id, depositor, recipient, third_party, token_address) =
+        setup_multisig_env(&env);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let token_client = token::Client::new(&env, &token_address);
+    let escrow_id = 206u64;
+
+    let deadline = 1_000u64;
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 10_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &deadline,
+        &valid_metadata_hash(&env),
+    );
+    token_client.approve(&depositor, &contract_id, &50_000, &200);
+    client.deposit_funds(&escrow_id);
+
+    // Collect signatures before expiry
+    client.collect_signature(&escrow_id, &depositor);
+    client.collect_signature(&escrow_id, &third_party);
+
+    // Advance ledger past the deadline
+    env.ledger().with_mut(|li| {
+        li.timestamp = deadline + 1;
+    });
+
+    client.refund_expired(&escrow_id, &depositor);
+
+    let escrow_after = client.get_escrow(&escrow_id);
+    assert_eq!(
+        escrow_after.collected_signatures.len(),
+        0,
+        "signatures must be cleared on refund_expired"
+    );
+    assert_eq!(escrow_after.status, EscrowStatus::Expired);
+
+    // Verify SignatureReset event with reason "expired"
+    let events = env.events().all();
+    let reset_events: std::vec::Vec<_> = events
+        .iter()
+        .filter(|e| {
+            let expected_topics: soroban_sdk::Vec<soroban_sdk::Val> = (
+                Symbol::new(&env, "Vaultix"),
+                Symbol::new(&env, "v1"),
+                Symbol::new(&env, "SignatureReset"),
+            )
+                .into_val(&env);
+            e.1 == expected_topics
+        })
+        .collect();
+
+    assert!(!reset_events.is_empty(), "SignatureReset event expected");
+    let payload: SignatureResetEvent = reset_events.last().unwrap().2.clone().into_val(&env);
+    assert_eq!(payload.escrow_id, escrow_id);
+    assert_eq!(payload.reason, Symbol::new(&env, "expired"));
+}
+
+// ─────────────────────────────────────────────────────────────
+// Task 10: required_signatures validation bounds
+// ─────────────────────────────────────────────────────────────
+
+#[test]
+fn test_configure_multisig_rejects_zero_required_signatures() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (contract_id, depositor, recipient, _third_party, token_address) =
+        setup_multisig_env(&env);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let escrow_id = 207u64;
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1_706_400_000u64,
+        &valid_metadata_hash(&env),
+    );
+
+    // required_signatures = 0 is invalid
+    let result = client.try_configure_multisig(&escrow_id, &3_000, &0u32);
+    assert_eq!(result, Err(Ok(Error::InvalidRequiredSignatures)));
+}
+
+#[test]
+fn test_configure_multisig_rejects_required_signatures_above_max() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (contract_id, depositor, recipient, _third_party, token_address) =
+        setup_multisig_env(&env);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let escrow_id = 208u64;
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1_706_400_000u64,
+        &valid_metadata_hash(&env),
+    );
+
+    // required_signatures = 11 exceeds MAX_REQUIRED_SIGNATURES (10)
+    let result = client.try_configure_multisig(&escrow_id, &3_000, &11u32);
+    assert_eq!(result, Err(Ok(Error::InvalidRequiredSignatures)));
+}
+
+#[test]
+fn test_configure_multisig_accepts_min_required_signatures() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (contract_id, depositor, recipient, _third_party, token_address) =
+        setup_multisig_env(&env);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let escrow_id = 209u64;
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1_706_400_000u64,
+        &valid_metadata_hash(&env),
+    );
+
+    // required_signatures = 1 is the minimum valid value
+    client.configure_multisig(&escrow_id, &3_000, &1u32);
+    let escrow = client.get_escrow(&escrow_id);
+    assert_eq!(escrow.required_signatures, 1);
+}
+
+#[test]
+fn test_configure_multisig_accepts_max_required_signatures() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (contract_id, depositor, recipient, _third_party, token_address) =
+        setup_multisig_env(&env);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let escrow_id = 210u64;
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1_706_400_000u64,
+        &valid_metadata_hash(&env),
+    );
+
+    // required_signatures = 10 (MAX_REQUIRED_SIGNATURES) is valid
+    client.configure_multisig(&escrow_id, &3_000, &10u32);
+    let escrow = client.get_escrow(&escrow_id);
+    assert_eq!(escrow.required_signatures, 10);
+}
+
+#[test]
+fn test_release_milestone_exact_threshold_requires_multisig() {
+    // milestone.amount == threshold_amount should NOT require multi-sig
+    // (the condition is strictly `>`)
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (contract_id, depositor, recipient, _third_party, token_address) =
+        setup_multisig_env(&env);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let token_client = token::Client::new(&env, &token_address);
+    let escrow_id = 211u64;
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5_000, // exactly equal to threshold
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1_706_400_000u64,
+        &valid_metadata_hash(&env),
+    );
+    client.configure_multisig(&escrow_id, &5_000, &2); // threshold == milestone amount
+    token_client.approve(&depositor, &contract_id, &50_000, &200);
+    client.deposit_funds(&escrow_id);
+
+    // Amount is NOT strictly greater than threshold → depositor alone can release
+    client.release_milestone(&escrow_id, &0);
+
+    let escrow = client.get_escrow(&escrow_id);
+    assert_eq!(
+        escrow.milestones.get(0).unwrap().status,
+        MilestoneStatus::Released
+    );
+}
+
+#[test]
+fn test_multi_sig_below_threshold_partial_signatures_still_work() {
+    // Even with multi-sig configured, a milestone below threshold only requires depositor auth
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (contract_id, depositor, recipient, _third_party, token_address) =
+        setup_multisig_env(&env);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let token_client = token::Client::new(&env, &token_address);
+    let escrow_id = 212u64;
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 1_000, // well below threshold of 5000
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1_706_400_000u64,
+        &valid_metadata_hash(&env),
+    );
+    client.configure_multisig(&escrow_id, &5_000, &3); // need 3 sigs for >5000
+    token_client.approve(&depositor, &contract_id, &50_000, &200);
+    client.deposit_funds(&escrow_id);
+
+    // Collect only 1 signature (below required count) — but amount is below threshold so it's irrelevant
+    client.collect_signature(&escrow_id, &depositor);
+
+    client.release_milestone(&escrow_id, &0);
+
+    let escrow = client.get_escrow(&escrow_id);
+    assert_eq!(
+        escrow.milestones.get(0).unwrap().status,
+        MilestoneStatus::Released
+    );
 }

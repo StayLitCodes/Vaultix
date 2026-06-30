@@ -3026,6 +3026,57 @@
       "event": {
         "ext": "v0",
         "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "Vaultix"
+              },
+              {
+                "symbol": "v1"
+              },
+              {
+                "symbol": "SignatureReset"
+              }
+            ],
+            "data": {
+              "map": [
+                {
+                  "key": {
+                    "symbol": "escrow_id"
+                  },
+                  "val": {
+                    "u64": 100
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "reason"
+                  },
+                  "val": {
+                    "symbol": "expired"
+                  }
+                },
+                {
+                  "key": {
+                    "symbol": "timestamp"
+                  },
+                  "val": {
+                    "u64": 2000
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    },
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
         "type_": "diagnostic",
         "body": {
           "v0": {
