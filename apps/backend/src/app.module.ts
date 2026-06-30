@@ -25,6 +25,7 @@ import { NotificationPreference } from './notifications/entities/notification-pr
 import { ApiKey } from './api-key/entities/api-key.entity';
 import { AdminAuditLog } from './modules/admin/entities/admin-audit-log.entity';
 import { Webhook } from './modules/webhook/webhook.entity';
+import { WebhookDelivery } from './modules/webhook/entities/webhook-delivery.entity';
 import { StellarEvent } from './modules/stellar/entities/stellar-event.entity';
 import { AdminModule } from './modules/admin/admin.module';
 import { StellarEventModule } from './modules/stellar/stellar-event.module';
@@ -33,7 +34,6 @@ import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
 import { IpfsModule } from './modules/ipfs/ipfs.module';
 import { HealthModule } from './modules/health/health.module';
 import { AppVersionModule } from './app-version/app-version.module';
-import { EscrowGateway } from './gateways/escrow.gateway';
 import stellarConfig from './config/stellar.config';
 import ipfsConfig from './config/ipfs.config';
 
@@ -66,6 +66,7 @@ import ipfsConfig from './config/ipfs.config';
           ApiKey,
           AdminAuditLog,
           Webhook,
+          WebhookDelivery,
           StellarEvent,
           AllowedAsset,
         ],
@@ -99,9 +100,6 @@ import ipfsConfig from './config/ipfs.config';
     }),
   ],
   controllers: [AppController],
-  providers: [
-    AppService,
-    EscrowGateway, // WebSocket Gateway for real-time updates
-  ],
+  providers: [AppService],
 })
 export class AppModule {}

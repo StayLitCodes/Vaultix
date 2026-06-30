@@ -5,16 +5,21 @@ import Link from 'next/link';
 import { useForm, FormProvider } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createEscrowSchema, CreateEscrowFormData } from '@/lib/escrow-schema';
+import TemplateSelector from './create/TemplateSelector';
 import BasicInfoStep from './create/BasicInfoStep';
 import PartiesStep from './create/PartiesStep';
 import TermsStep from './create/TermsStep';
 import MilestonesStep from './create/MilestonesStep';
 import ConditionsStep from './create/ConditionsStep';
 import ReviewStep from './create/ReviewStep';
-import { CheckCircle2, ChevronRight, ChevronLeft, Loader2, AlertCircle } from 'lucide-react';
+import { CheckCircle2, ChevronRight, ChevronLeft, Loader2, AlertCircle, Save } from 'lucide-react';
 import { isConnected, getAddress } from '@stellar/freighter-api';
+import { useTemplates } from '@/hooks/useTemplates';
+import { formDataToTemplateData } from '@/lib/templates';
+import { useToast } from '@/hooks/useToast';
 
 const STEPS = [
+  { id: 'template', title: 'Template', shortTitle: 'Template', fields: [] },
   { id: 'basic', title: 'Basic Info', shortTitle: 'Info', fields: ['title', 'description', 'category'] },
   { id: 'parties', title: 'Parties', shortTitle: 'Parties', fields: ['counterpartyAddress'] },
   { id: 'terms', title: 'Terms', shortTitle: 'Terms', fields: ['amount', 'deadline', 'asset'] },
@@ -28,6 +33,13 @@ export default function CreateEscrowWizard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>();
+  const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [templateDescription, setTemplateDescription] = useState('');
+
+  const { addCustomTemplate } = useTemplates();
+  const { success } = useToast();
 
   const methods = useForm<CreateEscrowFormData>({
     resolver: zodResolver(createEscrowSchema),
@@ -35,9 +47,22 @@ export default function CreateEscrowWizard() {
     defaultValues: { asset: 'XLM', milestones: [], conditions: [] },
   });
 
-  const { trigger, handleSubmit } = methods;
+  const { trigger, handleSubmit, reset, watch } = methods;
+
+  const handleTemplateSelect = (formData: Partial<CreateEscrowFormData>) => {
+    reset({
+      asset: 'XLM',
+      milestones: [],
+      conditions: [],
+      ...formData,
+    });
+  };
 
   const nextStep = async () => {
+    if (currentStep === 0) {
+      setCurrentStep((prev) => prev + 1);
+      return;
+    }
     const fields = STEPS[currentStep].fields as any[];
     const isValid = await trigger(fields);
     if (isValid) {
@@ -68,6 +93,20 @@ export default function CreateEscrowWizard() {
     }
   };
 
+  const handleSaveAsTemplate = () => {
+    const formData = watch();
+    addCustomTemplate({
+      name: templateName,
+      description: templateDescription,
+      icon: 'Settings',
+      data: formDataToTemplateData(formData),
+    });
+    success('Template saved successfully!');
+    setShowSaveTemplate(false);
+    setTemplateName('');
+    setTemplateDescription('');
+  };
+
   if (txHash) {
     return (
       <div className="max-w-2xl mx-auto p-6 sm:p-8 bg-white rounded-xl shadow-sm border border-gray-100 text-center space-y-5">
@@ -80,12 +119,64 @@ export default function CreateEscrowWizard() {
           <p className="text-xs text-gray-500 uppercase mb-1">Transaction Hash</p>
           <p className="font-mono text-sm text-gray-700">{txHash}</p>
         </div>
-        <Link
-          href="/dashboard"
-          className="min-h-[44px] inline-flex items-center px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
-        >
-          Return to Dashboard
-        </Link>
+
+        {!showSaveTemplate ? (
+          <div className="space-y-3">
+            <button
+              onClick={() => setShowSaveTemplate(true)}
+              className="min-h-[44px] inline-flex items-center gap-2 px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium transition-colors"
+            >
+              <Save className="w-4 h-4" />
+              Save as Template
+            </button>
+            <Link
+              href="/dashboard"
+              className="min-h-[44px] inline-flex items-center px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors"
+            >
+              Return to Dashboard
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="space-y-3 text-left">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Template Name</label>
+                <input
+                  type="text"
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="My Custom Template"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description (Optional)</label>
+                <textarea
+                  value={templateDescription}
+                  onChange={(e) => setTemplateDescription(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  rows={3}
+                  placeholder="Describe what this template is for..."
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 justify-center">
+              <button
+                onClick={() => setShowSaveTemplate(false)}
+                className="min-h-[44px] px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveAsTemplate}
+                disabled={!templateName}
+                className="min-h-[44px] px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                Save Template
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -151,12 +242,18 @@ export default function CreateEscrowWizard() {
         <FormProvider {...methods}>
           <form onSubmit={handleSubmit(onSubmit)}>
             <div className="p-4 sm:p-8 mt-0 sm:mt-4">
-              {currentStep === 0 && <BasicInfoStep />}
-              {currentStep === 1 && <PartiesStep />}
-              {currentStep === 2 && <TermsStep />}
-              {currentStep === 3 && <MilestonesStep />}
-              {currentStep === 4 && <ConditionsStep />}
-              {currentStep === 5 && <ReviewStep />}
+              {currentStep === 0 && (
+                <TemplateSelector
+                  onSelect={handleTemplateSelect}
+                  selectedTemplateId={selectedTemplateId}
+                />
+              )}
+              {currentStep === 1 && <BasicInfoStep />}
+              {currentStep === 2 && <PartiesStep />}
+              {currentStep === 3 && <TermsStep />}
+              {currentStep === 4 && <MilestonesStep />}
+              {currentStep === 5 && <ConditionsStep />}
+              {currentStep === 6 && <ReviewStep />}
             </div>
 
             {submitError && (

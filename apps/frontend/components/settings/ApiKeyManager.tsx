@@ -28,6 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/useToast";
 
 const MAX_KEYS_PER_USER = 10;
 const DEFAULT_RATE_LIMIT = 60;
@@ -79,6 +80,7 @@ function ApiKeyManagerInner() {
     success: boolean;
     message: string;
   } | null>(null);
+  const { success, error } = useToast();
 
   // Fetch API keys on mount
   useEffect(() => {
@@ -120,7 +122,7 @@ function ApiKeyManagerInner() {
       await fetchKeys();
     } catch (error: any) {
       console.error("Error creating API key:", error);
-      alert(error.message || "Failed to create API key");
+      error(error.message || "Failed to create API key");
     } finally {
       setCreating(false);
     }
@@ -137,9 +139,10 @@ function ApiKeyManagerInner() {
       await revokeApiKey(id);
       setRevokingId(null);
       await fetchKeys();
+      success("API key revoked successfully");
     } catch (error: any) {
       console.error("Error revoking API key:", error);
-      alert(error.message || "Failed to revoke API key");
+      error(error.message || "Failed to revoke API key");
     }
   };
 

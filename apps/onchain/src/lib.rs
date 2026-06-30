@@ -1,6 +1,10 @@
 // lib.rs
 #![no_std]
 #![allow(unexpected_cfgs)]
+
+mod invariants;
+
+use invariants::{validate_escrow_invariants, validate_status_transition};
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, BytesN, Env,
     Symbol, Vec,
@@ -94,7 +98,7 @@ pub struct Escrow {
 
 #[contracttype]
 #[derive(Clone, Debug)]
-struct EscrowEntryV2 {
+pub(crate) struct EscrowEntryV2 {
     depositor: Address,
     recipient: Address,
     token_address: Address,
@@ -561,7 +565,7 @@ impl VaultixEscrow {
         if let Ok(mut escrow) = load_escrow_entry_v2(&env, escrow_id) {
             let old_fee = escrow_fee_override_opt(&escrow).unwrap_or(DEFAULT_FEE_BPS);
             escrow.fee_override_bps = fee_bps;
-            store_escrow_entry_v2(&env, escrow_id, &escrow);
+            store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
             env.events().publish(
                 event_topic(&env, "FeeUpdated"),
@@ -810,6 +814,53 @@ impl VaultixEscrow {
             .unwrap_or(0)
     }
 
+    /// Test-only: validate escrow invariants without persisting state.
+    #[cfg(test)]
+    #[allow(private_interfaces)]
+    pub fn test_validate_escrow_invariants(escrow: EscrowEntryV2) -> Result<(), Error> {
+        validate_escrow_invariants(&escrow)
+    }
+
+    /// Test-only: validate a status transition without mutating state.
+    #[cfg(test)]
+    #[allow(private_interfaces)]
+    pub fn test_validate_status_transition(
+        from: EscrowStatus,
+        to: EscrowStatus,
+    ) -> Result<(), Error> {
+        validate_status_transition(from, to)
+    }
+
+    /// Test-only: persist a V2 escrow entry without invariant checks (corrupt state setup).
+    #[cfg(test)]
+    #[allow(private_interfaces)]
+    pub fn test_store_escrow_raw(env: Env, escrow_id: u64, escrow: EscrowEntryV2) {
+        let key = get_storage_key_v2(escrow_id);
+        env.storage().persistent().set(&key, &escrow);
+        set_escrow_entry_version(&env, escrow_id, ESCROW_ENTRY_STORAGE_VERSION);
+    }
+
+    /// Test-only: build a V2 escrow entry from the public escrow view.
+    #[cfg(test)]
+    #[allow(private_interfaces)]
+    pub fn test_escrow_entry_from_public(escrow: Escrow) -> EscrowEntryV2 {
+        EscrowEntryV2 {
+            depositor: escrow.depositor,
+            recipient: escrow.recipient,
+            token_address: escrow.token_address,
+            total_amount: escrow.total_amount,
+            total_released: escrow.total_released,
+            milestones: escrow.milestones,
+            packed_state: pack_escrow_state(escrow.status, escrow.resolution),
+            deadline: escrow.deadline,
+            threshold_amount: escrow.threshold_amount,
+            required_signatures: escrow.required_signatures,
+            collected_signatures: escrow.collected_signatures,
+            fee_override_bps: -1,
+            metadata_hash: escrow.metadata_hash,
+        }
+    }
+
     /// Configure the threshold amount and required signatures for an escrow
     /// Only the depositor can call this function
     pub fn configure_multisig(
@@ -832,7 +883,7 @@ impl VaultixEscrow {
         escrow.threshold_amount = threshold_amount;
         escrow.required_signatures = required_signatures;
 
-        store_escrow_entry_v2(&env, escrow_id, &escrow);
+        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
         // Emit event
         env.events().publish(
@@ -915,7 +966,7 @@ impl VaultixEscrow {
             metadata_hash: metadata_hash.clone(),
         };
 
-        store_escrow_entry_v2(&env, escrow_id, &escrow);
+        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
         // Add to depositor index
         let depositor_index_key = get_depositor_index_key(&depositor);
@@ -1075,7 +1126,7 @@ impl VaultixEscrow {
                     .remove(&get_escrow_fee_key(escrow_id));
             }
 
-            store_escrow_entry_v2(&env, escrow_id, &escrow);
+            store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
             // Add to depositor index
             let depositor_index_key = get_depositor_index_key(&escrow.depositor);
@@ -1147,8 +1198,8 @@ impl VaultixEscrow {
         // Safe to call transfer_from now that basic preconditions hold.
         token_client.transfer_from(&spender, &escrow.depositor, &spender, &escrow.total_amount);
 
-        set_escrow_status(&mut escrow, EscrowStatus::Active);
-        store_escrow_entry_v2(&env, escrow_id, &escrow);
+        set_escrow_status(&mut escrow, EscrowStatus::Active)?;
+        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
         env.events().publish(
             event_topic(&env, "FundsDeposited"),
@@ -1188,7 +1239,7 @@ impl VaultixEscrow {
         // Add the new signature
         escrow.collected_signatures.push_back(signer.clone());
 
-        store_escrow_entry_v2(&env, escrow_id, &escrow);
+        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
         // Emit event
         env.events().publish(
@@ -1321,7 +1372,7 @@ impl VaultixEscrow {
         }
 
         let release = release_pending_milestone(&env, &mut escrow, milestone_index)?;
-        store_escrow_entry_v2(&env, escrow_id, &escrow);
+        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
         env.events().publish(
             event_topic(&env, "MilestoneReleased"),
@@ -1382,7 +1433,7 @@ impl VaultixEscrow {
         }
 
         let release = release_pending_milestone(&env, &mut escrow, milestone_index)?;
-        store_escrow_entry_v2(&env, escrow_id, &escrow);
+        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
         env.events().publish(
             event_topic(&env, "DeliveryConfirmed"),
@@ -1436,9 +1487,9 @@ impl VaultixEscrow {
         }
 
         escrow.milestones = updated_milestones;
-        set_escrow_status(&mut escrow, EscrowStatus::Disputed);
+        set_escrow_status(&mut escrow, EscrowStatus::Disputed)?;
         set_escrow_resolution(&mut escrow, Resolution::None);
-        store_escrow_entry_v2(&env, escrow_id, &escrow);
+        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
         env.events().publish(
             event_topic(&env, "DisputeRaised"),
@@ -1595,8 +1646,8 @@ impl VaultixEscrow {
         }
 
         set_escrow_resolution(&mut escrow, resolution);
-        set_escrow_status(&mut escrow, EscrowStatus::Resolved);
-        store_escrow_entry_v2(&env, escrow_id, &escrow);
+        set_escrow_status(&mut escrow, EscrowStatus::Resolved)?;
+        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
         env.events().publish(
             event_topic(&env, "DisputeResolved"),
@@ -1671,8 +1722,8 @@ impl VaultixEscrow {
             }
         }
 
-        set_escrow_status(&mut escrow, EscrowStatus::Cancelled);
-        store_escrow_entry_v2(&env, escrow_id, &escrow);
+        set_escrow_status(&mut escrow, EscrowStatus::Cancelled)?;
+        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
         env.events().publish(
             event_topic(&env, "EscrowCancelled"),
@@ -1707,8 +1758,8 @@ impl VaultixEscrow {
             return Err(Error::EscrowNotActive);
         }
 
-        set_escrow_status(&mut escrow, EscrowStatus::Completed);
-        store_escrow_entry_v2(&env, escrow_id, &escrow);
+        set_escrow_status(&mut escrow, EscrowStatus::Completed)?;
+        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
         env.events().publish(
             event_topic(&env, "EscrowCompleted"),
@@ -1796,10 +1847,20 @@ impl VaultixEscrow {
             )?;
         }
 
-        // Update escrow state
-        set_escrow_status(&mut escrow, EscrowStatus::Expired);
-        escrow.total_released = escrow.total_amount;
-        store_escrow_entry_v2(&env, escrow_id, &escrow);
+        // Update escrow state: mark unfunded milestones as disputed (refunded path)
+        // and transition to Expired without inflating total_released past released milestones.
+        let mut updated_milestones = Vec::new(&env);
+        for milestone in escrow.milestones.iter() {
+            let mut m = milestone.clone();
+            if m.status == MilestoneStatus::Pending {
+                m.status = MilestoneStatus::Disputed;
+            }
+            updated_milestones.push_back(m);
+        }
+        escrow.milestones = updated_milestones;
+
+        set_escrow_status(&mut escrow, EscrowStatus::Expired)?;
+        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
         env.events().publish(
             event_topic(&env, "EscrowExpiredRefunded"),
@@ -2165,9 +2226,12 @@ fn escrow_status(escrow: &EscrowEntryV2) -> EscrowStatus {
     unpack_escrow_status(escrow.packed_state)
 }
 
-fn set_escrow_status(escrow: &mut EscrowEntryV2, status: EscrowStatus) {
+fn set_escrow_status(escrow: &mut EscrowEntryV2, status: EscrowStatus) -> Result<(), Error> {
+    let current = escrow_status(escrow);
+    validate_status_transition(current, status)?;
     let resolution = unpack_escrow_resolution(escrow.packed_state);
     escrow.packed_state = pack_escrow_state(status, resolution);
+    Ok(())
 }
 
 fn set_escrow_resolution(escrow: &mut EscrowEntryV2, resolution: Resolution) {
@@ -2237,11 +2301,43 @@ fn set_escrow_entry_version(env: &Env, escrow_id: u64, version: i128) {
         .extend_ttl(&version_key, 100, 1_000_000);
 }
 
-fn store_escrow_entry_v2(env: &Env, escrow_id: u64, escrow: &EscrowEntryV2) {
+fn store_escrow_entry_v2(env: &Env, escrow_id: u64, escrow: &EscrowEntryV2) -> Result<(), Error> {
+    // Single persistence gate: invalid escrow state must never be written to storage.
+    validate_escrow_invariants(escrow)?;
     let key = get_storage_key_v2(escrow_id);
     env.storage().persistent().set(&key, escrow);
     set_escrow_entry_version(env, escrow_id, ESCROW_ENTRY_STORAGE_VERSION);
     extend_escrow_ttl(env, &key, escrow);
+    Ok(())
+}
+
+/// Legacy escrows may have been stored with an empty milestone list while still
+/// carrying a non-zero `total_amount`. Synthesize a single milestone so migrated
+/// entries satisfy current invariants.
+fn normalize_legacy_milestones(env: &Env, legacy: &Escrow) -> Vec<Milestone> {
+    if !legacy.milestones.is_empty() {
+        return legacy.milestones.clone();
+    }
+
+    if legacy.total_amount <= 0 {
+        return Vec::new(env);
+    }
+
+    let milestone_status = if legacy.total_released >= legacy.total_amount {
+        MilestoneStatus::Released
+    } else if legacy.status == EscrowStatus::Disputed {
+        MilestoneStatus::Disputed
+    } else {
+        MilestoneStatus::Pending
+    };
+
+    let mut milestones = Vec::new(env);
+    milestones.push_back(Milestone {
+        amount: legacy.total_amount,
+        status: milestone_status,
+        description: symbol_short!("legacy"),
+    });
+    milestones
 }
 
 fn load_escrow_entry_v2(env: &Env, escrow_id: u64) -> Result<EscrowEntryV2, Error> {
@@ -2279,13 +2375,15 @@ fn load_escrow_entry_v2(env: &Env, escrow_id: u64) -> Result<EscrowEntryV2, Erro
         .get::<(Symbol, u64), i128>(&get_escrow_fee_key(escrow_id))
         .unwrap_or(-1);
 
+    let milestones = normalize_legacy_milestones(env, &legacy);
+
     let v2 = EscrowEntryV2 {
         depositor: legacy.depositor,
         recipient: legacy.recipient,
         token_address: legacy.token_address,
         total_amount: legacy.total_amount,
         total_released: legacy.total_released,
-        milestones: legacy.milestones,
+        milestones,
         packed_state: pack_escrow_state(legacy.status, legacy.resolution),
         deadline: legacy.deadline,
         threshold_amount: legacy.threshold_amount,
@@ -2302,7 +2400,7 @@ fn load_escrow_entry_v2(env: &Env, escrow_id: u64) -> Result<EscrowEntryV2, Erro
             .remove(&get_escrow_fee_key(escrow_id));
     }
 
-    store_escrow_entry_v2(env, escrow_id, &v2);
+    store_escrow_entry_v2(env, escrow_id, &v2)?;
     Ok(v2)
 }
 
@@ -2370,5 +2468,7 @@ fn seconds_to_ledgers(seconds: u64) -> u32 {
 
 #[cfg(test)]
 mod fee_tests;
+#[cfg(test)]
+mod invariant_tests;
 #[cfg(test)]
 mod test;

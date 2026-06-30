@@ -64,20 +64,29 @@ export interface ICondition {
   updatedAt?: string;
 }
 
+export type EscrowEventType =
+  | "CREATED"
+  | "UPDATED"
+  | "FUNDED"
+  | "PARTY_ADDED"
+  | "PARTY_ACCEPTED"
+  | "PARTY_REJECTED"
+  | "CONDITION_FULFILLED"
+  | "CONDITION_MET"
+  | "MILESTONE_RELEASED"
+  | "DISPUTE_FILED"
+  | "DISPUTE_RESOLVED"
+  | "DISPUTED"
+  | "RESOLVED"
+  | "STATUS_CHANGED"
+  | "COMPLETED"
+  | "CANCELLED"
+  | "EXPIRED"
+  | (string & {});
+
 export interface IEscrowEvent {
   id: string;
-  eventType:
-    | "CREATED"
-    | "PARTY_ADDED"
-    | "PARTY_ACCEPTED"
-    | "PARTY_REJECTED"
-    | "FUNDED"
-    | "CONDITION_MET"
-    | "STATUS_CHANGED"
-    | "UPDATED"
-    | "CANCELLED"
-    | "COMPLETED"
-    | "DISPUTED";
+  eventType: EscrowEventType;
   actorId?: string;
   data?: Record<string, any>;
   ipAddress?: string;
