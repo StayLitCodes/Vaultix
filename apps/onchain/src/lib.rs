@@ -398,6 +398,12 @@ pub enum Error {
 
 const DEFAULT_FEE_BPS: i128 = 50;
 const BPS_DENOMINATOR: i128 = 10000;
+const FEE_TIERS: &[(i128, i128)] = &[
+    (1000, 50),   // 0-1,000 XLM => 50 bps
+    (5000, 30),   // 1,001-5,000 XLM => 30 bps
+    (10000, 20),  // 5,001-10,000 XLM => 20 bps
+    (i128::MAX, 10), // 10,001+ XLM => 10 bps
+];
 const MAX_BATCH_SIZE: u32 = 20;
 const ESCROW_ENTRY_STORAGE_VERSION: i128 = 2;
 const EVENT_NAMESPACE: &str = "Vaultix";
@@ -1690,10 +1696,11 @@ impl VaultixEscrow {
         if escrow_status(&escrow) == EscrowStatus::Active {
             let token_client = token::Client::new(&env, &escrow.token_address);
             refund_amount = if let Ok((treasury, _)) = Self::get_config(env.clone()) {
-                let fee_bps = resolve_fee_with_escrow_override(
+                let fee_bps = resolve_effective_fee_bps(
                     &env,
                     &escrow.token_address,
                     escrow_fee_override_opt(&escrow),
+                    escrow.total_amount,
                 )?;
                 fee_amount = calculate_fee(escrow.total_amount, fee_bps)?;
                 if fee_amount > 0 {
@@ -1812,10 +1819,11 @@ impl VaultixEscrow {
         let (treasury, _) = Self::get_config(env.clone())?;
 
         // Resolve fee with precedence: escrow > token > global
-        let fee_bps = resolve_fee_with_escrow_override(
+        let fee_bps = resolve_effective_fee_bps(
             &env,
             &escrow.token_address,
             escrow_fee_override_opt(&escrow),
+            escrow.total_amount,
         )?;
 
         // Calculate platform fee using checked arithmetic
@@ -1963,6 +1971,42 @@ fn resolve_fee_with_escrow_override(
     Ok(global_fee)
 }
 
+fn calculate_tiered_fee_bps(volume: i128) -> i128 {
+    if volume <= 0 {
+        return DEFAULT_FEE_BPS;
+    }
+
+    for &(cap, bps) in FEE_TIERS {
+        if volume <= cap {
+            return bps;
+        }
+    }
+
+    DEFAULT_FEE_BPS
+}
+
+fn resolve_effective_fee_bps(
+    env: &Env,
+    token_address: &Address,
+    escrow_fee_override: Option<i128>,
+    volume: i128,
+) -> Result<i128, Error> {
+    if let Some(escrow_fee) = escrow_fee_override {
+        return Ok(escrow_fee);
+    }
+
+    let token_fee_key = get_token_fee_key(token_address);
+    if let Some(token_fee) = env
+        .storage()
+        .persistent()
+        .get::<(Symbol, Address), i128>(&token_fee_key)
+    {
+        return Ok(token_fee);
+    }
+
+    Ok(calculate_tiered_fee_bps(volume))
+}
+
 fn release_pending_milestone(
     env: &Env,
     escrow: &mut EscrowEntryV2,
@@ -1981,10 +2025,11 @@ fn release_pending_milestone(
     }
 
     let (treasury, _) = VaultixEscrow::get_config(env.clone())?;
-    let fee_bps = resolve_fee_with_escrow_override(
+    let fee_bps = resolve_effective_fee_bps(
         env,
         &escrow.token_address,
         escrow_fee_override_opt(escrow),
+        escrow.total_amount,
     )?;
     let fee_amount = calculate_fee(milestone.amount, fee_bps)?;
     let payout_amount = milestone

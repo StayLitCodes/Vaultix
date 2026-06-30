@@ -1,0 +1,451 @@
+-    if (!escrowIds.includes(escrowId)) {
+-      escrowIds.push(escrowId);
+-      this.socketEscrowMap.set(client.id, escrowIds);
+-    }
++    const escrowIds = this.socketEscrowMap.get(client.id) || new Set<string>();
++    escrowIds.add(escrowId);
++    this.socketEscrowMap.set(client.id, escrowIds);
+ 
+     this.logger.log(`Client ${client.id} joined escrow room: ${escrowId}`);
+     client.emit('joinedEscrow', { escrowId });
+   }
+ 
+   @SubscribeMessage('leaveEscrow')
+-  handleLeaveEscrow(client: Socket, escrowId: string): void {
+-    const room = `escrow:${escrowId}`;
+-    void client.leave(room);
+-
+-    // Remove from tracking
+-    const escrowIds: string[] = this.socketEscrowMap.get(client.id) || [];
+-    const updatedEscrowIds = escrowIds.filter((id) => id !== escrowId);
+-    this.socketEscrowMap.set(client.id, updatedEscrowIds);
++  async handleLeaveEscrow(client: Socket, escrowId: string): Promise<void> {
++    if (!escrowId) {
++      return;
++    }
+ 
+-    this.logger.log(`Client ${client.id} left escrow room: ${escrowId}`);
+-  }
++    await client.leave(`escrow:${escrowId}`);
+ 
+-  // Broadcast methods - called from EscrowService
+-  broadcastEscrowStatusChanged(escrowId: string, data: EscrowEventData): void {
+-    this.server.to(`escrow:${escrowId}`).emit('escrow:status_changed', {
+-      escrowId,
+-      ...data,
+-      timestamp: new Date().toISOString(),
+-    });
+-  }
++    const escrowIds = this.socketEscrowMap.get(client.id);
++    if (escrowIds) {
++      escrowIds.delete(escrowId);
++      if (escrowIds.size === 0) {
++        this.socketEscrowMap.delete(client.id);
++      } else {
++        this.socketEscrowMap.set(client.id, escrowIds);
++      }
++    }
+ 
+-  broadcastMilestoneReleased(escrowId: string, data: EscrowEventData): void {
+-    this.server.to(`escrow:${escrowId}`).emit('escrow:milestone_released', {
+-      escrowId,
+-      ...data,
+-      timestamp: new Date().toISOString(),
+-    });
++    this.logger.log(`Client ${client.id} left escrow room: ${escrowId}`);
+   }
+ 
+-  broadcastDisputeFiled(escrowId: string, data: EscrowEventData): void {
+-    this.server.to(`escrow:${escrowId}`).emit('escrow:dispute_filed', {
+-      escrowId,
+-      ...data,
+-      timestamp: new Date().toISOString(),
+-    });
+-  }
++  @SubscribeMessage('reconnect')
++  async handleReconnect(
++    client: Socket,
++    payload: { escrowIds?: string[] },
++  ): Promise<void> {
++    if (payload?.escrowIds?.length) {
++      for (const escrowId of payload.escrowIds) {
++        await this.handleJoinEscrow(client, escrowId);
++      }
++    }
+ 
+-  broadcastDisputeResolved(escrowId: string, data: EscrowEventData): void {
+-    this.server.to(`escrow:${escrowId}`).emit('escrow:dispute_resolved', {
+-      escrowId,
+-      ...data,
+-      timestamp: new Date().toISOString(),
+-    });
++    const userId = this.socketUserMap.get(client.id);
++    client.emit('reconnected', { userId, socketId: client.id });
+   }
+ 
+-  broadcastPartyJoined(escrowId: string, data: EscrowEventData): void {
+-    this.server.to(`escrow:${escrowId}`).emit('escrow:party_joined', {
+-      escrowId,
+-      ...data,
+-      timestamp: new Date().toISOString(),
+-    });
++  broadcastEscrowStatusChanged(escrowId: string, data: EscrowEventData): void {
++    this.emitToEscrowRoom('escrow.status_changed', escrowId, data);
+   }
+ 
+   broadcastConditionFulfilled(escrowId: string, data: EscrowEventData): void {
+-    this.server.to(`escrow:${escrowId}`).emit('escrow:condition_fulfilled', {
+-      escrowId,
+-      ...data,
+-      timestamp: new Date().toISOString(),
+-    });
++    this.emitToEscrowRoom('escrow.condition_fulfilled', escrowId, data);
+   }
+ 
+   broadcastConditionConfirmed(escrowId: string, data: EscrowEventData): void {
+-    this.server.to(`escrow:${escrowId}`).emit('escrow:condition_confirmed', {
+-      escrowId,
+-      ...data,
+-      timestamp: new Date().toISOString(),
+-    });
++    this.emitToEscrowRoom('escrow.condition_confirmed', escrowId, data);
+   }
+ 
+-  broadcastNotification(userId: string, data: EscrowEventData): void {
+-    const socketIds = this.userSocketMap.get(userId) || [];
+-    socketIds.forEach((socketId) => {
+-      this.server.to(socketId).emit('notification:new', {
+-        ...data,
+-        timestamp: new Date().toISOString(),
+-      });
+-    });
++  broadcastDisputeFiled(escrowId: string, data: EscrowEventData): void {
++    this.emitToEscrowRoom('escrow.dispute_filed', escrowId, data);
+   }
+ 
+-  broadcastEscrowFunded(escrowId: string, data: EscrowEventData): void {
+-    this.server.to(`escrow:${escrowId}`).emit('escrow:funded', {
+-      escrowId,
+-      ...data,
+-      timestamp: new Date().toISOString(),
+-    });
++  broadcastDisputeResolved(escrowId: string, data: EscrowEventData): void {
++    this.emitToEscrowRoom('escrow.dispute_resolved', escrowId, data);
+   }
+ 
+-  broadcastEscrowCompleted(escrowId: string, data: EscrowEventData): void {
+-    this.server.to(`escrow:${escrowId}`).emit('escrow:completed', {
+-      escrowId,
++  broadcastNotification(userId: string, data: EscrowEventData): void {
++    const payload = {
+       ...data,
++      userId,
+       timestamp: new Date().toISOString(),
+-    });
+-  }
++    };
+ 
+-  broadcastEscrowCancelled(escrowId: string, data: EscrowEventData): void {
+-    this.server.to(`escrow:${escrowId}`).emit('escrow:cancelled', {
+-      escrowId,
+-      ...data,
+-      timestamp: new Date().toISOString(),
+-    });
++    this.server.to(`user:${userId}`).emit('notification.new', payload);
+   }
+ 
+-  // Get online users (for admin/monitoring)
+-  getOnlineUsers(): Map<string, string[]> {
++  getOnlineUsers(): Map<string, Set<string>> {
+     return this.userSocketMap;
+   }
+ 
+-  // Get user's socket IDs
+   getUserSockets(userId: string): string[] {
+-    return this.userSocketMap.get(userId) || [];
++    return Array.from(this.userSocketMap.get(userId) || []);
+   }
+ 
+-  // Check if user is online
+   isUserOnline(userId: string): boolean {
+-    const sockets = this.userSocketMap.get(userId) || [];
+-    return sockets.length > 0;
++    return (this.userSocketMap.get(userId)?.size || 0) > 0;
++  }
++
++  private emitToEscrowRoom(
++    eventName: string,
++    escrowId: string,
++    data: EscrowEventData,
++  ): void {
++    this.server.to(`escrow:${escrowId}`).emit(eventName, {
++      escrowId,
++      ...data,
++      timestamp: new Date().toISOString(),
++    });
+   }
+ }
+diff --git a/apps/backend/src/gateways/events.module.ts b/apps/backend/src/gateways/events.module.ts
+new file mode 100644
+index 0000000..0d3173f
+--- /dev/null
++++ b/apps/backend/src/gateways/events.module.ts
+@@ -0,0 +1,23 @@
++import { Module } from '@nestjs/common';
++import { ConfigModule, ConfigService } from '@nestjs/config';
++import { JwtModule } from '@nestjs/jwt';
++import { EventsGateway } from './escrow.gateway';
++
++@Module({
++  imports: [
++    ConfigModule,
++    JwtModule.registerAsync({
++      imports: [ConfigModule],
++      useFactory: (configService: ConfigService) => ({
++        secret:
++          configService.get<string>('JWT_SECRET') ||
++          'your-secret-key-change-in-production',
++        signOptions: { expiresIn: '15m' },
++      }),
++      inject: [ConfigService],
++    }),
++  ],
++  providers: [EventsGateway],
++  exports: [EventsGateway],
++})
++export class EventsModule {}
+diff --git a/apps/backend/src/modules/escrow/escrow.module.ts b/apps/backend/src/modules/escrow/escrow.module.ts
+index d082e45..fd4e00a 100644
+--- a/apps/backend/src/modules/escrow/escrow.module.ts
++++ b/apps/backend/src/modules/escrow/escrow.module.ts
+@@ -23,6 +23,7 @@ import { EscrowLifecycleService } from './escrow-lifecycle.service';
+ import { EscrowFundingService } from './escrow-funding.service';
+ import { EscrowDisputeService } from './escrow-dispute.service';
+ import { EscrowQueryService } from './escrow-query.service';
++import { EventsModule } from '../../gateways/events.module';
+ 
+ @Module({
+   imports: [
+@@ -36,6 +37,7 @@ import { EscrowQueryService } from './escrow-query.service';
+       AllowedAsset,
+     ]),
+     AuthModule,
++    EventsModule,
+     WebhookModule,
+     IpfsModule,
+     NotificationsModule,
+diff --git a/apps/backend/src/modules/escrow/services/escrow.service.ts b/apps/backend/src/modules/escrow/services/escrow.service.ts
+index 880d5da..5cb93da 100644
+--- a/apps/backend/src/modules/escrow/services/escrow.service.ts
++++ b/apps/backend/src/modules/escrow/services/escrow.service.ts
+@@ -5,6 +5,7 @@ import {
+   ForbiddenException,
+   ConflictException,
+   UnprocessableEntityException,
++  Optional,
+ } from '@nestjs/common';
+ import { InjectRepository } from '@nestjs/typeorm';
+ import { Brackets, Repository, SelectQueryBuilder } from 'typeorm';
+@@ -44,6 +45,7 @@ import { IpfsService } from '../../ipfs/ipfs.service';
+ import { AllowedAsset } from '../../assets/entities/allowed-asset.entity';
+ import { NotificationService } from '../../../notifications/notifications.service';
+ import { NotificationEventType } from '../../../notifications/enums/notification-event.enum';
++import { EventsGateway } from '../../../gateways/escrow.gateway';
+ 
+ @Injectable()
+ export class EscrowService {
+@@ -67,6 +69,7 @@ export class EscrowService {
+     private readonly webhookService: WebhookService,
+     private readonly ipfsService: IpfsService,
+     private readonly notificationService: NotificationService,
++    @Optional() private readonly eventsGateway?: EventsGateway,
+   ) {}
+ 
+   async create(
+@@ -446,6 +449,11 @@ export class EscrowService {
+     await this.webhookService.dispatchEvent('escrow.cancelled', {
+       escrowId: id,
+     });
++    this.eventsGateway?.broadcastEscrowStatusChanged(id, {
++      previousStatus: escrow.status,
++      newStatus: EscrowStatus.CANCELLED,
++      actorId: userId,
++    });
+ 
+     return this.findOne(id);
+   }
+@@ -531,6 +539,7 @@ export class EscrowService {
+       );
+ 
+     const fundedAt = new Date();
++    const previousStatus = escrow.status;
+     await this.escrowRepository.update(id, {
+       stellarTxHash,
+       fundedAt,
+@@ -548,6 +557,11 @@ export class EscrowService {
+       escrowId: id,
+       stellarTxHash,
+     });
++    this.eventsGateway?.broadcastEscrowStatusChanged(id, {
++      previousStatus,
++      newStatus: EscrowStatus.ACTIVE,
++      actorId: userId,
++    });
+ 
+     return this.findOne(id);
+   }
+@@ -626,6 +640,7 @@ export class EscrowService {
+       escrow.creatorId,
+     );
+ 
++    const previousStatus = escrow.status;
+     escrow.status = EscrowStatus.COMPLETED;
+     escrow.isReleased = true;
+     escrow.releaseTransactionHash = txHash;
+@@ -639,6 +654,11 @@ export class EscrowService {
+       escrowId: escrow.id,
+       txHash,
+     });
++    this.eventsGateway?.broadcastEscrowStatusChanged(escrow.id, {
++      previousStatus,
++      newStatus: EscrowStatus.COMPLETED,
++      actorId: currentUserId,
++    });
+ 
+     return escrow;
+   }
+@@ -721,6 +741,10 @@ export class EscrowService {
+       conditionId,
+       fulfilledBy: userId,
+     });
++    this.eventsGateway?.broadcastConditionFulfilled(escrowId, {
++      conditionId,
++      fulfilledBy: userId,
++    });
+ 
+     return condition;
+   }
+@@ -819,6 +843,11 @@ export class EscrowService {
+       confirmedBy: userId,
+       allConditionsMet,
+     });
++    this.eventsGateway?.broadcastConditionConfirmed(escrowId, {
++      conditionId,
++      confirmedBy: userId,
++      allConditionsMet,
++    });
+ 
+     return condition;
+   }
+@@ -970,6 +999,15 @@ export class EscrowService {
+       escrowId,
+       disputeId: savedDispute.id,
+     });
++    this.eventsGateway?.broadcastDisputeFiled(escrowId, {
++      disputeId: savedDispute.id,
++      filedBy: userId,
++    });
++    this.eventsGateway?.broadcastEscrowStatusChanged(escrowId, {
++      previousStatus: escrow.status,
++      newStatus: EscrowStatus.DISPUTED,
++      actorId: userId,
++    });
+ 
+     return this.disputeRepository.findOne({
+       where: { id: savedDispute.id },
+@@ -1071,6 +1109,16 @@ export class EscrowService {
+       disputeId: resolved.id,
+       outcome: dto.outcome,
+     });
++    this.eventsGateway?.broadcastDisputeResolved(escrowId, {
++      disputeId: resolved.id,
++      outcome: dto.outcome,
++      resolvedBy: arbitratorUserId,
++    });
++    this.eventsGateway?.broadcastEscrowStatusChanged(escrowId, {
++      previousStatus: escrow.status,
++      newStatus: nextEscrowStatus,
++      actorId: arbitratorUserId,
++    });
+ 
+     return this.disputeRepository.findOne({
+       where: { id: resolved.id },
+@@ -1411,6 +1459,12 @@ export class EscrowService {
+       escrowId: escrow.id,
+       reason: options.webhookReason,
+     });
++    this.eventsGateway?.broadcastEscrowStatusChanged(escrow.id, {
++      previousStatus: escrow.status,
++      newStatus: EscrowStatus.EXPIRED,
++      actorId: options.actorId,
++      reason: options.reason,
++    });
+ 
+     return this.findOne(escrow.id);
+   }
+diff --git a/apps/backend/src/notifications/notifications.module.ts b/apps/backend/src/notifications/notifications.module.ts
+index 5885226..d6bafda 100644
+--- a/apps/backend/src/notifications/notifications.module.ts
++++ b/apps/backend/src/notifications/notifications.module.ts
+@@ -9,11 +9,13 @@ import { NotificationService } from './notifications.service';
+ import { PreferenceService } from './preference.service';
+ import { EmailSender } from './senders/email.sender';
+ import { WebhookSender } from './senders/webhook.sender';
++import { EventsModule } from '../gateways/events.module';
+ 
+ @Module({
+   imports: [
+     ConfigModule,
+     AuthModule,
++    EventsModule,
+     TypeOrmModule.forFeature([Notification, NotificationPreference]),
+   ],
+   controllers: [NotificationController],
+diff --git a/apps/backend/src/notifications/notifications.service.ts b/apps/backend/src/notifications/notifications.service.ts
+index 1477729..0cbc888 100644
+--- a/apps/backend/src/notifications/notifications.service.ts
++++ b/apps/backend/src/notifications/notifications.service.ts
+@@ -1,4 +1,4 @@
+-import { Injectable, Logger } from '@nestjs/common';
++import { Injectable, Logger, Optional } from '@nestjs/common';
+ import { Cron, CronExpression } from '@nestjs/schedule';
+ import {
+   NotificationChannel,
+@@ -12,6 +12,7 @@ import { WebhookSender } from './senders/webhook.sender';
+ import { Repository, IsNull } from 'typeorm';
+ import { EmailSender } from './senders/email.sender';
+ import { PreferenceService } from './preference.service';
++import { EventsGateway } from '../gateways/escrow.gateway';
+ 
+ @Injectable()
+ export class NotificationService {
+@@ -24,6 +25,7 @@ export class NotificationService {
+     private preferenceService: PreferenceService,
+     emailSender: EmailSender,
+     webhookSender: WebhookSender,
++    @Optional() private readonly eventsGateway?: EventsGateway,
+   ) {
+     this.senders = new Map([
+       [NotificationChannel.EMAIL, emailSender],
+@@ -42,7 +44,7 @@ export class NotificationService {
+       if (!pref.enabled) continue;
+       if (!pref.eventTypes.includes(eventType)) continue;
+ 
+-      await this.repo.save(
++      const notification = await this.repo.save(
+         this.repo.create({
+           userId,
+           eventType,
+@@ -51,6 +53,12 @@ export class NotificationService {
+           status: NotificationStatus.PENDING,
+         }),
+       );
++
++      this.eventsGateway?.broadcastNotification(userId, {
++        notificationId: notification.id,
++        eventType,
++        payload,
++      });
+     }
+   }
+ 
