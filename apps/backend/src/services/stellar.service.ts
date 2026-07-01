@@ -9,19 +9,23 @@ import {
   StellarTransactionResponse,
   StellarServer,
 } from '../types/stellar.types';
+import { StellarRpcErrorHandler } from '../utils/stellar-rpc-error-handler.util';
 
 @Injectable()
 export class StellarService {
   private readonly logger = new Logger(StellarService.name);
   private server: StellarServer;
   private networkPassphrase: string;
+  private errorHandler: StellarRpcErrorHandler;
 
   constructor(
     @Inject(stellarConfig.KEY)
     private config: ConfigType<typeof stellarConfig>,
+    errorHandler: StellarRpcErrorHandler,
   ) {
     this.networkPassphrase = this.config.networkPassphrase;
     this.server = new StellarSdk.Horizon.Server(this.config.horizonUrl);
+    this.errorHandler = errorHandler;
 
     this.logger.log(
       `Initialized Stellar service for ${this.config.network} network`,
@@ -35,15 +39,6 @@ export class StellarService {
    * @returns Account record with balance and sequence number
    */
 
-  async checkHealth(): Promise<boolean> {
-    try {
-      await this.server.root();
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   async getAccount(publicKey: string): Promise<StellarAccountResponse> {
     try {
       this.logger.log(`Fetching account info for: ${publicKey}`);
@@ -54,13 +49,13 @@ export class StellarService {
         .call()) as unknown as StellarAccountResponse;
 
       this.logger.log(`Successfully retrieved account info for: ${publicKey}`);
-
       return account;
     } catch (error) {
-      this.logger.error(
-        `Failed to fetch account ${publicKey}: ${this.getErrorMessage(error)}`,
+      this.errorHandler.logError('getAccount', error, `publicKey: ${publicKey}`);
+      throw this.errorHandler.toStellarRpcException(
+        error,
+        `Error fetching account ${publicKey}`,
       );
-      throw this.mapStellarError(error, `Error fetching account ${publicKey}`);
     }
   }
 
@@ -79,9 +74,7 @@ export class StellarService {
         .call();
       return assets.records.length > 0;
     } catch (error) {
-      this.logger.error(
-        `Failed to validate asset ${code}: ${this.getErrorMessage(error)}`,
-      );
+      this.errorHandler.logError('validateAsset', error, `code: ${code}, issuer: ${issuer}`);
       return false;
     }
   }
@@ -132,10 +125,8 @@ export class StellarService {
 
       return transaction;
     } catch (error) {
-      this.logger.error(
-        `Failed to build transaction for account ${sourcePublicKey}: ${this.getErrorMessage(error)}`,
-      );
-      throw this.mapStellarError(
+      this.errorHandler.logError('buildTransaction', error, `sourcePublicKey: ${sourcePublicKey}`);
+      throw this.errorHandler.toStellarRpcException(
         error,
         `Error building transaction for account ${sourcePublicKey}`,
       );
@@ -162,15 +153,16 @@ export class StellarService {
         },
         this.config.maxRetries,
         this.config.retryDelay,
+        this.config.retryFactor,
       );
 
+      this.errorHandler.recordSuccess();
       this.logger.log(`Successfully submitted transaction: ${result.hash}`);
       return result;
     } catch (error) {
-      this.logger.error(
-        `Failed to submit transaction after ${this.config.maxRetries + 1} attempts: ${this.getErrorMessage(error)}`,
-      );
-      throw this.mapStellarError(
+      this.errorHandler.recordFailure();
+      this.errorHandler.logError('submitTransaction', error, '');
+      throw this.errorHandler.toStellarRpcException(
         error,
         `Error submitting transaction after ${this.config.maxRetries + 1} attempts`,
       );
@@ -199,7 +191,6 @@ export class StellarService {
     };
 
     // Create event stream for account transactions
-
     const eventSource = this.server
       .transactions()
       .forAccount(accountId)
@@ -241,13 +232,25 @@ export class StellarService {
         return null;
       }
 
-      this.logger.error(
-        `Failed to check transaction status ${transactionHash}: ${this.getErrorMessage(error)}`,
-      );
-      throw this.mapStellarError(
+      this.errorHandler.logError('checkTransactionStatus', error, `transactionHash: ${transactionHash}`);
+      throw this.errorHandler.toStellarRpcException(
         error,
         `Error checking transaction status ${transactionHash}`,
       );
+    }
+  }
+
+  /**
+   * Checks the health of the Stellar Horizon service
+   * @returns True if Horizon is reachable, false otherwise
+   */
+  async checkHealth(): Promise<boolean> {
+    try {
+      await this.server.root();
+      return true;
+    } catch (error) {
+      this.errorHandler.logError('checkHealth', error, '');
+      return false;
     }
   }
 
@@ -304,78 +307,5 @@ export class StellarService {
       (error as any).response.status === 404
     );
     /* eslint-enable @typescript-eslint/no-unsafe-member-access */
-  }
-
-  /**
-   * Safely extracts error message from unknown error type
-   */
-  private getErrorMessage(error: unknown): string {
-    if (error instanceof Error) {
-      return error.message;
-    }
-    if (typeof error === 'object' && error !== null && 'message' in error) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      return String((error as any).message);
-    }
-    return 'Unknown error';
-  }
-
-  /**
-   * Maps Stellar SDK errors to more descriptive error messages
-   * @param error The error to map
-   * @param defaultMessage Default message if specific mapping isn't found
-   * @returns Mapped error
-   */
-  private mapStellarError(error: unknown, defaultMessage: string): Error {
-    if (!error) {
-      return new Error(defaultMessage);
-    }
-
-    // Type guard for error objects
-    if (typeof error === 'object' && error !== null) {
-      // Check if it's a Horizon API error
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      const errorObj = error as any;
-      /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-      if (errorObj.response?.data) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const problem = errorObj.response.data;
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        const title =
-          problem.title || problem.extras?.result_codes?.transaction;
-
-        if (problem.detail) {
-          return new Error(
-            `Stellar API Error: ${String(problem.detail)} (${String(title)})`,
-          );
-        }
-
-        if (problem.extras?.result_codes) {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-          const codes = problem.extras.result_codes;
-          return new Error(
-            `Stellar Transaction Error: ${JSON.stringify(codes)}`,
-          );
-        }
-      }
-      /* eslint-enable @typescript-eslint/no-unsafe-member-access */
-
-      // Check for specific Stellar SDK error types
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      if (errorObj.constructor?.name?.includes('NetworkError')) {
-        return new Error(
-          `Network Error: Failed to connect to Stellar network (${this.getErrorMessage(error)})`,
-        );
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      if (errorObj.constructor?.name?.includes('NotFoundError')) {
-        return new Error(`Not Found: ${this.getErrorMessage(error)}`);
-      }
-
-      return new Error(`${defaultMessage}: ${this.getErrorMessage(error)}`);
-    }
-
-    return new Error(defaultMessage);
   }
 }
