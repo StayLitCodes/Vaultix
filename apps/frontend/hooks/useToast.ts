@@ -1,13 +1,19 @@
 import { useToast as useToastContext } from '@/app/contexts/ToastContext';
+import { ToastAction } from '@/app/contexts/ToastContext';
 
 export const useToast = () => {
-  const { addToast, removeToast } = useToastContext();
+  const { addToast, removeToast, removeAllToasts } = useToastContext();
 
   return {
-    success: (message: string, duration?: number) => addToast(message, 'success', duration),
-    error: (message: string, duration?: number) => addToast(message, 'error', duration),
-    warning: (message: string, duration?: number) => addToast(message, 'warning', duration),
-    info: (message: string, duration?: number) => addToast(message, 'info', duration),
+    success: (message: string, duration?: number, action?: ToastAction) => 
+      addToast(message, 'success', duration, action),
+    error: (message: string, duration?: number, action?: ToastAction) => 
+      addToast(message, 'error', duration, action),
+    warning: (message: string, duration?: number, action?: ToastAction) => 
+      addToast(message, 'warning', duration, action),
+    info: (message: string, duration?: number, action?: ToastAction) => 
+      addToast(message, 'info', duration, action),
     dismiss: removeToast,
+    dismissAll: removeAllToasts,
   };
 };

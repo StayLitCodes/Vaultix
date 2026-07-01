@@ -18,6 +18,17 @@ const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
     }, 300);
   };
 
+  // Keyboard dismiss (Escape key)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleDismiss();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   const getToastStyles = () => {
     const baseStyles = 'flex items-start gap-3 p-4 rounded-lg shadow-lg border min-w-[320px] max-w-[420px]';
     
@@ -74,10 +85,19 @@ const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
       role="alert"
       aria-live="assertive"
       aria-atomic="true"
+      tabIndex={0}
     >
       {getIcon()}
       <div className="flex-1">
         <p className="text-sm font-medium">{toast.message}</p>
+        {toast.action && (
+          <button
+            onClick={toast.action.onClick}
+            className="mt-2 text-xs font-semibold underline hover:no-underline focus:outline-none"
+          >
+            {toast.action.label}
+          </button>
+        )}
       </div>
       <button
         onClick={handleDismiss}

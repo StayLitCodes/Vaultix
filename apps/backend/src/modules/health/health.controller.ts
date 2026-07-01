@@ -1,3 +1,5 @@
+import { TypeOrmHealthIndicator } from '@nestjs/terminus';
+import { EscrowGateway } from '../../gateways/escrow.gateway';
 import { Controller, Get } from '@nestjs/common';
 import {
   HealthCheck,
@@ -9,6 +11,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { User } from '../user/entities/user.entity';
 import { Escrow, EscrowStatus } from '../escrow/entities/escrow.entity';
+import { StellarService } from '../../services/stellar.service';
 
 interface HealthInfo {
   version: string;
@@ -26,6 +29,9 @@ interface HealthInfo {
 export class HealthController {
   constructor(
     private health: HealthCheckService,
+    private readonly typeOrmHealthIndicator: TypeOrmHealthIndicator,
+    private readonly stellarService: StellarService,
+    private readonly escrowGateway: EscrowGateway,
     @InjectRepository(User)
     private userRepository: Repository<User>,
     @InjectRepository(Escrow)
@@ -33,24 +39,28 @@ export class HealthController {
   ) {}
 
   @Get()
-  @HealthCheck()
-  async check(): Promise<HealthCheckResult> {
-    return this.health.check([
-      () => this.checkDatabase(),
-      () => this.checkMemory(),
-      () => this.checkDisk(),
-    ]);
-  }
-
-  @Get('live')
   live(): { status: string } {
-    return { status: 'ok' };
+    return {
+      status: 'ok',
+    };
   }
 
   @Get('ready')
   @HealthCheck()
   async ready(): Promise<HealthCheckResult> {
-    return this.health.check([() => this.checkDatabase()]);
+    return this.health.check([
+      () => this.checkDatabase(),
+      () => this.checkStellar(),
+      () => this.checkWebSocket(),
+    ]);
+  }
+
+  private checkWebSocket(): HealthIndicatorResult {
+    return {
+      websocket: {
+        status: this.escrowGateway.isHealthy() ? 'up' : 'down',
+      },
+    };
   }
 
   @Get('info')
@@ -74,36 +84,29 @@ export class HealthController {
   }
 
   private async checkDatabase(): Promise<HealthIndicatorResult> {
-    try {
-      await this.userRepository.query('SELECT 1');
-      return {
-        database: {
-          status: 'up',
-        },
-      };
-    } catch (e) {
-      return {
-        database: {
-          status: 'down',
-          message: (e as Error).message,
-        },
-      };
-    }
+    return this.typeOrmHealthIndicator.pingCheck('database');
+  }
+
+  private async checkStellar(): Promise<HealthIndicatorResult> {
+    const healthy = await this.stellarService.checkHealth();
+
+    return {
+      stellar: {
+        status: healthy ? 'up' : 'down',
+      },
+    };
   }
 
   private checkMemory(): HealthIndicatorResult {
-    const memUsage = process.memoryUsage();
-    const heapTotal = memUsage.heapTotal;
-    const heapUsed = memUsage.heapUsed;
-    const percentUsed = (heapUsed / heapTotal) * 100;
+    const heapUsedMB = process.memoryUsage().heapUsed / 1024 / 1024;
+    const thresholdMB = 512;
 
-    if (percentUsed > 80) {
+    if (heapUsedMB > thresholdMB) {
       return {
         memory: {
-          status: 'down',
-          message: `Memory usage above 80%: ${percentUsed.toFixed(2)}%`,
-          used: heapUsed,
-          total: heapTotal,
+          status: 'up',
+          warning: `Heap usage exceeded ${thresholdMB} MB`,
+          thresholdMB,
         },
       };
     }
@@ -111,9 +114,8 @@ export class HealthController {
     return {
       memory: {
         status: 'up',
-        used: heapUsed,
-        total: heapTotal,
-        percentUsed: `${percentUsed.toFixed(2)}%`,
+        heapUsedMB: Number(heapUsedMB.toFixed(2)),
+        thresholdMB,
       },
     };
   }

@@ -315,24 +315,50 @@ export default function AdminDisputesPage() {
                   {selectedDispute.evidence && selectedDispute.evidence.length > 0 && (
                     <div className="space-y-2">
                       <span className="text-xs text-gray-500 font-medium block">Evidence Documents</span>
-                      <div className="space-y-1.5">
-                        {selectedDispute.evidence.map((ev, idx) => (
-                          <div
-                            key={idx}
-                            className="flex items-center justify-between bg-white/[0.02] border border-white/5 rounded-lg p-2.5 text-xs text-gray-300 hover:bg-white/[0.04] transition-colors"
-                          >
-                            <span className="truncate flex items-center gap-2">
-                              <FileText className="w-4 h-4 text-purple-400 flex-shrink-0" />
-                              {ev}
-                            </span>
-                            <button
-                              onClick={() => toast.info(`Viewing evidence: ${ev}`)}
-                              className="text-purple-400 hover:text-purple-300 font-medium text-[11px]"
+                      <div className="grid grid-cols-2 gap-2">
+                        {selectedDispute.evidence.map((ev, idx) => {
+                          const isImage = ev.match(/\.(jpg|jpeg|png|webp)(\?.*)?$/i);
+                          return (
+                            <div
+                              key={idx}
+                              className="bg-white/[0.02] border border-white/5 rounded-lg overflow-hidden hover:bg-white/[0.04] transition-colors"
                             >
-                              View
-                            </button>
-                          </div>
-                        ))}
+                              {isImage ? (
+                                <div className="relative group">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={ev}
+                                    alt={`Evidence ${idx + 1}`}
+                                    className="w-full h-24 object-cover"
+                                  />
+                                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <button
+                                      onClick={() => toast.info(`Viewing evidence: ${ev}`)}
+                                      className="text-white text-xs font-medium"
+                                    >
+                                      View
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="p-3">
+                                  <div className="flex items-center gap-2">
+                                    <FileText className="w-4 h-4 text-purple-400 flex-shrink-0" />
+                                    <span className="truncate text-xs text-gray-300">{ev}</span>
+                                  </div>
+                                </div>
+                              )}
+                              <div className="px-2 pb-2">
+                                <button
+                                  onClick={() => toast.info(`Viewing evidence: ${ev}`)}
+                                  className="text-purple-400 hover:text-purple-300 font-medium text-[11px]"
+                                >
+                                  {isImage ? 'View Full' : 'Open Link'}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}

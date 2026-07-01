@@ -1,6 +1,6 @@
 /**
  * Escrow State Transition Table:
- * 
+ *
  * Current Status | Allowed New Statuses
  * ----------------|---------------------
  * PENDING         | ACTIVE, CANCELLED, EXPIRED

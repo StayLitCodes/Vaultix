@@ -212,4 +212,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       timestamp: new Date().toISOString(),
     });
   }
+  isHealthy(): boolean {
+    return this.server !== undefined;
+  }
 }

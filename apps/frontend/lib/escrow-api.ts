@@ -225,6 +225,15 @@ export interface IEventsListResponse {
   limit: number;
 }
 
+export const expireEscrow = (
+  escrowId: string,
+  data?: { reason?: string },
+): Promise<any> =>
+  request(`/escrows/${escrowId}/expire`, {
+    method: "POST",
+    body: data ? JSON.stringify(data) : undefined,
+  });
+
 export const fetchEvents = (
   params: {
     page?: number;
