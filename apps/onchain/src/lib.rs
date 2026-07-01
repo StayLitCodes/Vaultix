@@ -399,9 +399,9 @@ pub enum Error {
 const DEFAULT_FEE_BPS: i128 = 50;
 const BPS_DENOMINATOR: i128 = 10000;
 const FEE_TIERS: &[(i128, i128)] = &[
-    (1000, 50),   // 0-1,000 XLM => 50 bps
-    (5000, 30),   // 1,001-5,000 XLM => 30 bps
-    (10000, 20),  // 5,001-10,000 XLM => 20 bps
+    (1000, 50),      // 0-1,000 XLM => 50 bps
+    (5000, 30),      // 1,001-5,000 XLM => 30 bps
+    (10000, 20),     // 5,001-10,000 XLM => 20 bps
     (i128::MAX, 10), // 10,001+ XLM => 10 bps
 ];
 const MAX_BATCH_SIZE: u32 = 20;

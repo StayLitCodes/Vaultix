@@ -20,6 +20,7 @@
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
+    "types": ["node"],
     "lib": ["es2021"]
   }
 }

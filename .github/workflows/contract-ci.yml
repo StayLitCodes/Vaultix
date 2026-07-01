@@ -2,15 +2,15 @@ name: Contract CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
     paths:
-      - 'apps/onchain/**'
-      - '.github/workflows/contract-ci.yml'
+      - "apps/onchain/**"
+      - ".github/workflows/contract-ci.yml"
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
     paths:
-      - 'apps/onchain/**'
-      - '.github/workflows/contract-ci.yml'
+      - "apps/onchain/**"
+      - ".github/workflows/contract-ci.yml"
 
 jobs:
   test:
@@ -28,7 +28,11 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
+          components: rustfmt, clippy
           targets: wasm32-unknown-unknown
+
+      - name: Add wasm target
+        run: rustup target add wasm32-unknown-unknown
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2

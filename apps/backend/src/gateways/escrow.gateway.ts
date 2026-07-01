@@ -13,16 +13,27 @@ interface EscrowEventData {
   [key: string]: unknown;
 }
 
+interface JwtPayload {
+  sub?: string;
+  userId?: string;
+  id?: string;
+}
+
+interface ClientAuthPayload {
+  token?: string;
+}
+
 @WebSocketGateway({
   namespace: '/events',
   cors: {
-    origin: process.env.FRONTEND_URL?.split(',') || ['http://localhost:3001'],
+    origin: (typeof process !== 'undefined' &&
+      process.env.FRONTEND_URL?.split(',')) || ['http://localhost:3001'],
     credentials: true,
   },
 })
 export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
-  server: Server;
+  server!: Server;
 
   private readonly logger = new Logger(EventsGateway.name);
   private readonly userSocketMap = new Map<string, Set<string>>();
@@ -31,11 +42,23 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   constructor(private readonly jwtService: JwtService) {}
 
+  private extractToken(client: Socket): string | undefined {
+    const authPayload = client.handshake.auth as ClientAuthPayload | undefined;
+    const authorizationHeader = client.handshake.headers.authorization as
+      | string
+      | undefined;
+
+    if (authPayload?.token) {
+      return authPayload.token;
+    }
+
+    const parts = authorizationHeader?.split(' ') ?? [];
+    return parts[1];
+  }
+
   async handleConnection(client: Socket): Promise<void> {
     try {
-      const token =
-        (client.handshake.auth?.token as string) ||
-        (client.handshake.headers.authorization as string)?.split(' ')[1];
+      const token = this.extractToken(client);
 
       if (!token) {
         this.logger.warn(
@@ -45,12 +68,27 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         return;
       }
 
-      const decoded = this.jwtService.verify(token) as {
-        sub?: string;
-        userId?: string;
-        id?: string;
-      };
-      const userId = decoded?.sub || decoded?.userId || decoded?.id;
+      let decoded: unknown;
+      try {
+        decoded = this.jwtService.verify(token);
+      } catch {
+        this.logger.warn(`Connection rejected: invalid token (${client.id})`);
+        client.disconnect();
+        return;
+      }
+
+      if (
+        !decoded ||
+        typeof decoded !== 'object' ||
+        !('sub' in decoded || 'userId' in decoded || 'id' in decoded)
+      ) {
+        this.logger.warn(`Connection rejected: invalid token (${client.id})`);
+        client.disconnect();
+        return;
+      }
+
+      const payload = decoded as JwtPayload;
+      const userId = payload.sub || payload.userId || payload.id;
 
       if (!userId) {
         this.logger.warn(`Connection rejected: invalid token (${client.id})`);
@@ -199,6 +237,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   isUserOnline(userId: string): boolean {
     return (this.userSocketMap.get(userId)?.size || 0) > 0;
+  }
+
+  isHealthy(): boolean {
+    return this.server !== undefined;
   }
 
   private emitToEscrowRoom(
