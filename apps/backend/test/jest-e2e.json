@@ -10,5 +10,12 @@
     "^src/(.*)$": "<rootDir>/../src/$1"
   },
   "setupFilesAfterEnv": ["<rootDir>/setup/setup-e2e.ts"],
-  "testTimeout": 60000
+  "testTimeout": 60000,
+  "globals": {
+    "ts-jest": {
+      "tsconfig": {
+        "esModuleInterop": true
+      }
+    }
+  }
 }

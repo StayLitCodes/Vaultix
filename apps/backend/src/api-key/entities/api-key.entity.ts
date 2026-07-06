@@ -1,49 +1,65 @@
 import {
   Entity,
-  PrimaryGeneratedColumn,
+  PrimaryColumn,
   Column,
   CreateDateColumn,
+  UpdateDateColumn,
+  BeforeInsert,
 } from 'typeorm';
+import { v4 as uuidv4 } from 'uuid';
 
-export enum ApiKeyTier {
-  NONE = 'none',
-  FREE = 'free',
-  PRO = 'pro',
+export enum ApiKeyScope {
+  READ_ESCROWS = 'read:escrows',
+  WRITE_ESCROWS = 'write:escrows',
+  READ_ANALYTICS = 'read:analytics',
+  ADMIN = 'admin',
 }
 
-// Rate limits per tier (requests per minute)
-export const TIER_LIMITS: Record<ApiKeyTier, number> = {
-  [ApiKeyTier.NONE]: 60,
-  [ApiKeyTier.FREE]: 120,
-  [ApiKeyTier.PRO]: 600,
-};
-
-@Entity()
+@Entity('api_key')
 export class ApiKey {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
+  @PrimaryColumn('varchar')
+  id!: string;
+
+  @BeforeInsert()
+  generateId() {
+    if (!this.id) {
+      this.id = uuidv4();
+    }
+  }
 
   @Column()
-  name: string;
+  userId!: string;
+
+  @Column()
+  name!: string;
 
   @Column({ unique: true })
-  keyHash: string;
+  keyHash!: string;
 
   @Column()
-  ownerUserId: string;
+  keyPrefix!: string;
+
+  @Column('simple-array')
+  scopes!: ApiKeyScope[];
 
   @Column({ default: true })
-  active: boolean;
+  isActive!: boolean;
+
+  @Column({ nullable: true })
+  lastUsedAt?: Date;
+
+  @Column({ nullable: true })
+  expiresAt?: Date;
 
   @Column({ nullable: true })
   revokedAt?: Date;
 
-  @Column({ type: 'text', default: ApiKeyTier.FREE })
-  tier: ApiKeyTier;
-
-  @Column({ type: 'int', default: 120 })
-  rateLimitPerMinute: number;
+  @Column({ type: 'int', default: 200 })
+  rateLimitPerMinute!: number;
 
   @CreateDateColumn()
-  createdAt: Date;
+  createdAt!: Date;
+
+  @UpdateDateColumn()
+  updatedAt!: Date;
 }

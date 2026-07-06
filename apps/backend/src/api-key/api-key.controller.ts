@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Patch,
   Delete,
   Body,
   Param,
@@ -18,8 +19,10 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AuthGuard } from '../modules/auth/middleware/auth.guard';
+import { ApiKeyGuard } from './guards/api-key.guard';
 import { ApiKeysService } from './api-key.service';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
+import { UpdateApiKeyDto } from './dto/update-api-key.dto';
 
 interface AuthenticatedRequest {
   user: {
@@ -29,9 +32,7 @@ interface AuthenticatedRequest {
 }
 
 @Controller('api-keys')
-@ApiTags('api-keys')
-@ApiBearerAuth('access-token')
-@UseGuards(AuthGuard)
+@UseGuards(ApiKeyGuard, AuthGuard)
 export class ApiKeyController {
   constructor(private readonly apiKeysService: ApiKeysService) {}
 
@@ -55,6 +56,22 @@ export class ApiKeyController {
     return this.apiKeysService.list(userId);
   }
 
+  @Get(':id')
+  async findOne(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    const userId = req.user.sub;
+    return this.apiKeysService.findOne(id, userId);
+  }
+
+  @Patch(':id')
+  async update(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateApiKeyDto,
+  ) {
+    const userId = req.user.sub;
+    return this.apiKeysService.update(id, userId, dto);
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Revoke an API key by ID' })
   @ApiParam({ name: 'id', description: 'API key ID' })
@@ -64,5 +81,11 @@ export class ApiKeyController {
   async revoke(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     const userId = req.user.sub;
     return this.apiKeysService.revoke(id, userId);
+  }
+
+  @Post(':id/rotate')
+  async rotate(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+    const userId = req.user.sub;
+    return this.apiKeysService.rotate(id, userId);
   }
 }
