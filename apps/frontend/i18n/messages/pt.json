@@ -1,0 +1,94 @@
+{
+  "nav": {
+    "home": "Início",
+    "dashboard": "Painel",
+    "transactions": "Transações",
+    "createEscrow": "Criar Escrow",
+    "github": "GitHub",
+    "themeMenu": "Menu de tema",
+    "light": "Claro",
+    "dark": "Escuro",
+    "system": "Sistema",
+    "closeMenu": "Fechar menu",
+    "openMenu": "Abrir menu"
+  },
+  "home": {
+    "title": "Plataforma de escrow descentralizada e segura",
+    "description": "Proteja suas transações com acordos de escrow inteligentes impulsionados pela tecnologia blockchain da Stellar.",
+    "dashboardCta": "Acessar painel",
+    "createEscrowCta": "Criar Escrow",
+    "features": {
+      "secure": { "title": "Transações Seguras", "description": "Os contratos inteligentes garantem que os fundos só sejam liberados quando as condições forem atendidas" },
+      "fast": { "title": "Liquidação Rápida", "description": "As transações impulsionadas por blockchain são liquidadas em segundos, não em dias" },
+      "global": { "title": "Acesso Global", "description": "Acesse seus acordos de escrow de qualquer lugar do mundo" }
+    }
+  },
+  "dashboard": {
+    "title": "Painel de Escrows",
+    "description": "Gerencie todos os seus acordos de escrow em um só lugar",
+    "yourEscrows": "Seus escrows",
+    "activityFeed": "Feed de atividade",
+    "newEscrow": "Novo escrow",
+    "clearFilters": "Limpar filtros",
+    "loading": "Carregando painel..."
+  },
+  "escrow": {
+    "create": {
+      "title": "Criar novo escrow",
+      "description": "Configure um acordo de escrow seguro em apenas alguns passos."
+    }
+  },
+  "transactions": {
+    "title": "Histórico de transações",
+    "description": "Visualize e exporte todas as suas transações relacionadas a escrows",
+    "totals": {
+      "funded": "Total financiado",
+      "released": "Total liberado",
+      "inEscrow": "Total em escrow"
+    },
+    "filters": {
+      "eventType": "Tipo de evento",
+      "fromDate": "Da data",
+      "toDate": "Até a data",
+      "sortBy": "Ordenar por",
+      "clear": "Limpar",
+      "allEvents": "Todos os eventos",
+      "funding": "Financiamento",
+      "release": "Liberação",
+      "refund": "Reembolso",
+      "dispute": "Disputa",
+      "disputeFiled": "Disputa registrada",
+      "disputeResolved": "Disputa resolvida",
+      "created": "Criado",
+      "expired": "Expirado",
+      "newestFirst": "Mais recentes primeiro",
+      "oldestFirst": "Mais antigos primeiro"
+    },
+    "table": {
+      "date": "Data",
+      "escrow": "Escrow",
+      "eventType": "Tipo de evento",
+      "amount": "Valor",
+      "status": "Status",
+      "txHash": "Hash da tx"
+    },
+    "empty": {
+      "title": "Nenhuma transação encontrada",
+      "description": "Tente ajustar os filtros ou o intervalo de datas"
+    },
+    "pagination": {
+      "showing": "Mostrando",
+      "to": "até",
+      "of": "de",
+      "results": "resultados",
+      "previous": "Anterior",
+      "next": "Próximo"
+    },
+    "unknown": "Desconhecido",
+    "na": "N/D"
+  },
+  "common": {
+    "close": "Fechar",
+    "loading": "Carregando..."
+  }
+}

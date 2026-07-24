@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import {
   Download,
   Filter,
@@ -25,18 +26,7 @@ import { Badge } from "@/components/ui/badge";
 import { ExportDropdown, ExportFormat } from "@/components/ExportDropdown";
 import { ExportModal } from "@/components/ExportModal";
 import { useToast } from "@/hooks/useToast";
-
-const EVENT_TYPES = [
-  { value: "", label: "All Events" },
-  { value: "FUNDED", label: "Funding" },
-  { value: "COMPLETED", label: "Release" },
-  { value: "CANCELLED", label: "Refund" },
-  { value: "DISPUTED", label: "Dispute" },
-  { value: "DISPUTE_FILED", label: "Dispute Filed" },
-  { value: "DISPUTE_RESOLVED", label: "Dispute Resolved" },
-  { value: "CREATED", label: "Created" },
-  { value: "EXPIRED", label: "Expired" },
-];
+import { formatDate, formatNumber } from "@/lib/locale";
 
 const PAGE_SIZE = 20;
 
@@ -58,6 +48,20 @@ export default function TransactionsPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("csv");
+  const locale = useLocale();
+  const t = useTranslations("transactions");
+
+  const EVENT_TYPES = [
+    { value: "", label: t("filters.allEvents") },
+    { value: "FUNDED", label: t("filters.funding") },
+    { value: "COMPLETED", label: t("filters.release") },
+    { value: "CANCELLED", label: t("filters.refund") },
+    { value: "DISPUTED", label: t("filters.dispute") },
+    { value: "DISPUTE_FILED", label: t("filters.disputeFiled") },
+    { value: "DISPUTE_RESOLVED", label: t("filters.disputeResolved") },
+    { value: "CREATED", label: t("filters.created") },
+    { value: "EXPIRED", label: t("filters.expired") },
+  ];
 
   // Running totals
   const [totals, setTotals] = useState({
@@ -208,10 +212,10 @@ export default function TransactionsPage() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Transaction History
+            {t("title")}
           </h1>
           <p className="text-gray-600">
-            View and export all your escrow-related transactions
+            {t("description")}
           </p>
         </div>
 
@@ -220,12 +224,9 @@ export default function TransactionsPage() {
           <div className="bg-white rounded-lg shadow p-6 border-l-4 border-blue-500">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 mb-1">Total Funded</p>
+                <p className="text-sm text-gray-600 mb-1">{t("totals.funded")}</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {totals.totalFunded.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 7,
-                  })}{" "}
+                  {formatNumber(totals.totalFunded, locale)}{" "}
                   XLM
                 </p>
               </div>
@@ -236,12 +237,9 @@ export default function TransactionsPage() {
           <div className="bg-white rounded-lg shadow p-6 border-l-4 border-green-500">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 mb-1">Total Released</p>
+                <p className="text-sm text-gray-600 mb-1">{t("totals.released")}</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {totals.totalReleased.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 7,
-                  })}{" "}
+                  {formatNumber(totals.totalReleased, locale)}{" "}
                   XLM
                 </p>
               </div>
@@ -252,12 +250,9 @@ export default function TransactionsPage() {
           <div className="bg-white rounded-lg shadow p-6 border-l-4 border-orange-500">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 mb-1">Total In Escrow</p>
+                <p className="text-sm text-gray-600 mb-1">{t("totals.inEscrow")}</p>
                 <p className="text-2xl font-bold text-gray-900">
-                  {totals.totalInEscrow.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 7,
-                  })}{" "}
+                  {formatNumber(totals.totalInEscrow, locale)}{" "}
                   XLM
                 </p>
               </div>
@@ -272,7 +267,7 @@ export default function TransactionsPage() {
             {/* Event Type Filter */}
             <div className="flex-1 min-w-[200px]">
               <label className="text-sm font-medium text-gray-700 mb-1 block">
-                Event Type
+                {t("filters.eventType")}
               </label>
               <select
                 value={eventType}
@@ -293,7 +288,7 @@ export default function TransactionsPage() {
             {/* Date From */}
             <div className="flex-1 min-w-[180px]">
               <label className="text-sm font-medium text-gray-700 mb-1 block">
-                From Date
+                {t("filters.fromDate")}
               </label>
               <Input
                 type="date"
@@ -309,7 +304,7 @@ export default function TransactionsPage() {
             {/* Date To */}
             <div className="flex-1 min-w-[180px]">
               <label className="text-sm font-medium text-gray-700 mb-1 block">
-                To Date
+                {t("filters.toDate")}
               </label>
               <Input
                 type="date"
@@ -325,7 +320,7 @@ export default function TransactionsPage() {
             {/* Sort Order */}
             <div className="flex-1 min-w-[180px]">
               <label className="text-sm font-medium text-gray-700 mb-1 block">
-                Sort By
+                {t("filters.sortBy")}
               </label>
               <select
                 value={`${sortBy}-${sortOrder}`}
@@ -337,8 +332,8 @@ export default function TransactionsPage() {
                 }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="createdAt-DESC">Newest First</option>
-                <option value="createdAt-ASC">Oldest First</option>
+                <option value="createdAt-DESC">{t("filters.newestFirst")}</option>
+                <option value="createdAt-ASC">{t("filters.oldestFirst")}</option>
               </select>
             </div>
 
@@ -349,7 +344,7 @@ export default function TransactionsPage() {
               className="flex items-center gap-1"
             >
               <Filter className="w-4 h-4" />
-              Clear
+              {t("filters.clear")}
             </Button>
 
             {/* Export */}
@@ -370,9 +365,9 @@ export default function TransactionsPage() {
           ) : events.length === 0 ? (
             <div className="text-center py-16">
               <Calendar className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-              <p className="text-gray-500 text-lg">No transactions found</p>
+              <p className="text-gray-500 text-lg">{t("empty.title")}</p>
               <p className="text-gray-400 text-sm mt-1">
-                Try adjusting your filters or date range
+                {t("empty.description")}
               </p>
             </div>
           ) : (
@@ -382,22 +377,22 @@ export default function TransactionsPage() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Date
+                        {t("table.date")}
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Escrow
+                        {t("table.escrow")}
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Event Type
+                        {t("table.eventType")}
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Amount
+                        {t("table.amount")}
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
+                        {t("table.status")}
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Tx Hash
+                        {t("table.txHash")}
                       </th>
                     </tr>
                   </thead>
@@ -410,14 +405,14 @@ export default function TransactionsPage() {
                       return (
                         <tr key={event.id} className="hover:bg-gray-50">
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {new Date(event.createdAt).toLocaleDateString()}
+                            {formatDate(new Date(event.createdAt), locale)}
                             <div className="text-xs text-gray-500">
-                              {new Date(event.createdAt).toLocaleTimeString()}
+                              {new Date(event.createdAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}
                             </div>
                           </td>
                           <td className="px-6 py-4">
                             <div className="text-sm font-medium text-gray-900">
-                              {event.escrow?.title || "Unknown"}
+                              {event.escrow?.title || t("unknown")}
                             </div>
                             <div className="text-xs text-gray-500 font-mono">
                               {event.escrowId.slice(0, 8)}...
@@ -434,13 +429,7 @@ export default function TransactionsPage() {
                             {event.escrow ? (
                               <div>
                                 <div className="font-medium">
-                                  {Number(event.escrow.amount).toLocaleString(
-                                    undefined,
-                                    {
-                                      minimumFractionDigits: 2,
-                                      maximumFractionDigits: 7,
-                                    },
-                                  )}
+                                  {formatNumber(Number(event.escrow.amount), locale)}
                                 </div>
                                 <div className="text-xs text-gray-500">
                                   {event.escrow.assetIssuer
@@ -449,7 +438,7 @@ export default function TransactionsPage() {
                                 </div>
                               </div>
                             ) : (
-                              <span className="text-gray-400">N/A</span>
+                              <span className="text-gray-400">{t("na")}</span>
                             )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -464,7 +453,7 @@ export default function TransactionsPage() {
                                       : "bg-gray-100 text-gray-800"
                               }
                             >
-                              {event.escrow?.status || "N/A"}
+                              {event.escrow?.status || t("na")}
                             </Badge>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm">
@@ -481,7 +470,7 @@ export default function TransactionsPage() {
                                 <ExternalLink className="w-3 h-3" />
                               </a>
                             ) : (
-                              <span className="text-gray-400">N/A</span>
+                              <span className="text-gray-400">{t("na")}</span>
                             )}
                           </td>
                         </tr>
@@ -495,15 +484,15 @@ export default function TransactionsPage() {
               <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
                 <div className="flex items-center justify-between">
                   <div className="text-sm text-gray-700">
-                    Showing{" "}
+                    {t("pagination.showing")}{" "}
                     <span className="font-medium">
                       {(page - 1) * PAGE_SIZE + 1}
                     </span>{" "}
-                    to{" "}
+                    {t("pagination.to")}{" "}
                     <span className="font-medium">
                       {Math.min(page * PAGE_SIZE, total)}
                     </span>{" "}
-                    of <span className="font-medium">{total}</span> results
+                    {t("pagination.of")} <span className="font-medium">{total}</span> {t("pagination.results")}
                   </div>
                   <div className="flex gap-2">
                     <Button
@@ -512,7 +501,7 @@ export default function TransactionsPage() {
                       onClick={() => setPage((p) => Math.max(1, p - 1))}
                       disabled={page === 1}
                     >
-                      Previous
+                      {t("pagination.previous")}
                     </Button>
                     <Button
                       variant="outline"
@@ -522,7 +511,7 @@ export default function TransactionsPage() {
                       }
                       disabled={page === totalPages}
                     >
-                      Next
+                      {t("pagination.next")}
                     </Button>
                   </div>
                 </div>

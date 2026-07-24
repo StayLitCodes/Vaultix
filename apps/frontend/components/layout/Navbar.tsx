@@ -5,13 +5,15 @@ import Link from "next/link";
 import { Menu, X, Sun, Moon, Monitor, ChevronDown } from "lucide-react";
 import NotificationBell from "@/components/common/NotificationBell";
 import { useTheme } from "@/components/ThemeProvider";
+import { useLocale, useTranslations } from "next-intl";
+import { LocaleSwitcher } from "@/components/layout/LocaleSwitcher";
 
 const NAV_LINKS = [
-  { href: "/", label: "Home" },
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/transactions", label: "Transactions" },
-  { href: "/escrow/create", label: "Create Escrow" },
-  { href: "https://github.com/Vaultix", label: "GitHub", external: true },
+  { href: "/", key: "home" },
+  { href: "/dashboard", key: "dashboard" },
+  { href: "/transactions", key: "transactions" },
+  { href: "/escrow/create", key: "createEscrow" },
+  { href: "https://github.com/Vaultix", key: "github", external: true },
 ];
 
 export default function Navbar(): JSX.Element {
@@ -19,6 +21,14 @@ export default function Navbar(): JSX.Element {
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const { theme, setTheme, resolvedTheme } = useTheme();
+  const locale = useLocale();
+  const t = useTranslations("nav");
+
+  const buildHref = (href: string) => {
+    if (href.startsWith("http")) return href;
+    const normalized = href === "/" ? "/" : href.startsWith("/") ? href : `/${href}`;
+    return locale === "en" ? `/${normalized.replace(/^\//, "")}` : `/${locale}${normalized}`;
+  };
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 10);
@@ -75,14 +85,14 @@ export default function Navbar(): JSX.Element {
 
             {/* Desktop nav */}
             <div className="hidden md:flex items-center gap-6">
-              {NAV_LINKS.map(({ href, label, external }) => (
+              {NAV_LINKS.map(({ href, key, external }) => (
                 <Link
                   key={href}
                   href={href}
                   target={external ? "_blank" : undefined}
                   className="min-h-[44px] flex items-center text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors text-sm font-medium"
                 >
-                  {label}
+                  {t(key)}
                 </Link>
               ))}
               <div data-theme-menu className="relative">
@@ -177,11 +187,12 @@ export default function Navbar(): JSX.Element {
                   </div>
                 )}
               </div>
+              <LocaleSwitcher />
               <NotificationBell />
               <button
                 onClick={() => setIsMenuOpen((v) => !v)}
                 className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white focus:outline-none rounded-lg"
-                aria-label={isMenuOpen ? "Close menu" : "Open menu"}
+                aria-label={isMenuOpen ? t("closeMenu") : t("openMenu")}
                 aria-expanded={isMenuOpen}
               >
                 {isMenuOpen ? <X size={22} /> : <Menu size={22} />}
@@ -200,7 +211,7 @@ export default function Navbar(): JSX.Element {
           />
           <div className="absolute top-0 right-0 h-full w-72 bg-white dark:bg-gray-900 backdrop-blur-xl flex flex-col pt-20 pb-8 px-6 shadow-2xl">
             <nav className="flex flex-col gap-1">
-              {NAV_LINKS.map(({ href, label, external }) => (
+              {NAV_LINKS.map(({ href, key, external }) => (
                 <Link
                   key={href}
                   href={href}
@@ -208,7 +219,7 @@ export default function Navbar(): JSX.Element {
                   onClick={() => setIsMenuOpen(false)}
                   className="min-h-[48px] flex items-center text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800/50 rounded-lg px-3 transition-colors text-base font-medium"
                 >
-                  {label}
+                  {t(key)}
                 </Link>
               ))}
             </nav>

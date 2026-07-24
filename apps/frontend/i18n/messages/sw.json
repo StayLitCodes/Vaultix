@@ -1,0 +1,94 @@
+{
+  "nav": {
+    "home": "Nyumbani",
+    "dashboard": "Dashibodi",
+    "transactions": "Miamala",
+    "createEscrow": "Unda Escrow",
+    "github": "GitHub",
+    "themeMenu": "Menyu ya Mandhari",
+    "light": "Mwanga",
+    "dark": "Giza",
+    "system": "Mfumo",
+    "closeMenu": "Funga menyu",
+    "openMenu": "Fungua menyu"
+  },
+  "home": {
+    "title": "Jukwaa la Usalama la Escrow Lililogatuliwa",
+    "description": "Linda miamala yako kwa makubaliano ya escrow yenye akili yanayoendeshwa na teknolojia ya Stellar blockchain.",
+    "dashboardCta": "Fungua Dashibodi",
+    "createEscrowCta": "Unda Escrow",
+    "features": {
+      "secure": { "title": "Miamala Salama", "description": "Mikataba ya akili huhakikisha fedha hutozwa tu wakati masharti yanatimizwa" },
+      "fast": { "title": "Kufungwa Haraka", "description": "Miamala inayotegemea blockchain hukamilika ndani ya sekunde, si siku" },
+      "global": { "title": "Upatikanaji wa Ulimwenguni Pote", "description": "Fikia makubaliano yako ya escrow kutoka mahali popote ulimwenguni" }
+    }
+  },
+  "dashboard": {
+    "title": "Dashibodi ya Escrow",
+    "description": "Dhibiti makubaliano yako yote ya escrow mahali pamoja",
+    "yourEscrows": "Escrows zako",
+    "activityFeed": "Mtiririko wa Shughuli",
+    "newEscrow": "Escrow Mpya",
+    "clearFilters": "Futa vichujio",
+    "loading": "Inapakia Dashibodi..."
+  },
+  "escrow": {
+    "create": {
+      "title": "Unda Escrow Mpya",
+      "description": "Weka makubaliano ya escrow salama katika hatua chache tu."
+    }
+  },
+  "transactions": {
+    "title": "Historia ya Miamala",
+    "description": "Angalia na usafirisha miamala yako yote inayohusiana na escrow",
+    "totals": {
+      "funded": "Jumla Iliyowekezwa",
+      "released": "Jumla Iliyotolewa",
+      "inEscrow": "Jumla Katika Escrow"
+    },
+    "filters": {
+      "eventType": "Aina ya Tukio",
+      "fromDate": "Tangu Tarehe",
+      "toDate": "Hadi Tarehe",
+      "sortBy": "Panga Kwa",
+      "clear": "Futa",
+      "allEvents": "Matukio Yote",
+      "funding": "Uwekeshaji",
+      "release": "Utoaji",
+      "refund": "Mauzo ya Kurudishiwa",
+      "dispute": "Mzozo",
+      "disputeFiled": "Mzozo Umetumwa",
+      "disputeResolved": "Mzozo Umesuluhishwa",
+      "created": "Iliundwa",
+      "expired": "Iliyokwisha",
+      "newestFirst": "Mpya Zaidi Kwanza",
+      "oldestFirst": "Zamani Zaidi Kwanza"
+    },
+    "table": {
+      "date": "Tarehe",
+      "escrow": "Escrow",
+      "eventType": "Aina ya Tukio",
+      "amount": "Kiasi",
+      "status": "Hali",
+      "txHash": "Hash ya tx"
+    },
+    "empty": {
+      "title": "Hakuna miamala iliyopatikana",
+      "description": "Jaribu kurekebisha vichujio au anuwai ya tarehe"
+    },
+    "pagination": {
+      "showing": "Inaonyesha",
+      "to": "hadi",
+      "of": "ya",
+      "results": "matokeo",
+      "previous": "Iliyopita",
+      "next": "Inayofuata"
+    },
+    "unknown": "Haijulikani",
+    "na": "Sio Ipo"
+  },
+  "common": {
+    "close": "Funga",
+    "loading": "Inapakia..."
+  }
+}

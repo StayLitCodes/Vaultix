@@ -1,0 +1,94 @@
+{
+  "nav": {
+    "home": "Home",
+    "dashboard": "Dashboard",
+    "transactions": "Transactions",
+    "createEscrow": "Create Escrow",
+    "github": "GitHub",
+    "themeMenu": "Theme Menu",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "closeMenu": "Close menu",
+    "openMenu": "Open menu"
+  },
+  "home": {
+    "title": "Secure Decentralized Escrow Platform",
+    "description": "Protect your transactions with smart escrow agreements powered by Stellar blockchain technology.",
+    "dashboardCta": "Access Dashboard",
+    "createEscrowCta": "Create Escrow",
+    "features": {
+      "secure": { "title": "Secure Transactions", "description": "Smart contracts ensure funds are only released when conditions are met" },
+      "fast": { "title": "Fast Settlement", "description": "Blockchain-powered transactions settle in seconds, not days" },
+      "global": { "title": "Global Access", "description": "Access your escrow agreements from anywhere in the world" }
+    }
+  },
+  "dashboard": {
+    "title": "Escrow Dashboard",
+    "description": "Manage all your escrow agreements in one place",
+    "yourEscrows": "Your Escrows",
+    "activityFeed": "Activity Feed",
+    "newEscrow": "New Escrow",
+    "clearFilters": "Clear filters",
+    "loading": "Loading Dashboard..."
+  },
+  "escrow": {
+    "create": {
+      "title": "Create New Escrow",
+      "description": "Set up a secure escrow agreement in just a few steps."
+    }
+  },
+  "transactions": {
+    "title": "Transaction History",
+    "description": "View and export all your escrow-related transactions",
+    "totals": {
+      "funded": "Total Funded",
+      "released": "Total Released",
+      "inEscrow": "Total In Escrow"
+    },
+    "filters": {
+      "eventType": "Event Type",
+      "fromDate": "From Date",
+      "toDate": "To Date",
+      "sortBy": "Sort By",
+      "clear": "Clear",
+      "allEvents": "All Events",
+      "funding": "Funding",
+      "release": "Release",
+      "refund": "Refund",
+      "dispute": "Dispute",
+      "disputeFiled": "Dispute Filed",
+      "disputeResolved": "Dispute Resolved",
+      "created": "Created",
+      "expired": "Expired",
+      "newestFirst": "Newest First",
+      "oldestFirst": "Oldest First"
+    },
+    "table": {
+      "date": "Date",
+      "escrow": "Escrow",
+      "eventType": "Event Type",
+      "amount": "Amount",
+      "status": "Status",
+      "txHash": "Tx Hash"
+    },
+    "empty": {
+      "title": "No transactions found",
+      "description": "Try adjusting your filters or date range"
+    },
+    "pagination": {
+      "showing": "Showing",
+      "to": "to",
+      "of": "of",
+      "results": "results",
+      "previous": "Previous",
+      "next": "Next"
+    },
+    "unknown": "Unknown",
+    "na": "N/A"
+  },
+  "common": {
+    "close": "Close",
+    "loading": "Loading..."
+  }
+}

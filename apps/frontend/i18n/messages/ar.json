@@ -1,0 +1,94 @@
+{
+  "nav": {
+    "home": "الرئيسية",
+    "dashboard": "لوحة التحكم",
+    "transactions": "المعاملات",
+    "createEscrow": "إنشاء ضمان",
+    "github": "غيت هاب",
+    "themeMenu": "قائمة الموضوع",
+    "light": "فاتح",
+    "dark": "داكن",
+    "system": "النظام",
+    "closeMenu": "إغلاق القائمة",
+    "openMenu": "فتح القائمة"
+  },
+  "home": {
+    "title": "منصة ضمان لامركزية وآمنة",
+    "description": "احمِ معاملاتك باستخدام اتفاقيات ضمان ذكية مدعومة بتقنية Stellar blockchain.",
+    "dashboardCta": "الدخول إلى لوحة التحكم",
+    "createEscrowCta": "إنشاء ضمان",
+    "features": {
+      "secure": { "title": "معاملات آمنة", "description": "تضمن العقود الذكية تحرير الأموال فقط عند استيفاء الشروط" },
+      "fast": { "title": "تسوية سريعة", "description": "تُستكمل المعاملات المدعومة بالبلوكشين خلال ثوانٍ وليس أيامًا" },
+      "global": { "title": "وصول عالمي", "description": "يمكنك الوصول إلى اتفاقيات الضمان الخاصة بك من أي مكان في العالم" }
+    }
+  },
+  "dashboard": {
+    "title": "لوحة تحكم الضمان",
+    "description": "إدارة جميع اتفاقيات الضمان الخاصة بك في مكان واحد",
+    "yourEscrows": "الضمانات الخاصة بك",
+    "activityFeed": "تغذية النشاط",
+    "newEscrow": "ضمان جديد",
+    "clearFilters": "مسح المرشحات",
+    "loading": "جارٍ تحميل لوحة التحكم..."
+  },
+  "escrow": {
+    "create": {
+      "title": "إنشاء ضمان جديد",
+      "description": "أنشئ اتفاقية ضمان آمنة في بضع خطوات فقط."
+    }
+  },
+  "transactions": {
+    "title": "سجل المعاملات",
+    "description": "عرض وتصدير جميع معاملاتك المتعلقة بالضمان",
+    "totals": {
+      "funded": "إجمالي التمويل",
+      "released": "إجمالي الإصدار",
+      "inEscrow": "الإجمالي في الضمان"
+    },
+    "filters": {
+      "eventType": "نوع الحدث",
+      "fromDate": "من تاريخ",
+      "toDate": "إلى تاريخ",
+      "sortBy": "ترتيب حسب",
+      "clear": "مسح",
+      "allEvents": "جميع الأحداث",
+      "funding": "تمويل",
+      "release": "إصدار",
+      "refund": "استرداد",
+      "dispute": "خلاف",
+      "disputeFiled": "تم تقديم نزاع",
+      "disputeResolved": "تم حل النزاع",
+      "created": "تم إنشاؤه",
+      "expired": "انتهت صلاحيته",
+      "newestFirst": "الأحدث أولاً",
+      "oldestFirst": "الأقدم أولاً"
+    },
+    "table": {
+      "date": "التاريخ",
+      "escrow": "الضمان",
+      "eventType": "نوع الحدث",
+      "amount": "المبلغ",
+      "status": "الحالة",
+      "txHash": "مُعَرّف المعاملة"
+    },
+    "empty": {
+      "title": "لم يتم العثور على معاملات",
+      "description": "جرّب تعديل المرشحات أو نطاق التاريخ"
+    },
+    "pagination": {
+      "showing": "عرض",
+      "to": "إلى",
+      "of": "من",
+      "results": "النتائج",
+      "previous": "السابق",
+      "next": "التالي"
+    },
+    "unknown": "غير معروف",
+    "na": "غير متاح"
+  },
+  "common": {
+    "close": "إغلاق",
+    "loading": "جارٍ التحميل..."
+  }
+}
