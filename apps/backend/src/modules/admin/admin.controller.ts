@@ -14,6 +14,7 @@ import { AdminService } from './admin.service';
 import { AdminAuditLogService } from './services/admin-audit-log.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { EscrowStatus } from '../escrow/entities/escrow.entity';
+import { UserRole } from '../user/entities/user.entity';
 
 interface AuditLogQuery {
   actorId?: string;
@@ -99,5 +100,15 @@ export class AdminController {
     @Query('actorId') actorId?: string,
   ) {
     return this.adminService.suspendUser(id, actorId);
+  }
+
+  @Post('users/:id/role')
+  @HttpCode(HttpStatus.OK)
+  async changeUserRole(
+    @Param('id') id: string,
+    @Query('role') role: string,
+    @Query('actorId') actorId?: string,
+  ) {
+    return this.adminService.changeUserRole(id, role as UserRole, actorId);
   }
 }

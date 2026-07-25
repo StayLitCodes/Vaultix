@@ -1761,6 +1761,7 @@ export class EscrowService {
     escrowId: string,
     userId: string,
     file: { buffer: Buffer; originalname: string },
+    ipAddress?: string,
   ): Promise<{ cid: string; url: string }> {
     const escrow = await this.findOne(escrowId);
 
@@ -1782,12 +1783,28 @@ export class EscrowService {
       file.originalname,
     );
 
+    // Capture evidence count before mutation for audit diff
+    const previousEvidenceCount = (dispute.evidence || []).length;
+
     // Update dispute evidence list
     const evidence = dispute.evidence || [];
     evidence.push(cid);
     dispute.evidence = evidence;
 
     await this.disputeRepository.save(dispute);
+
+    // Audit log: evidence uploaded
+    this.auditLogService.log({
+      entityType: 'escrow',
+      entityId: escrowId,
+      action: AuditAction.EVIDENCE_UPLOADED,
+      actorId: userId,
+      actorRole: 'party',
+      previousState: { evidenceCount: previousEvidenceCount },
+      newState: { evidenceCount: evidence.length },
+      ipAddress,
+      metadata: { cid, fileName: file.originalname, disputeId: dispute.id },
+    });
 
     return {
       cid,

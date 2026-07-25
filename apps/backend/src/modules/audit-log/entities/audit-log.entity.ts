@@ -28,6 +28,9 @@ export enum AuditAction {
   USER_SUSPENDED = 'user.suspended',
   USER_ROLE_CHANGED = 'user.role_changed',
   DISPUTE_RESOLVED = 'dispute.resolved',
+
+  // Evidence actions
+  EVIDENCE_UPLOADED = 'evidence.uploaded',
 }
 
 @Entity('audit_logs')

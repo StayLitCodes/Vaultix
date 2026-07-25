@@ -149,6 +149,60 @@ export class AdminService {
     };
   }
 
+  async changeUserRole(
+    userId: string,
+    newRole: UserRole,
+    actorId?: string,
+  ): Promise<{ message: string; user: User }> {
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    if (user.id === actorId) {
+      throw new Error('Cannot change your own role');
+    }
+
+    if (user.role === UserRole.SUPER_ADMIN) {
+      throw new Error('Cannot change super admin role');
+    }
+
+    if (!Object.values(UserRole).includes(newRole)) {
+      throw new Error(`Invalid role: ${newRole}`);
+    }
+
+    const oldRole = user.role;
+    user.role = newRole;
+    await this.userRepository.save(user);
+
+    // Admin audit log (legacy)
+    await this.adminAuditLogService.create({
+      actorId: actorId || 'system',
+      actionType: 'ROLE_CHANGE',
+      resourceType: 'USER',
+      resourceId: user.id,
+      metadata: {
+        oldRole,
+        newRole,
+      },
+    });
+
+    // Audit log (new)
+    this.auditLogService.log({
+      entityType: 'user',
+      entityId: user.id,
+      action: AuditAction.USER_ROLE_CHANGED,
+      actorId: actorId || 'system',
+      actorRole: 'admin',
+      previousState: { role: oldRole },
+      newState: { role: newRole },
+      metadata: { changedBy: actorId },
+    });
+
+    return { message: 'User role updated successfully', user };
+  }
+
   async suspendUser(userId: string, actorId?: string) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
 

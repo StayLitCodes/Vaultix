@@ -144,4 +144,84 @@ describe('AdminService', () => {
       );
     });
   });
+
+  describe('changeUserRole', () => {
+    it('should change a user role and log audits', async () => {
+      const mockUser = { id: 'u1', role: UserRole.USER, isActive: true };
+      userRepo.findOne.mockResolvedValue(mockUser);
+
+      const result = await service.changeUserRole('u1', UserRole.ADMIN, 'admin-id');
+
+      expect(mockUser.role).toBe(UserRole.ADMIN);
+      expect(userRepo.save).toHaveBeenCalled();
+      expect(adminAuditLogService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorId: 'admin-id',
+          actionType: 'ROLE_CHANGE',
+          resourceType: 'USER',
+          resourceId: 'u1',
+          metadata: { oldRole: UserRole.USER, newRole: UserRole.ADMIN },
+        }),
+      );
+      expect(auditLogService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          entityType: 'user',
+          entityId: 'u1',
+          action: 'user.role_changed',
+          previousState: { role: UserRole.USER },
+          newState: { role: UserRole.ADMIN },
+        }),
+      );
+      expect(result.message).toBe('User role updated successfully');
+    });
+
+    it('should throw if user not found', async () => {
+      userRepo.findOne.mockResolvedValue(null);
+      await expect(
+        service.changeUserRole('u1', UserRole.ADMIN),
+      ).rejects.toThrow('User not found');
+    });
+
+    it('should throw if user is super admin', async () => {
+      const superAdmin = { id: 's1', role: UserRole.SUPER_ADMIN };
+      userRepo.findOne.mockResolvedValue(superAdmin);
+      await expect(
+        service.changeUserRole('s1', UserRole.ADMIN),
+      ).rejects.toThrow('Cannot change super admin role');
+    });
+
+    it('should throw if trying to change own role', async () => {
+      const mockUser = { id: 'admin-id', role: UserRole.ADMIN };
+      userRepo.findOne.mockResolvedValue(mockUser);
+      await expect(
+        service.changeUserRole('admin-id', UserRole.USER, 'admin-id'),
+      ).rejects.toThrow('Cannot change your own role');
+    });
+
+    it('should throw for invalid role', async () => {
+      const mockUser = { id: 'u1', role: UserRole.USER };
+      userRepo.findOne.mockResolvedValue(mockUser);
+      await expect(
+        service.changeUserRole('u1', 'INVALID_ROLE' as UserRole),
+      ).rejects.toThrow('Invalid role');
+    });
+
+    it('should default actorId to system when not provided', async () => {
+      const mockUser = { id: 'u1', role: UserRole.USER };
+      userRepo.findOne.mockResolvedValue(mockUser);
+
+      await service.changeUserRole('u1', UserRole.ADMIN);
+
+      expect(adminAuditLogService.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorId: 'system',
+        }),
+      );
+      expect(auditLogService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorId: 'system',
+        }),
+      );
+    });
+  });
 });

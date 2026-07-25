@@ -405,6 +405,7 @@ export class EscrowController {
     file: { buffer: Buffer; originalname: string },
   ) {
     const userId = this.getAuthenticatedUserId(req);
-    return this.escrowService.uploadEvidence(id, userId, file);
+    const ipAddress = req.ip || req.socket?.remoteAddress;
+    return this.escrowService.uploadEvidence(id, userId, file, ipAddress);
   }
 }
