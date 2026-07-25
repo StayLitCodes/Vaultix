@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthController } from './controllers/auth.controller';
@@ -9,6 +9,7 @@ import { UserModule } from '../user/user.module';
 import { IpfsModule } from '../ipfs/ipfs.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EmailVerification } from '../user/entities/email-verification.entity';
+import { NotificationsModule } from '../../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { EmailVerification } from '../user/entities/email-verification.entity';
         limit: process.env.NODE_ENV === 'test' ? 1000 : 10,
       },
     ]),
+    forwardRef(() => NotificationsModule),
   ],
   controllers: [AuthController],
   providers: [AuthService, AuthGuard, AdminGuard],

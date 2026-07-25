@@ -1,0 +1,34 @@
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 20px 0; background-color: #1e2030; border-radius: 8px; border: 1px solid #2a2d42;">
+  {{#if escrowTitle}}
+  <tr>
+    <td style="padding: 16px 20px; border-bottom: 1px solid #2a2d42;">
+      <span style="color: #94a3b8; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px;">Escrow</span><br>
+      <span style="color: #e2e8f0; font-size: 15px; font-weight: 600;">{{escrowTitle}}</span>
+    </td>
+  </tr>
+  {{/if}}
+  {{#if escrowId}}
+  <tr>
+    <td style="padding: 12px 20px; border-bottom: 1px solid #2a2d42;">
+      <span style="color: #94a3b8; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px;">ID</span><br>
+      <span style="color: #94a3b8; font-size: 13px; font-family: 'Courier New', monospace;">{{escrowId}}</span>
+    </td>
+  </tr>
+  {{/if}}
+  {{#if amount}}
+  <tr>
+    <td style="padding: 12px 20px; border-bottom: 1px solid #2a2d42;">
+      <span style="color: #94a3b8; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px;">Amount</span><br>
+      <span style="color: #a78bfa; font-size: 18px; font-weight: 700;">{{amount}} {{asset}}</span>
+    </td>
+  </tr>
+  {{/if}}
+  {{#if status}}
+  <tr>
+    <td style="padding: 12px 20px;">
+      <span style="color: #94a3b8; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px;">Status</span><br>
+      <span style="display: inline-block; padding: 4px 12px; background-color: {{statusColor}}; color: #ffffff; font-size: 12px; font-weight: 600; border-radius: 12px; text-transform: uppercase; letter-spacing: 0.5px;">{{status}}</span>
+    </td>
+  </tr>
+  {{/if}}
+</table>

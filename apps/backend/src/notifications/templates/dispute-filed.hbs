@@ -1,0 +1,23 @@
+<h1 style="margin: 0 0 8px 0; color: #ffffff; font-size: 24px; font-weight: 700;">Dispute filed</h1>
+<p style="margin: 0 0 24px 0; color: #94a3b8; font-size: 15px; line-height: 24px;">
+  A dispute has been filed for the escrow transaction below. Both parties will be notified and the dispute will be reviewed.
+</p>
+
+{{{escrowDetails}}}
+
+{{#if disputeId}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 20px 0; background-color: #2a1a1a; border-radius: 8px; border: 1px solid #4a2020;">
+  <tr>
+    <td style="padding: 16px 20px;">
+      <span style="color: #fca5a5; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px;">Dispute ID</span><br>
+      <span style="color: #f87171; font-size: 14px; font-family: 'Courier New', monospace;">{{disputeId}}</span>
+    </td>
+  </tr>
+</table>
+{{/if}}
+
+{{{buttonHtml}}}
+
+<p style="margin: 0; color: #64748b; font-size: 13px; line-height: 20px;">
+  Please respond promptly. Disputes that are not addressed within the resolution period may be escalated.
+</p>

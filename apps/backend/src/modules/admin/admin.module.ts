@@ -18,6 +18,8 @@ import { AnalyticsController } from './controllers/analytics.controller';
 import { Dispute } from '../escrow/entities/dispute.entity';
 import { WebhookModule } from '../webhook/webhook.module';
 import { AdminWebhookController } from './controllers/admin-webhook.controller';
+import { NotificationsModule } from '../../notifications/notifications.module';
+import { AdminEmailTemplateController } from './controllers/admin-email-template.controller';
 
 @Module({
   imports: [
@@ -32,12 +34,14 @@ import { AdminWebhookController } from './controllers/admin-webhook.controller';
     ]),
     EscrowModule,
     forwardRef(() => WebhookModule),
+    forwardRef(() => NotificationsModule),
   ],
   controllers: [
     AdminController,
     AdminEscrowConsistencyController,
     AnalyticsController,
     AdminWebhookController,
+    AdminEmailTemplateController,
   ],
   providers: [
     AdminService,

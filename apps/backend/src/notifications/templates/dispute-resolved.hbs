@@ -1,0 +1,23 @@
+<h1 style="margin: 0 0 8px 0; color: #ffffff; font-size: 24px; font-weight: 700;">Dispute resolved</h1>
+<p style="margin: 0 0 24px 0; color: #94a3b8; font-size: 15px; line-height: 24px;">
+  The dispute for the escrow transaction below has been resolved.
+</p>
+
+{{{escrowDetails}}}
+
+{{#if resolution}}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin: 20px 0; background-color: #1a2a1a; border-radius: 8px; border: 1px solid #204a20;">
+  <tr>
+    <td style="padding: 16px 20px;">
+      <span style="color: #86efac; font-size: 12px; text-transform: uppercase; letter-spacing: 0.8px;">Resolution</span><br>
+      <span style="color: #4ade80; font-size: 15px; font-weight: 600;">{{resolution}}</span>
+    </td>
+  </tr>
+</table>
+{{/if}}
+
+{{{buttonHtml}}}
+
+<p style="margin: 0; color: #64748b; font-size: 13px; line-height: 20px;">
+  If you believe the resolution is unfair, you may appeal within 48 hours through the Vaultix dashboard.
+</p>

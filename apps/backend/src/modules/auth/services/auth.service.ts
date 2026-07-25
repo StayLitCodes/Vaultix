@@ -2,6 +2,7 @@ import {
   Injectable,
   UnauthorizedException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -13,6 +14,8 @@ import { UserService } from '../../user/user.service';
 import { EmailVerification } from '../../user/entities/email-verification.entity';
 import { UpdateProfileDto } from '../dto/profile.dto';
 import { IpfsService } from '../../ipfs/ipfs.service';
+import { EmailTemplateService } from '../../../notifications/services/email-template.service';
+import { EmailSender } from '../../../notifications/senders/email.sender';
 
 // Stellar SDK types for signature verification
 interface StellarKeypair {
@@ -30,6 +33,8 @@ const StellarSdk: StellarSdkModule = require('stellar-sdk') as StellarSdkModule;
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private userService: UserService,
     private jwtService: JwtService,
@@ -37,6 +42,8 @@ export class AuthService {
     @InjectRepository(EmailVerification)
     private emailVerificationRepository: Repository<EmailVerification>,
     private ipfsService: IpfsService,
+    private emailTemplateService: EmailTemplateService,
+    private emailSender: EmailSender,
   ) {}
 
   async generateChallenge(
@@ -188,8 +195,26 @@ export class AuthService {
     });
     await this.emailVerificationRepository.save(emailVerification);
 
-    // TODO: Actually send email (for now, just log it
-    console.log(`Email verification token for ${user.email}: ${token}`);
+    // Send verification email
+    const template = this.emailTemplateService.renderVerificationEmail({
+      code: token,
+      expiresIn: '24 hours',
+    });
+
+    try {
+      await this.emailSender.sendDirect(
+        user.email,
+        template.subject,
+        template.html,
+        template.text,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to send verification email to ${user.email}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      // Don't throw - the token is saved, user can retry
+    }
   }
 
   async verifyEmail(token: string): Promise<void> {
