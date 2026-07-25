@@ -6,6 +6,8 @@ import { AdminAuditLogService } from './services/admin-audit-log.service';
 import { Escrow, EscrowStatus } from '../escrow/entities/escrow.entity';
 import { Party } from '../escrow/entities/party.entity';
 import { EscrowEvent } from '../escrow/entities/escrow-event.entity';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import { AuditAction } from '../audit-log/entities/audit-log.entity';
 
 @Injectable()
 export class AdminService {
@@ -19,6 +21,7 @@ export class AdminService {
     @InjectRepository(EscrowEvent)
     private escrowEventRepository: Repository<EscrowEvent>,
     private readonly adminAuditLogService: AdminAuditLogService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async getAllUsers(page: number = 1, limit: number = 50) {
@@ -172,6 +175,18 @@ export class AdminService {
         newStatus: user.isActive,
         userRole: user.role,
       },
+    });
+
+    // Audit log (new)
+    this.auditLogService.log({
+      entityType: 'user',
+      entityId: user.id,
+      action: AuditAction.USER_SUSPENDED,
+      actorId: actorId || 'system',
+      actorRole: 'admin',
+      previousState: { isActive: oldStatus },
+      newState: { isActive: false },
+      metadata: { userRole: user.role },
     });
 
     return { message: 'User suspended successfully', user };

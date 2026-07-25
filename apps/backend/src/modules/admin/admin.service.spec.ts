@@ -6,13 +6,14 @@ import { Escrow, EscrowStatus } from '../escrow/entities/escrow.entity';
 import { Party } from '../escrow/entities/party.entity';
 import { EscrowEvent } from '../escrow/entities/escrow-event.entity';
 import { AdminAuditLogService } from './services/admin-audit-log.service';
-import { Repository } from 'typeorm';
+import { AuditLogService } from '../audit-log/audit-log.service';
 
 describe('AdminService', () => {
   let service: AdminService;
   let userRepo: jest.Mocked<any>;
   let escrowRepo: jest.Mocked<any>;
-  let auditLogService: jest.Mocked<AdminAuditLogService>;
+  let adminAuditLogService: jest.Mocked<AdminAuditLogService>;
+  let auditLogService: jest.Mocked<Pick<AuditLogService, 'log'>>;
 
   beforeEach(async () => {
     userRepo = {
@@ -70,11 +71,18 @@ describe('AdminService', () => {
             create: jest.fn(),
           },
         },
+        {
+          provide: AuditLogService,
+          useValue: {
+            log: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<AdminService>(AdminService);
-    auditLogService = module.get(AdminAuditLogService);
+    adminAuditLogService = module.get(AdminAuditLogService);
+    auditLogService = module.get(AuditLogService);
   });
 
   describe('getAllUsers', () => {
@@ -118,7 +126,8 @@ describe('AdminService', () => {
 
       expect(mockUser.isActive).toBe(false);
       expect(userRepo.save).toHaveBeenCalled();
-      expect(auditLogService.create).toHaveBeenCalled();
+      expect(adminAuditLogService.create).toHaveBeenCalled();
+      expect(auditLogService.log).toHaveBeenCalled();
       expect(result.message).toBe('User suspended successfully');
     });
 

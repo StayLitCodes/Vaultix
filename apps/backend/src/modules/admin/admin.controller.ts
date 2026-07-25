@@ -12,6 +12,7 @@ import { AuthGuard } from '../auth/middleware/auth.guard';
 import { AdminGuard } from '../auth/middleware/admin.guard';
 import { AdminService } from './admin.service';
 import { AdminAuditLogService } from './services/admin-audit-log.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { EscrowStatus } from '../escrow/entities/escrow.entity';
 
 interface AuditLogQuery {
@@ -44,34 +45,33 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly adminAuditLogService: AdminAuditLogService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   @Get('audit-logs')
   async getAuditLogs(
+    @Query('entityType') entityType?: string,
+    @Query('entityId') entityId?: string,
+    @Query('action') action?: string,
     @Query('actorId') actorId?: string,
-    @Query('actionType') actionType?: string,
-    @Query('resourceType') resourceType?: string,
-    @Query('resourceId') resourceId?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
     @Query('page') page = '1',
-    @Query('pageSize') pageSize = '20',
+    @Query('pageSize') pageSize = '50',
   ) {
     const parsedPage = Number.parseInt(page, 10);
     const parsedPageSize = Number.parseInt(pageSize, 10);
 
-    const filters: AuditLogQuery = {
+    return this.auditLogService.findAll({
+      entityType,
+      entityId,
+      action,
       actorId,
-      actionType,
-      resourceType,
-      resourceId,
       page: Number.isNaN(parsedPage) ? 1 : parsedPage,
-      pageSize: Number.isNaN(parsedPageSize) ? 20 : parsedPageSize,
+      pageSize: Number.isNaN(parsedPageSize) ? 50 : parsedPageSize,
       from: from ? new Date(from) : undefined,
       to: to ? new Date(to) : undefined,
-    };
-
-    return this.adminAuditLogService.findAll(filters);
+    });
   }
 
   @Get('escrows')

@@ -29,6 +29,7 @@ import { AuthGuard } from '../../auth/middleware/auth.guard';
 import { EscrowAccessGuard } from '../guards/escrow-access.guard';
 import { EscrowExpireGuard } from '../guards/escrow-expire.guard';
 import { EscrowService } from '../services/escrow.service';
+import { AuditLogService } from '../../audit-log/audit-log.service';
 import { CreateEscrowDto } from '../dto/create-escrow.dto';
 import { UpdateEscrowDto } from '../dto/update-escrow.dto';
 import { ListEscrowsDto } from '../dto/list-escrows.dto';
@@ -53,7 +54,10 @@ interface AuthenticatedRequest extends ExpressRequest {
 @ApiBearerAuth()
 @UseGuards(ThrottlerGuard, AuthGuard)
 export class EscrowController {
-  constructor(private readonly escrowService: EscrowService) {}
+  constructor(
+    private readonly escrowService: EscrowService,
+    private readonly auditLogService: AuditLogService,
+  ) {}
 
   private getAuthenticatedUserId(req: AuthenticatedRequest): string {
     const userId = req.user.sub ?? req.user.userId;
@@ -343,6 +347,23 @@ export class EscrowController {
   @UseGuards(EscrowAccessGuard)
   async getDispute(@Param('id') id: string) {
     return this.escrowService.getDispute(id);
+  }
+
+  /**
+   * GET /escrows/:id/audit-log
+   * Retrieve the audit log history for a specific escrow.
+   */
+  @Get(':id/audit-log')
+  @UseGuards(EscrowAccessGuard)
+  async getEscrowAuditLog(
+    @Param('id') id: string,
+    @Query('page') page = '1',
+    @Query('pageSize') pageSize = '50',
+  ) {
+    return this.auditLogService.findByEntity('escrow', id, {
+      page: Number(page),
+      pageSize: Number(pageSize),
+    });
   }
 
   /**

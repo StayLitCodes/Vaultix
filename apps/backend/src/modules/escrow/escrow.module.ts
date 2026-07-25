@@ -17,6 +17,7 @@ import { EscrowStellarIntegrationService } from './services/escrow-stellar-integ
 import { WebhookModule } from '../webhook/webhook.module';
 import { IpfsModule } from '../ipfs/ipfs.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 import { User } from '../user/entities/user.entity';
 import { AllowedAsset } from '../assets/entities/allowed-asset.entity';
 import { EscrowLifecycleService } from './escrow-lifecycle.service';
@@ -39,6 +40,7 @@ import { EscrowQueryService } from './escrow-query.service';
     WebhookModule,
     IpfsModule,
     NotificationsModule,
+    AuditLogModule,
   ],
   controllers: [EscrowController, EscrowSchedulerController, EventsController],
   providers: [

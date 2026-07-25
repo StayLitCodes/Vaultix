@@ -16,6 +16,7 @@ import { AdminAuditLogService } from './services/admin-audit-log.service';
 import { AnalyticsService } from './services/analytics.service';
 import { AnalyticsController } from './controllers/analytics.controller';
 import { Dispute } from '../escrow/entities/dispute.entity';
+import { AuditLogModule } from '../audit-log/audit-log.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { Dispute } from '../escrow/entities/dispute.entity';
       Dispute,
     ]),
     EscrowModule,
+    AuditLogModule,
   ],
   controllers: [
     AdminController,

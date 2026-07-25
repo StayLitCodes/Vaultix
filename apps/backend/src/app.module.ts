@@ -30,7 +30,8 @@ import { AdminModule } from './modules/admin/admin.module';
 import { StellarEventModule } from './modules/stellar/stellar-event.module';
 import { AssetsModule } from './modules/assets/assets.module';
 import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
-import { IpfsModule } from './modules/ipfs/ipfs.module';
+import { AuditLog } from './modules/audit-log/entities/audit-log.entity';
+import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { HealthModule } from './modules/health/health.module';
 import { AppVersionModule } from './app-version/app-version.module';
 import { EscrowGateway } from './gateways/escrow.gateway';
@@ -68,6 +69,7 @@ import ipfsConfig from './config/ipfs.config';
           Webhook,
           StellarEvent,
           AllowedAsset,
+          AuditLog,
         ],
         synchronize: process.env.NODE_ENV === 'test',
         migrations: [__dirname + '/migrations/*.ts'],
@@ -85,6 +87,7 @@ import ipfsConfig from './config/ipfs.config';
     ApiKeyModule,
     forwardRef(() => StellarEventModule),
     AssetsModule,
+    AuditLogModule,
     IpfsModule,
     HealthModule,
     AppVersionModule,

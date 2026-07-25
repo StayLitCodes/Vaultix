@@ -14,6 +14,7 @@ import { AdminAuditLog } from './modules/admin/entities/admin-audit-log.entity';
 import { Webhook } from './modules/webhook/webhook.entity';
 import { StellarEvent } from './modules/stellar/entities/stellar-event.entity';
 import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
+import { AuditLog } from './modules/audit-log/entities/audit-log.entity';
 
 config(); // Load .env file
 
@@ -35,6 +36,7 @@ export default new DataSource({
     Webhook,
     StellarEvent,
     AllowedAsset,
+    AuditLog,
   ],
   migrations: ['./src/migrations/*.ts'],
   synchronize: false,

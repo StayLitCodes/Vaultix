@@ -44,6 +44,8 @@ import { IpfsService } from '../../ipfs/ipfs.service';
 import { AllowedAsset } from '../../assets/entities/allowed-asset.entity';
 import { NotificationService } from '../../../notifications/notifications.service';
 import { NotificationEventType } from '../../../notifications/enums/notification-event.enum';
+import { AuditLogService } from '../../audit-log/audit-log.service';
+import { AuditAction } from '../../audit-log/entities/audit-log.entity';
 
 @Injectable()
 export class EscrowService {
@@ -67,6 +69,7 @@ export class EscrowService {
     private readonly webhookService: WebhookService,
     private readonly ipfsService: IpfsService,
     private readonly notificationService: NotificationService,
+    private readonly auditLogService: AuditLogService,
   ) {}
 
   async create(
@@ -139,6 +142,19 @@ export class EscrowService {
         { dto },
         ipAddress,
       );
+
+      // Audit log: escrow created
+      this.auditLogService.log({
+        entityType: 'escrow',
+        entityId: savedEscrow.id,
+        action: AuditAction.ESCROW_CREATED,
+        actorId: creatorId,
+        actorRole: 'creator',
+        previousState: undefined,
+        newState: this.captureState(savedEscrow),
+        ipAddress,
+        metadata: { title: savedEscrow.title, type: savedEscrow.type },
+      });
 
       // Dispatch webhook for escrow.created
       await this.webhookService.dispatchEvent('escrow.created', {
@@ -389,6 +405,19 @@ export class EscrowService {
 
     await this.escrowRepository.update(id, updateData);
 
+    // Audit log: escrow updated
+    this.auditLogService.log({
+      entityType: 'escrow',
+      entityId: id,
+      action: AuditAction.ESCROW_UPDATED,
+      actorId: userId,
+      actorRole: 'creator',
+      previousState: this.captureState(escrow),
+      newState: { ...this.captureState(escrow), ...updateData },
+      ipAddress,
+      metadata: { changes: dto },
+    });
+
     await this.logEvent(
       id,
       EscrowEventType.UPDATED,
@@ -435,6 +464,19 @@ export class EscrowService {
     validateTransition(escrow.status, EscrowStatus.CANCELLED);
 
     await this.escrowRepository.update(id, { status: EscrowStatus.CANCELLED });
+
+    // Audit log: escrow cancelled
+    this.auditLogService.log({
+      entityType: 'escrow',
+      entityId: id,
+      action: AuditAction.ESCROW_CANCELLED,
+      actorId: userId,
+      actorRole: escrow.status === EscrowStatus.ACTIVE && escrow.parties?.find((p) => p.role === PartyRole.ARBITRATOR && p.userId === userId) ? 'arbitrator' : 'creator',
+      previousState: this.captureState(escrow),
+      newState: { ...this.captureState(escrow), status: EscrowStatus.CANCELLED },
+      ipAddress,
+      metadata: { reason: dto.reason },
+    });
 
     await this.logEvent(
       id,
@@ -537,6 +579,24 @@ export class EscrowService {
       status: EscrowStatus.ACTIVE,
     });
 
+    // Audit log: escrow funded
+    this.auditLogService.log({
+      entityType: 'escrow',
+      entityId: id,
+      action: AuditAction.ESCROW_FUNDED,
+      actorId: userId,
+      actorRole: 'buyer',
+      previousState: this.captureState(escrow),
+      newState: {
+        ...this.captureState(escrow),
+        status: EscrowStatus.ACTIVE,
+        fundedAt,
+        stellarTxHash,
+      },
+      ipAddress,
+      metadata: { stellarTxHash },
+    });
+
     await this.logEvent(
       id,
       EscrowEventType.FUNDED,
@@ -626,11 +686,24 @@ export class EscrowService {
       escrow.creatorId,
     );
 
+    const previousState = this.captureState(escrow);
     escrow.status = EscrowStatus.COMPLETED;
     escrow.isReleased = true;
     escrow.releaseTransactionHash = txHash;
 
     await this.escrowRepository.save(escrow);
+
+    // Audit log: escrow completed
+    this.auditLogService.log({
+      entityType: 'escrow',
+      entityId: escrow.id,
+      action: AuditAction.ESCROW_COMPLETED,
+      actorId: currentUserId,
+      actorRole: manual ? 'buyer' : 'system',
+      previousState,
+      newState: this.captureState(escrow),
+      metadata: { txHash, manual },
+    });
 
     await this.logEvent(escrow.id, EscrowEventType.COMPLETED, currentUserId, {
       txHash,
@@ -702,6 +775,19 @@ export class EscrowService {
     condition.fulfillmentEvidence = dto.evidence;
 
     await this.conditionRepository.save(condition);
+
+    // Audit log: condition fulfilled
+    this.auditLogService.log({
+      entityType: 'escrow',
+      entityId: escrowId,
+      action: AuditAction.CONDITION_FULFILLED,
+      actorId: userId,
+      actorRole: 'seller',
+      previousState: { conditionId, isFulfilled: false },
+      newState: { conditionId, isFulfilled: true },
+      ipAddress,
+      metadata: { notes: dto.notes },
+    });
 
     await this.logEvent(
       escrowId,
@@ -787,6 +873,19 @@ export class EscrowService {
     condition.metByUserId = userId;
 
     await this.conditionRepository.save(condition);
+
+    // Audit log: condition confirmed
+    this.auditLogService.log({
+      entityType: 'escrow',
+      entityId: escrowId,
+      action: AuditAction.CONDITION_CONFIRMED,
+      actorId: userId,
+      actorRole: 'buyer',
+      previousState: { conditionId, isMet: false },
+      newState: { conditionId, isMet: true },
+      ipAddress,
+      metadata: { confirmedBy: userId },
+    });
 
     await this.logEvent(
       escrowId,
@@ -958,6 +1057,19 @@ export class EscrowService {
     });
     const savedDispute = await this.disputeRepository.save(dispute);
 
+    // Audit log: escrow disputed
+    this.auditLogService.log({
+      entityType: 'escrow',
+      entityId: escrowId,
+      action: AuditAction.ESCROW_DISPUTED,
+      actorId: userId,
+      actorRole: 'party',
+      previousState: this.captureState(escrow),
+      newState: { ...this.captureState(escrow), status: EscrowStatus.DISPUTED },
+      ipAddress,
+      metadata: { disputeId: savedDispute.id, reason: dto.reason },
+    });
+
     await this.logEvent(
       escrowId,
       EscrowEventType.DISPUTE_FILED,
@@ -1052,6 +1164,19 @@ export class EscrowService {
 
     const resolved = await this.disputeRepository.save(dispute);
 
+    // Audit log: dispute resolved
+    this.auditLogService.log({
+      entityType: 'escrow',
+      entityId: escrowId,
+      action: AuditAction.DISPUTE_RESOLVED,
+      actorId: arbitratorUserId,
+      actorRole: 'arbitrator',
+      previousState: { disputeStatus: DisputeStatus.OPEN, escrowStatus: EscrowStatus.DISPUTED },
+      newState: { disputeStatus: DisputeStatus.RESOLVED, escrowStatus: nextEscrowStatus, outcome: dto.outcome },
+      ipAddress,
+      metadata: { disputeId: resolved.id, outcome: dto.outcome, resolutionNotes: dto.resolutionNotes },
+    });
+
     await this.logEvent(
       escrowId,
       EscrowEventType.DISPUTE_RESOLVED,
@@ -1133,6 +1258,19 @@ export class EscrowService {
     condition.proposedByUserId = userId;
 
     await this.conditionRepository.save(condition);
+
+    // Audit log: milestone proposed
+    this.auditLogService.log({
+      entityType: 'escrow',
+      entityId: escrowId,
+      action: AuditAction.MILESTONE_PROPOSED,
+      actorId: userId,
+      actorRole: isBuyer ? 'buyer' : 'seller',
+      previousState: { conditionId, amount: condition.amount, description: condition.description },
+      newState: { conditionId, amount: dto.amount, description: dto.description },
+      metadata: { proposedChanges: dto },
+    });
+
     return condition;
   }
 
@@ -1199,6 +1337,23 @@ export class EscrowService {
     condition.proposedByUserId = null as any;
 
     await this.conditionRepository.save(condition);
+
+    // Audit log: milestone accepted
+    this.auditLogService.log({
+      entityType: 'escrow',
+      entityId: escrowId,
+      action: AuditAction.MILESTONE_ACCEPTED,
+      actorId: userId,
+      actorRole: isBuyer ? 'buyer' : 'seller',
+      previousState: { conditionId, amount: condition.amount, description: condition.description },
+      newState: {
+        conditionId,
+        amount: condition.amount,
+        description: condition.description,
+        accepted: true,
+      },
+    });
+
     return condition;
   }
 
@@ -1224,6 +1379,18 @@ export class EscrowService {
     party.status = PartyStatus.ACCEPTED;
     party.respondedAt = new Date();
     await this.partyRepository.save(party);
+
+    // Audit log: party accepted invitation
+    this.auditLogService.log({
+      entityType: 'escrow',
+      entityId: escrowId,
+      action: AuditAction.PARTY_ACCEPTED,
+      actorId: userId,
+      actorRole: party.role,
+      previousState: { partyId, status: PartyStatus.PENDING },
+      newState: { partyId, status: PartyStatus.ACCEPTED },
+      ipAddress,
+    });
 
     await this.logEvent(
       escrowId,
@@ -1279,6 +1446,18 @@ export class EscrowService {
     party.respondedAt = new Date();
     await this.partyRepository.save(party);
 
+    // Audit log: party rejected invitation
+    this.auditLogService.log({
+      entityType: 'escrow',
+      entityId: escrowId,
+      action: AuditAction.PARTY_REJECTED,
+      actorId: userId,
+      actorRole: party.role,
+      previousState: { partyId, status: PartyStatus.PENDING },
+      newState: { partyId, status: PartyStatus.REJECTED },
+      ipAddress,
+    });
+
     await this.logEvent(
       escrowId,
       EscrowEventType.PARTY_REJECTED,
@@ -1316,6 +1495,20 @@ export class EscrowService {
         await this.escrowRepository.update(escrowId, {
           status: EscrowStatus.CANCELLED,
         });
+
+        // Audit log: escrow auto-cancelled due to party rejection
+        this.auditLogService.log({
+          entityType: 'escrow',
+          entityId: escrowId,
+          action: AuditAction.ESCROW_CANCELLED,
+          actorId: userId,
+          actorRole: party.role,
+          previousState: this.captureState(escrow),
+          newState: { ...this.captureState(escrow), status: EscrowStatus.CANCELLED },
+          ipAddress,
+          metadata: { reason: `Required party (${party.role}) rejected the invitation` },
+        });
+
         await this.logEvent(
           escrowId,
           EscrowEventType.CANCELLED,
@@ -1357,6 +1550,24 @@ export class EscrowService {
     return this.eventRepository.save(event);
   }
 
+  /**
+   * Capture a lightweight snapshot of the escrow state for audit diffs.
+   */
+  private captureState(escrow: Escrow): Record<string, unknown> {
+    return {
+      id: escrow.id,
+      status: escrow.status,
+      type: escrow.type,
+      amount: escrow.amount,
+      releasedAmount: escrow.releasedAmount,
+      isReleased: escrow.isReleased,
+      isActive: escrow.isActive,
+      assetCode: escrow.assetCode,
+      assetIssuer: escrow.assetIssuer,
+      fundedAt: escrow.fundedAt,
+    };
+  }
+
   async isUserAdmin(userId: string): Promise<boolean> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
@@ -1394,6 +1605,19 @@ export class EscrowService {
     await this.escrowRepository.update(escrow.id, {
       status: EscrowStatus.EXPIRED,
       isActive: false,
+    });
+
+    // Audit log: escrow expired
+    this.auditLogService.log({
+      entityType: 'escrow',
+      entityId: escrow.id,
+      action: AuditAction.ESCROW_EXPIRED,
+      actorId: options.actorId,
+      actorRole: options.actorId ? 'admin' : 'system',
+      previousState: this.captureState(escrow),
+      newState: { ...this.captureState(escrow), status: EscrowStatus.EXPIRED, isActive: false },
+      ipAddress: options.ipAddress,
+      metadata: { reason: options.reason },
     });
 
     await this.logEvent(
@@ -1476,8 +1700,8 @@ export class EscrowService {
 
     // Calculate released amount
     const releaseAmount = parseFloat(condition.amount.toString());
-    const newReleasedAmount =
-      parseFloat(escrow.releasedAmount.toString()) + releaseAmount;
+    const previousReleasedAmount = parseFloat(escrow.releasedAmount.toString());
+    const newReleasedAmount = previousReleasedAmount + releaseAmount;
 
     // Update escrow
     escrow.releasedAmount = newReleasedAmount;
@@ -1504,6 +1728,18 @@ export class EscrowService {
     // Save changes
     await this.escrowRepository.save(escrow);
     await this.conditionRepository.save(condition);
+
+    // Audit log: milestone released
+    this.auditLogService.log({
+      entityType: 'escrow',
+      entityId: escrowId,
+      action: AuditAction.MILESTONE_RELEASED,
+      actorId: userId,
+      actorRole: isDepositor ? 'depositor' : 'arbitrator',
+      previousState: { conditionId, isReleased: false, releasedAmount: previousReleasedAmount },
+      newState: { conditionId, isReleased: true, releasedAmount: newReleasedAmount },
+      metadata: { releaseAmount },
+    });
 
     // Log the event
     await this.logEvent(escrowId, EscrowEventType.MILESTONE_RELEASED, userId, {
