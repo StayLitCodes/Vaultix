@@ -126,3 +126,28 @@ export const notificationApi = {
     await api.post('/api/notifications/mark-as-read', { notificationId });
   },
 };
+export const disputeApi = {
+  /** #409 — upload evidence file for a dispute, returns CID and URL */
+  uploadEvidence: async (
+    escrowId: string,
+    fileUri: string,
+    fileName: string,
+    mimeType: string,
+  ): Promise<{ cid: string; url: string }> => {
+    const formData = new FormData();
+    formData.append('file', {
+      uri: fileUri,
+      name: fileName,
+      type: mimeType,
+    } as any);
+
+    const { data } = await api.post<{ cid: string; url: string }>(
+      `/api/escrows/${escrowId}/evidence`,
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      },
+    );
+    return data;
+  },
+};

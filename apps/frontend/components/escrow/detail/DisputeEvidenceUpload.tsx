@@ -1,15 +1,14 @@
 "use client";
 
 import React, { useState, useRef, useCallback } from "react";
-import { Upload, X, FileText, Image as ImageIcon, Loader2 } from "lucide-react";
+import { Upload, X, FileText, Image as ImageIcon, Loader2, RefreshCw } from "lucide-react";
 import { uploadEvidence } from "@/lib/escrow-api";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
-const MAX_FILES = 5;
+const MAX_FILES = 10;
 const ALLOWED_TYPES = [
   "image/jpeg",
   "image/png",
-  "image/gif",
   "image/webp",
   "application/pdf",
   "text/plain",
@@ -25,6 +24,7 @@ export interface UploadedFile {
   cid?: string;
   url?: string;
   error?: string;
+  isRetrying?: boolean;
 }
 
 interface DisputeEvidenceUploadProps {
@@ -50,6 +50,13 @@ export function DisputeEvidenceUpload({
   const uploadToIpfs = useCallback(
     async (uploadedFile: UploadedFile) => {
       try {
+        onChange((prev: UploadedFile[]) =>
+          prev.map((f) =>
+            f.id === uploadedFile.id
+              ? { ...f, isRetrying: false, error: undefined }
+              : f,
+          ),
+        );
         const result = await uploadEvidence(escrowId, uploadedFile.file);
         onChange((prev: UploadedFile[]) =>
           prev.map((f) =>
@@ -62,13 +69,27 @@ export function DisputeEvidenceUpload({
         onChange((prev: UploadedFile[]) =>
           prev.map((f) =>
             f.id === uploadedFile.id
-              ? { ...f, progress: 0, error: error.message || "Upload failed" }
+              ? { ...f, progress: 0, error: error.message || "Upload failed", isRetrying: false }
               : f,
           ),
         );
       }
     },
     [escrowId, onChange],
+  );
+
+  const retryUpload = useCallback(
+    (uploadedFile: UploadedFile) => {
+      onChange((prev: UploadedFile[]) =>
+        prev.map((f) =>
+          f.id === uploadedFile.id
+            ? { ...f, isRetrying: true, error: undefined }
+            : f,
+        ),
+      );
+      uploadToIpfs(uploadedFile);
+    },
+    [onChange, uploadToIpfs],
   );
 
   const processFiles = useCallback(
@@ -105,6 +126,18 @@ export function DisputeEvidenceUpload({
     },
     [files.length, onChange, uploadToIpfs],
   );
+
+  const getTotalSize = useCallback(() => {
+    return files.reduce((total, f) => total + f.file.size, 0);
+  }, [files]);
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  };
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -147,6 +180,11 @@ export function DisputeEvidenceUpload({
         <p className="text-xs text-gray-400 mt-1">
           Images, PDFs, text files · max 10 MB · up to {MAX_FILES} files
         </p>
+        {files.length > 0 && (
+          <p className="text-xs text-gray-500 mt-1">
+            Total size: {formatFileSize(getTotalSize())} ({files.length}/{MAX_FILES} files)
+          </p>
+        )}
         <input
           ref={inputRef}
           type="file"
@@ -182,7 +220,22 @@ export function DisputeEvidenceUpload({
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-gray-700 truncate">{f.file.name}</p>
                 {f.error ? (
-                  <p className="text-xs text-red-500">{f.error}</p>
+                  <div className="mt-1 flex items-center gap-2">
+                    <p className="text-xs text-red-500">{f.error}</p>
+                    <button
+                      type="button"
+                      onClick={() => retryUpload(f)}
+                      disabled={f.isRetrying}
+                      className="text-xs text-blue-600 hover:text-blue-800 disabled:text-gray-400 flex items-center gap-1"
+                    >
+                      {f.isRetrying ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-3 h-3" />
+                      )}
+                      Retry
+                    </button>
+                  </div>
                 ) : f.progress < 100 ? (
                   <div className="mt-1 flex items-center gap-2">
                     <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">

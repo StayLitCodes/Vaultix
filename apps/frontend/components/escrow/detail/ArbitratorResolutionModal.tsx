@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Scale, AlertTriangle, DollarSign } from "lucide-react";
 import { IDispute, IDisputeResolution } from "@/types/escrow";
 import { resolveDispute } from "@/lib/escrow-api";
+import { useToast } from "@/hooks/useToast";
 
 interface ArbitratorResolutionModalProps {
   open: boolean;
@@ -63,6 +64,7 @@ export default function ArbitratorResolutionModal({
   const [sellerPercentage, setSellerPercentage] = useState("50");
   const [loading, setLoading] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const { success, error, warning } = useToast();
 
   const amount = parseFloat(escrowAmount) || 0;
 
@@ -100,7 +102,7 @@ export default function ArbitratorResolutionModal({
 
   const handleSubmit = async () => {
     if (!outcome || !notes.trim()) {
-      alert("Please select an outcome and provide resolution notes");
+      warning("Please select an outcome and provide resolution notes");
       return;
     }
 
@@ -108,7 +110,7 @@ export default function ArbitratorResolutionModal({
       outcome === "SPLIT" &&
       parseInt(buyerPercentage) + parseInt(sellerPercentage) !== 100
     ) {
-      alert("Split percentages must total 100%");
+      warning("Split percentages must total 100%");
       return;
     }
 
@@ -137,7 +139,7 @@ export default function ArbitratorResolutionModal({
 
       await resolveDispute(dispute.escrowId, resolutionData);
 
-      alert(
+      success(
         "Dispute resolved successfully. Funds have been distributed according to your decision.",
       );
       onResolutionComplete?.();
@@ -151,7 +153,7 @@ export default function ArbitratorResolutionModal({
       setShowConfirmation(false);
     } catch (error: any) {
       console.error("Resolution error:", error);
-      alert(error.message || "Failed to resolve dispute. Please try again.");
+      error(error.message || "Failed to resolve dispute. Please try again.");
     } finally {
       setLoading(false);
     }

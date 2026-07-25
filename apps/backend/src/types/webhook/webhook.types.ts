@@ -1,3 +1,10 @@
+export enum WebhookDeliveryStatus {
+  PENDING = 'pending',
+  DELIVERED = 'delivered',
+  RETRYING = 'retrying',
+  FAILED = 'failed',
+}
+
 export type WebhookEvent =
   | 'escrow.created'
   | 'escrow.funded'

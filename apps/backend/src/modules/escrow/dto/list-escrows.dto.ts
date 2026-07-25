@@ -1,7 +1,17 @@
-import { IsString, IsOptional, IsInt, Min, Max, IsEnum } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsInt,
+  Min,
+  Max,
+  IsEnum,
+  MaxLength,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { EscrowStatus, EscrowType } from '../entities/escrow.entity';
 import { PartyRole } from '../entities/party.entity';
+import { IsStellarAddress } from '../../../utils/validators';
 
 export enum SortBy {
   CREATED_AT = 'createdAt',
@@ -50,14 +60,17 @@ export class ListEscrowsDto {
   sortOrder?: SortOrder = SortOrder.DESC;
 
   @IsString()
+  @IsNotEmpty()
   @IsOptional()
   search?: string;
 
   @IsString()
+  @IsNotEmpty()
   @IsOptional()
+  @MaxLength(12)
   assetCode?: string;
 
-  @IsString()
+  @IsStellarAddress()
   @IsOptional()
   assetIssuer?: string;
 }

@@ -116,6 +116,15 @@ export class Escrow {
   @Column({ nullable: true })
   metadataHash?: string;
 
+  @Column({ nullable: true, name: 'ipfs_cid' })
+  ipfsCid?: string;
+
+  @Column({ nullable: true, name: 'ipfs_metadata_hash' })
+  ipfsMetadataHash?: string;
+
+  @Column({ type: 'int', default: 0, name: 'ipfs_version' })
+  ipfsVersion?: number;
+
   @CreateDateColumn()
   createdAt: Date;
 

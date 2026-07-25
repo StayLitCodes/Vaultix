@@ -1,5 +1,6 @@
 import {
   IsString,
+  IsNotEmpty,
   IsOptional,
   IsInt,
   Min,
@@ -40,7 +41,7 @@ export class ListEventsDto {
   @IsOptional()
   eventType?: EscrowEventType;
 
-  @IsString()
+  @IsUUID()
   @IsOptional()
   actorId?: string;
 
@@ -66,16 +67,19 @@ export class ListEventsDto {
 
   // Cursor-based pagination for incremental sync
   @IsString()
+  @IsNotEmpty()
   @IsOptional()
   cursor?: string;
 
   // When using cursor, fetch events after this cursor
   @IsString()
+  @IsNotEmpty()
   @IsOptional()
   after?: string;
 
   // When using cursor, fetch events before this cursor
   @IsString()
+  @IsNotEmpty()
   @IsOptional()
   before?: string;
 }

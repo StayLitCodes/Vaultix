@@ -1,10 +1,13 @@
 "use client";
 
 import { Suspense, useCallback, useState } from "react";
+import { QueryErrorResetBoundary } from '@tanstack/react-query';
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import StatusTabs from "@/components/dashboard/StatusTabs";
 import EscrowList from "@/components/dashboard/EscrowList";
 import EscrowFilters from "@/components/dashboard/EscrowFilters";
+import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ErrorFallback } from '@/components/ErrorFallback';
 import { useEscrows } from "../../hooks/useEscrows";
 import ActivityFeed from "@/components/common/ActivityFeed";
 import Link from "next/link";
@@ -81,11 +84,13 @@ function DashboardContent() {
 
   const {
     data: escrowsData,
+    error: escrowsError,
     isLoading,
     isError,
     hasNextPage,
     fetchNextPage,
     isFetchingNextPage,
+    refetch: refetchEscrows,
   } = useEscrows({
     status: activeStatuses.join(","),
     search: searchQuery,
@@ -137,7 +142,18 @@ function DashboardContent() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
-              <ActivityFeed />
+              <ErrorBoundary
+                fallback={({ error, reset }) => (
+                  <ErrorFallback
+                    error={error}
+                    reset={reset}
+                    title="Failed to load activity"
+                    compact
+                  />
+                )}
+              >
+                <ActivityFeed />
+              </ErrorBoundary>
             </div>
           </div>
         </div>
@@ -191,19 +207,41 @@ function DashboardContent() {
             toDate={toDate}
             onDateChange={handleDateChange}
           />
-          <EscrowList
-            escrows={flatEscrows}
-            isLoading={isLoading}
-            isError={isError}
-            activeTab={activeTab}
-            hasNextPage={hasNextPage}
-            fetchNextPage={fetchNextPage}
-            isFetchingNextPage={isFetchingNextPage}
-          />
+          <ErrorBoundary
+            fallback={({ error, reset }) => (
+              <ErrorFallback
+                error={error}
+                reset={reset}
+                title="Failed to load escrows"
+                compact
+              />
+            )}
+          >
+            <EscrowList
+              escrows={flatEscrows}
+              isLoading={isLoading}
+              isError={isError}
+              activeTab={activeTab}
+              hasNextPage={hasNextPage}
+              fetchNextPage={fetchNextPage}
+              isFetchingNextPage={isFetchingNextPage}
+            />
+          </ErrorBoundary>
         </div>
 
         <div className="hidden lg:block lg:col-span-1">
-          <ActivityFeed className="h-[calc(100vh-12rem)] sticky top-8" />
+          <ErrorBoundary
+            fallback={({ error, reset }) => (
+              <ErrorFallback
+                error={error}
+                reset={reset}
+                title="Failed to load activity"
+                compact
+              />
+            )}
+          >
+            <ActivityFeed className="h-[calc(100vh-12rem)] sticky top-8" />
+          </ErrorBoundary>
         </div>
       </div>
     </>
@@ -222,16 +260,35 @@ export default function DashboardPage() {
             Manage all your escrow agreements in one place
           </p>
         </div>
-        <Suspense
-          fallback={
-            <div className="text-center py-20 text-muted-foreground">
-              Loading Dashboard...
-            </div>
-          }
-        >
-          <DashboardContent />
-        </Suspense>
+        <QueryErrorResetBoundary>
+          {({ reset }) => (
+            <ErrorBoundary
+              onReset={reset}
+              fallback={({ error, reset: boundaryReset }) => (
+                <ErrorFallback
+                  error={error}
+                  reset={() => {
+                    reset();
+                    boundaryReset();
+                  }}
+                  title="Failed to load dashboard"
+                />
+              )}
+            >
+              <Suspense
+                fallback={
+                  <div className="text-center py-20 text-muted-foreground">
+                    Loading Dashboard...
+                  </div>
+                }
+              >
+                <DashboardContent />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+        </QueryErrorResetBoundary>
       </div>
     </div>
   );
 }
+

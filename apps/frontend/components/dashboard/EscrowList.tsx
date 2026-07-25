@@ -1,7 +1,9 @@
 import React from 'react';
 import Link from 'next/link';
+import { Button } from '@/components/ui/button';
 import EscrowCard from './EscrowCard';
 import { EscrowCardSkeleton } from '@/components/ui/EscrowCardSkeleton';
+import { ErrorFallback } from '@/components/ErrorFallback';
 
 // Define the interface here since we can't import from types yet
 interface IEscrow {
@@ -28,6 +30,8 @@ interface EscrowListProps {
   escrows: IEscrow[];
   isLoading: boolean;
   isError: boolean;
+  error?: unknown;
+  refetch?: () => void;
   activeTab: 'all' | 'active' | 'pending' | 'completed' | 'disputed';
   hasNextPage?: boolean;
   fetchNextPage?: () => void;
@@ -38,6 +42,8 @@ const EscrowList: React.FC<EscrowListProps> = ({
   escrows,
   isLoading,
   isError,
+  error,
+  refetch,
   activeTab,
   hasNextPage,
   fetchNextPage,
@@ -58,10 +64,20 @@ const EscrowList: React.FC<EscrowListProps> = ({
   // Show error state
   if (isError) {
     return (
-      <div className="text-center py-10">
-        <h3 className="text-lg font-medium text-red-600">Error Loading Escrows</h3>
-        <p className="text-gray-500 mt-2">There was an issue retrieving your escrow agreements. Please try again later.</p>
-      </div>
+      <ErrorFallback
+        error={
+          error instanceof Error
+            ? error
+            : new Error(
+                typeof error === 'string'
+                  ? error
+                  : 'Failed to load escrows',
+              )
+        }
+        reset={() => refetch?.()}
+        title="Failed to load escrows"
+        compact
+      />
     );
   }
 

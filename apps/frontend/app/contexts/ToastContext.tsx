@@ -4,17 +4,24 @@ import React, { createContext, useContext, useState, useCallback } from 'react';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 export interface Toast {
   id: string;
   message: string;
   type: ToastType;
   duration?: number;
+  action?: ToastAction;
 }
 
 interface ToastContextType {
   toasts: Toast[];
-  addToast: (message: string, type: ToastType, duration?: number) => void;
+  addToast: (message: string, type: ToastType, duration?: number, action?: ToastAction) => void;
   removeToast: (id: string) => void;
+  removeAllToasts: () => void;
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined);

@@ -12,26 +12,26 @@ import type { WebhookEvent } from '../../types/webhook/webhook.types';
 @Entity('webhooks')
 export class Webhook {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column()
-  url: string;
+  url!: string;
 
   @Column()
-  secret: string;
+  secret!: string;
 
   @Column('simple-array')
-  events: WebhookEvent[];
+  events!: WebhookEvent[];
 
   @Column({ default: true })
-  isActive: boolean;
+  isActive!: boolean;
 
   @ManyToOne(() => User, { nullable: false })
-  user: User;
+  user!: User;
 
   @CreateDateColumn()
-  createdAt: Date;
+  createdAt!: Date;
 
   @UpdateDateColumn()
-  updatedAt: Date;
+  updatedAt!: Date;
 }

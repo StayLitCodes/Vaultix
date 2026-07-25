@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { AdminController } from './admin.controller';
@@ -16,6 +16,8 @@ import { AdminAuditLogService } from './services/admin-audit-log.service';
 import { AnalyticsService } from './services/analytics.service';
 import { AnalyticsController } from './controllers/analytics.controller';
 import { Dispute } from '../escrow/entities/dispute.entity';
+import { WebhookModule } from '../webhook/webhook.module';
+import { AdminWebhookController } from './controllers/admin-webhook.controller';
 
 @Module({
   imports: [
@@ -29,11 +31,13 @@ import { Dispute } from '../escrow/entities/dispute.entity';
       Dispute,
     ]),
     EscrowModule,
+    forwardRef(() => WebhookModule),
   ],
   controllers: [
     AdminController,
     AdminEscrowConsistencyController,
     AnalyticsController,
+    AdminWebhookController,
   ],
   providers: [
     AdminService,

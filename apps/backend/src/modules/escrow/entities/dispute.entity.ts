@@ -49,6 +49,17 @@ export class Dispute {
   @Column({ type: 'simple-json', nullable: true })
   evidence: string[] | null;
 
+  // Evidence files with metadata stored on IPFS
+  @Column({ type: 'simple-json', nullable: true, default: () => "'[]'" })
+  evidenceFiles: Array<{
+    cid: string;
+    name: string;
+    type: string;
+    size: number;
+    uploadedAt: string;
+    uploadedBy: string;
+  }> | null;
+
   @Column({ type: 'varchar', default: DisputeStatus.OPEN })
   status: DisputeStatus;
 

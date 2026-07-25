@@ -11,13 +11,15 @@ import {
   Req,
   ForbiddenException,
   UseInterceptors,
-  UploadedFile,
+  UploadedFiles,
   ParseFilePipe,
   MaxFileSizeValidator,
   FileTypeValidator,
+  Res,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { ThrottlerGuard } from '@nestjs/throttler';
+import { Response } from 'express';
 import { Request as ExpressRequest } from 'express';
 import {
   ApiBearerAuth,
@@ -26,9 +28,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AuthGuard } from '../../auth/middleware/auth.guard';
+import { AdminGuard } from '../../auth/middleware/admin.guard';
 import { EscrowAccessGuard } from '../guards/escrow-access.guard';
 import { EscrowExpireGuard } from '../guards/escrow-expire.guard';
 import { EscrowService } from '../services/escrow.service';
+import { EscrowEvidenceService } from '../services/escrow-evidence.service';
+import { IpfsService } from '../../ipfs/ipfs.service';
 import { CreateEscrowDto } from '../dto/create-escrow.dto';
 import { UpdateEscrowDto } from '../dto/update-escrow.dto';
 import { ListEscrowsDto } from '../dto/list-escrows.dto';
@@ -43,6 +48,10 @@ import { FileDisputeDto, ResolveDisputeDto } from '../dto/dispute.dto';
 import { FundEscrowDto } from '../dto/fund-escrow.dto';
 import { ExpireEscrowDto } from '../dto/expire-escrow.dto';
 import { ProposeMilestoneChangeDto } from '../dto/milestone-change.dto';
+import {
+  EvidenceFileMetadataDto,
+  UploadEvidenceResponseDto,
+} from '../dto/upload-evidence.dto';
 
 interface AuthenticatedRequest extends ExpressRequest {
   user: { sub?: string; userId?: string; walletAddress: string };
@@ -53,7 +62,11 @@ interface AuthenticatedRequest extends ExpressRequest {
 @ApiBearerAuth()
 @UseGuards(ThrottlerGuard, AuthGuard)
 export class EscrowController {
-  constructor(private readonly escrowService: EscrowService) {}
+  constructor(
+    private readonly escrowService: EscrowService,
+    private readonly evidenceService: EscrowEvidenceService,
+    private readonly ipfsService: IpfsService,
+  ) {}
 
   private getAuthenticatedUserId(req: AuthenticatedRequest): string {
     const userId = req.user.sub ?? req.user.userId;
@@ -365,25 +378,101 @@ export class EscrowController {
       ipAddress,
     );
   }
+  /**
+   * POST /escrows/:id/evidence
+   * Upload evidence files for a dispute. Accepts up to 5 files, max 10MB each.
+   * Only dispute parties may call this.
+   */
   @Post(':id/evidence')
   @UseGuards(EscrowAccessGuard)
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FilesInterceptor('files', 5))
+  @ApiOperation({ summary: 'Upload evidence files for a dispute' })
+  @ApiOkResponse({ type: UploadEvidenceResponseDto })
   async uploadEvidence(
     @Param('id') id: string,
     @Request() req: AuthenticatedRequest,
-    @UploadedFile(
+    @UploadedFiles(
       new ParseFilePipe({
         validators: [
-          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB
+          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB per file
           new FileTypeValidator({
-            fileType: /(jpg|jpeg|png|pdf|txt|doc|docx)$/,
+            fileType: /(pdf|png|jpg|jpeg|doc|docx)$/,
           }),
         ],
       }),
     )
-    file: { buffer: Buffer; originalname: string },
-  ) {
+    files: Express.Multer.File[],
+  ): Promise<UploadEvidenceResponseDto> {
     const userId = this.getAuthenticatedUserId(req);
-    return this.escrowService.uploadEvidence(id, userId, file);
+    return this.evidenceService.uploadEvidence(id, files, userId);
+  }
+
+  /**
+   * GET /escrows/:id/evidence
+   * Get all evidence file metadata for a dispute. Accessible to dispute parties.
+   */
+  @Get(':id/evidence')
+  @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Get evidence files for a dispute' })
+  @ApiOkResponse({ type: [EvidenceFileMetadataDto] })
+  async getEvidence(
+    @Param('id') id: string,
+    @Request() req: AuthenticatedRequest,
+  ): Promise<EvidenceFileMetadataDto[]> {
+    const userId = this.getAuthenticatedUserId(req);
+    return this.evidenceService.getEvidence(id, userId);
+  }
+
+  /**
+   * GET /escrows/:id/evidence/:cid
+   * Stream evidence file from IPFS by CID. Accessible to dispute parties.
+   */
+  @Get(':id/evidence/:cid')
+  @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Stream evidence file from IPFS' })
+  async getEvidenceFile(
+    @Param('id') id: string,
+    @Param('cid') cid: string,
+    @Request() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ): Promise<void> {
+    const userId = this.getAuthenticatedUserId(req);
+    await this.evidenceService.getEvidenceFile(id, cid, userId, res);
+  }
+
+  /**
+   * GET /escrows/:id/metadata
+   * Get escrow metadata from IPFS
+   */
+  @Get(':id/metadata')
+  @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Get escrow metadata from IPFS' })
+  async getEscrowMetadata(@Param('id') id: string) {
+    return this.ipfsService.getMetadata(id);
+  }
+
+  /**
+   * GET /escrows/:id/metadata/verify
+   * Verify escrow metadata integrity
+   */
+  @Get(':id/metadata/verify')
+  @UseGuards(EscrowAccessGuard)
+  @ApiOperation({ summary: 'Verify escrow metadata integrity' })
+  async verifyEscrowMetadata(@Param('id') id: string) {
+    return this.ipfsService.verifyMetadata(id);
+  }
+
+  /**
+   * POST /escrows/:id/metadata/pin
+   * Pin escrow metadata to IPFS (admin only)
+   */
+  @Post(':id/metadata/pin')
+  @UseGuards(EscrowAccessGuard, AdminGuard)
+  @ApiOperation({ summary: 'Pin escrow metadata to IPFS (admin only)' })
+  async pinEscrowMetadata(
+    @Param('id') id: string,
+    @Body() metadata?: Record<string, unknown>,
+  ) {
+    return this.ipfsService.pinMetadata(id, metadata || {});
   }
 }

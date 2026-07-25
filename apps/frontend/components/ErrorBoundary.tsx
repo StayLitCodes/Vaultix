@@ -2,11 +2,15 @@
 
 import { Component, ErrorInfo, ReactNode } from 'react';
 import { ErrorFallback } from './ErrorFallback';
+import { reportError } from '@/lib/errorReporter';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
-  fallback?: ReactNode;
+  fallback?:
+    | ReactNode
+    | ((props: { error: Error; reset: () => void }) => ReactNode);
   onError?: (error: Error, info: ErrorInfo) => void;
+  onReset?: () => void;
   resetKeys?: Array<unknown>;
 }
 
@@ -28,6 +32,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[ErrorBoundary]', error, info);
+    reportError(error, { componentStack: info.componentStack ?? undefined });
     this.props.onError?.(error, info);
   }
 
@@ -42,13 +47,19 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   reset() {
+    this.props.onReset?.();
     this.setState({ hasError: false, error: null });
   }
 
   render() {
     if (this.state.hasError) {
       if (this.props.fallback) {
-        return this.props.fallback;
+        return typeof this.props.fallback === 'function'
+          ? this.props.fallback({
+              error: this.state.error as Error,
+              reset: this.reset,
+            })
+          : this.props.fallback;
       }
       return (
         <ErrorFallback

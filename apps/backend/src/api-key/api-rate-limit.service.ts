@@ -15,18 +15,20 @@ export interface RateLimitInfo {
 export class ApiRateLimitService {
   private readonly usage = new Map<string, RateLimitRecord>();
   private readonly windowMs = 60 * 1000;
+  private readonly defaultLimit = 200;
 
-  check(keyId: string, limit: number): RateLimitInfo {
+  check(keyId: string, limit?: number): RateLimitInfo {
+    const effectiveLimit = limit ?? this.defaultLimit;
     const now = Date.now();
     const record = this.usage.get(keyId);
 
     if (!record || now > record.resetAt) {
       const resetAt = now + this.windowMs;
       this.usage.set(keyId, { count: 1, resetAt });
-      return { limit, remaining: limit - 1, resetAt };
+      return { limit: effectiveLimit, remaining: effectiveLimit - 1, resetAt };
     }
 
-    if (record.count >= limit) {
+    if (record.count >= effectiveLimit) {
       throw new HttpException(
         {
           statusCode: HttpStatus.TOO_MANY_REQUESTS,
@@ -38,6 +40,6 @@ export class ApiRateLimitService {
     }
 
     record.count++;
-    return { limit, remaining: limit - record.count, resetAt: record.resetAt };
+    return { limit: effectiveLimit, remaining: effectiveLimit - record.count, resetAt: record.resetAt };
   }
 }

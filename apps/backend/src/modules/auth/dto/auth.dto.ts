@@ -1,33 +1,33 @@
-import { IsString, IsNotEmpty, Length, Matches } from 'class-validator';
+import { IsString, IsNotEmpty, MaxLength } from 'class-validator';
+import { IsStellarAddress } from '../../../utils/validators';
 
 export class ChallengeDto {
-  @IsString()
+  @IsStellarAddress()
   @IsNotEmpty()
-  @Length(1, 56)
-  @Matches(/^G[A-Z0-9]{55}$/)
   walletAddress: string;
 }
 
 export class VerifyDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(255)
   signature: string;
 
-  @IsString()
+  @IsStellarAddress()
   @IsNotEmpty()
-  @Length(1, 56)
-  @Matches(/^G[A-Z0-9]{55}$/)
   publicKey: string;
 }
 
 export class RefreshTokenDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(500)
   refreshToken: string;
 }
 
 export class LogoutDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(500)
   refreshToken: string;
 }

@@ -18,9 +18,13 @@ import {
   downloadCSV,
   generateTransactionFilename,
 } from "@/lib/csv-export";
+import { convertEventsToPDF, downloadPDF } from "@/lib/pdf-export";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { ExportDropdown, ExportFormat } from "@/components/ExportDropdown";
+import { ExportModal } from "@/components/ExportModal";
+import { useToast } from "@/hooks/useToast";
 
 const EVENT_TYPES = [
   { value: "", label: "All Events" },
@@ -41,6 +45,7 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const { success, error } = useToast();
 
   // Filters
   const [eventType, setEventType] = useState("");
@@ -48,6 +53,11 @@ export default function TransactionsPage() {
   const [dateTo, setDateTo] = useState("");
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortOrder, setSortOrder] = useState<"ASC" | "DESC">("DESC");
+
+  // Export state
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("csv");
 
   // Running totals
   const [totals, setTotals] = useState({
@@ -107,10 +117,53 @@ export default function TransactionsPage() {
     });
   };
 
-  const handleExportCSV = () => {
-    const csvContent = convertEventsToCSV(events);
-    const filename = generateTransactionFilename();
-    downloadCSV(csvContent, filename);
+  const handleExportClick = (format: ExportFormat) => {
+    setExportFormat(format);
+    setExportModalOpen(true);
+  };
+
+  const handleExportConfirm = async (exportDateFrom: string, exportDateTo: string) => {
+    setIsExporting(true);
+    setExportModalOpen(false);
+
+    try {
+      // Fetch all events with the selected date range (no pagination for export)
+      const response = await fetchEvents({
+        page: 1,
+        limit: 10000, // Large limit to get all data
+        eventType: eventType || undefined,
+        dateFrom: exportDateFrom || undefined,
+        dateTo: exportDateTo || undefined,
+        sortBy,
+        sortOrder,
+      });
+
+      // Use setTimeout to allow UI to update before heavy processing
+      setTimeout(() => {
+        try {
+          const filename = generateTransactionFilename(exportFormat);
+
+          if (exportFormat === "csv") {
+            const csvContent = convertEventsToCSV(response.data);
+            downloadCSV(csvContent, filename);
+            success(`Successfully exported ${response.data.length} transactions to CSV`);
+          } else {
+            const pdfDoc = convertEventsToPDF(response.data);
+            downloadPDF(pdfDoc, filename);
+            success(`Successfully exported ${response.data.length} transactions to PDF`);
+          }
+        } catch (err) {
+          error("Failed to generate export file");
+          console.error("Export error:", err);
+        } finally {
+          setIsExporting(false);
+        }
+      }, 100);
+    } catch (err) {
+      error("Failed to fetch data for export");
+      console.error("Fetch error:", err);
+      setIsExporting(false);
+    }
   };
 
   const clearFilters = () => {
@@ -299,15 +352,12 @@ export default function TransactionsPage() {
               Clear
             </Button>
 
-            {/* Export CSV */}
-            <Button
-              onClick={handleExportCSV}
+            {/* Export */}
+            <ExportDropdown
+              onExport={handleExportClick}
               disabled={events.length === 0}
-              className="flex items-center gap-1"
-            >
-              <Download className="w-4 h-4" />
-              Export CSV
-            </Button>
+              isLoading={isExporting}
+            />
           </div>
         </div>
 
@@ -481,6 +531,14 @@ export default function TransactionsPage() {
           )}
         </div>
       </div>
+
+      {/* Export Modal */}
+      <ExportModal
+        isOpen={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        onConfirm={handleExportConfirm}
+        isLoading={isExporting}
+      />
     </div>
   );
 }
