@@ -9,6 +9,7 @@ import { Party } from '../escrow/entities/party.entity';
 import { EscrowEvent } from '../escrow/entities/escrow-event.entity';
 import { AuthModule } from '../auth/auth.module';
 import { EscrowModule } from '../escrow/escrow.module';
+import { KycModule } from '../kyc/kyc.module';
 import { ConsistencyCheckerService } from './services/consistency-checker.service';
 import { AdminEscrowConsistencyController } from './controllers/admin-escrow-consistency.controller';
 import { AdminAuditLog } from './entities/admin-audit-log.entity';
@@ -18,6 +19,7 @@ import { AnalyticsController } from './controllers/analytics.controller';
 import { Dispute } from '../escrow/entities/dispute.entity';
 import { WebhookModule } from '../webhook/webhook.module';
 import { AdminWebhookController } from './controllers/admin-webhook.controller';
+import { AdminKycController } from './controllers/admin-kyc.controller';
 
 @Module({
   imports: [
@@ -31,6 +33,7 @@ import { AdminWebhookController } from './controllers/admin-webhook.controller';
       Dispute,
     ]),
     EscrowModule,
+    KycModule,
     forwardRef(() => WebhookModule),
   ],
   controllers: [
@@ -38,6 +41,7 @@ import { AdminWebhookController } from './controllers/admin-webhook.controller';
     AdminEscrowConsistencyController,
     AnalyticsController,
     AdminWebhookController,
+    AdminKycController,
   ],
   providers: [
     AdminService,

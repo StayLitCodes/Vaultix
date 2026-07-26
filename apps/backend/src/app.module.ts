@@ -34,6 +34,8 @@ import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
 import { IpfsModule } from './modules/ipfs/ipfs.module';
 import { HealthModule } from './modules/health/health.module';
 import { AppVersionModule } from './app-version/app-version.module';
+import { KycModule } from './modules/kyc/kyc.module';
+import { KycVerification } from './modules/kyc/entities/kyc-verification.entity';
 import stellarConfig from './config/stellar.config';
 import ipfsConfig from './config/ipfs.config';
 
@@ -69,6 +71,7 @@ import ipfsConfig from './config/ipfs.config';
           WebhookDelivery,
           StellarEvent,
           AllowedAsset,
+          KycVerification,
         ],
         synchronize: false,
         migrations: [__dirname + '/migrations/*.ts'],
@@ -89,6 +92,7 @@ import ipfsConfig from './config/ipfs.config';
     IpfsModule,
     HealthModule,
     AppVersionModule,
+    KycModule,
     JwtModule.registerAsync({
       useFactory: (configService: ConfigService) => ({
         secret:
