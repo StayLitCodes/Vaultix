@@ -360,6 +360,16 @@ pub struct EscrowExpiredRefundedEvent {
     pub timestamp: u64,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct SignatureResetEvent {
+    pub escrow_id: u64,
+    /// Reason codes: "milestone" = after release, "dispute" = dispute raised,
+    /// "cancel" = escrow cancelled, "expired" = refund_expired called
+    pub reason: Symbol,
+    pub timestamp: u64,
+}
+
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
@@ -394,11 +404,14 @@ pub enum Error {
     ArbitratorNotInitialized = 29,
     InvalidMetadataHash = 30,
     UnsupportedEscrowVersion = 31,
+    DuplicateSigner = 32,
+    InvalidRequiredSignatures = 33,
 }
 
 const DEFAULT_FEE_BPS: i128 = 50;
 const BPS_DENOMINATOR: i128 = 10000;
 const MAX_BATCH_SIZE: u32 = 20;
+const MAX_REQUIRED_SIGNATURES: u32 = 10;
 const ESCROW_ENTRY_STORAGE_VERSION: i128 = 2;
 const EVENT_NAMESPACE: &str = "Vaultix";
 const EVENT_SCHEMA_VERSION: &str = "v1";
@@ -880,6 +893,11 @@ impl VaultixEscrow {
             return Err(Error::InvalidEscrowStatus);
         }
 
+        // required_signatures must be at least 1 and at most MAX_REQUIRED_SIGNATURES
+        if required_signatures == 0 || required_signatures > MAX_REQUIRED_SIGNATURES {
+            return Err(Error::InvalidRequiredSignatures);
+        }
+
         escrow.threshold_amount = threshold_amount;
         escrow.required_signatures = required_signatures;
 
@@ -1229,10 +1247,11 @@ impl VaultixEscrow {
         // Require authentication from the signer
         signer.require_auth();
 
-        // Check if this signer has already signed
+        // Check if this signer has already signed — duplicates are an error,
+        // not silently ignored, so callers are aware of the problem.
         for existing_signer in escrow.collected_signatures.iter() {
             if existing_signer == signer {
-                return Ok(()); // Idempotent - no error if already signed
+                return Err(Error::DuplicateSigner);
             }
         }
 
@@ -1393,6 +1412,16 @@ impl VaultixEscrow {
             },
         );
 
+        // Emit SignatureReset so off-chain listeners know the signature slate was cleared.
+        env.events().publish(
+            event_topic(&env, "SignatureReset"),
+            SignatureResetEvent {
+                escrow_id,
+                reason: Symbol::new(&env, "milestone"),
+                timestamp: current_timestamp(&env),
+            },
+        );
+
         Ok(())
     }
 
@@ -1455,6 +1484,16 @@ impl VaultixEscrow {
             },
         );
 
+        // Emit SignatureReset so off-chain listeners know the signature slate was cleared.
+        env.events().publish(
+            event_topic(&env, "SignatureReset"),
+            SignatureResetEvent {
+                escrow_id,
+                reason: Symbol::new(&env, "milestone"),
+                timestamp: current_timestamp(&env),
+            },
+        );
+
         Ok(())
     }
 
@@ -1489,6 +1528,8 @@ impl VaultixEscrow {
         escrow.milestones = updated_milestones;
         set_escrow_status(&mut escrow, EscrowStatus::Disputed)?;
         set_escrow_resolution(&mut escrow, Resolution::None);
+        // Clear signatures: they must not carry over once a dispute is active.
+        escrow.collected_signatures = Vec::new(&env);
         store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
         env.events().publish(
@@ -1502,6 +1543,15 @@ impl VaultixEscrow {
                 total_amount: escrow.total_amount,
                 total_released: escrow.total_released,
                 deadline: escrow.deadline,
+                timestamp: current_timestamp(&env),
+            },
+        );
+
+        env.events().publish(
+            event_topic(&env, "SignatureReset"),
+            SignatureResetEvent {
+                escrow_id,
+                reason: Symbol::new(&env, "dispute"),
                 timestamp: current_timestamp(&env),
             },
         );
@@ -1723,6 +1773,8 @@ impl VaultixEscrow {
         }
 
         set_escrow_status(&mut escrow, EscrowStatus::Cancelled)?;
+        // Clear signatures: cancellation ends the release window.
+        escrow.collected_signatures = Vec::new(&env);
         store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
         env.events().publish(
@@ -1738,6 +1790,15 @@ impl VaultixEscrow {
                 total_amount: escrow.total_amount,
                 total_released: escrow.total_released,
                 deadline: escrow.deadline,
+                timestamp: current_timestamp(&env),
+            },
+        );
+
+        env.events().publish(
+            event_topic(&env, "SignatureReset"),
+            SignatureResetEvent {
+                escrow_id,
+                reason: Symbol::new(&env, "cancel"),
                 timestamp: current_timestamp(&env),
             },
         );
@@ -1860,6 +1921,8 @@ impl VaultixEscrow {
         escrow.milestones = updated_milestones;
 
         set_escrow_status(&mut escrow, EscrowStatus::Expired)?;
+        // Clear signatures: expiry ends the release window.
+        escrow.collected_signatures = Vec::new(&env);
         store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
         env.events().publish(
@@ -1874,6 +1937,15 @@ impl VaultixEscrow {
                 total_amount: escrow.total_amount,
                 total_released: escrow.total_released,
                 deadline: escrow.deadline,
+                timestamp: current_time,
+            },
+        );
+
+        env.events().publish(
+            event_topic(&env, "SignatureReset"),
+            SignatureResetEvent {
+                escrow_id,
+                reason: Symbol::new(&env, "expired"),
                 timestamp: current_time,
             },
         );
@@ -2016,6 +2088,10 @@ fn release_pending_milestone(
         .total_released
         .checked_add(milestone.amount)
         .ok_or(Error::InvalidMilestoneAmount)?;
+
+    // Clear collected signatures after a successful release so they cannot be
+    // replayed to authorize future milestones on the same escrow.
+    escrow.collected_signatures = Vec::new(env);
 
     Ok(ReleaseOutcome {
         milestone_amount: milestone.amount,
