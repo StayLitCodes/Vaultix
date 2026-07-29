@@ -90,11 +90,13 @@ describe('ApiKeyController', () => {
         scopes: [ApiKeyScope.READ_ESCROWS],
       };
 
-      service.create.mockRejectedValue(new BadRequestException('Max keys reached'));
-
-      await expect(controller.create(mockReq as any, dto as any)).rejects.toThrow(
-        BadRequestException,
+      service.create.mockRejectedValue(
+        new BadRequestException('Max keys reached'),
       );
+
+      await expect(
+        controller.create(mockReq as any, dto as any),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 

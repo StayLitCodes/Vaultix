@@ -73,4 +73,8 @@ export class ListEscrowsDto {
   @IsStellarAddress()
   @IsOptional()
   assetIssuer?: string;
+
+  @IsStellarAddress()
+  @IsOptional()
+  walletAddress?: string;
 }

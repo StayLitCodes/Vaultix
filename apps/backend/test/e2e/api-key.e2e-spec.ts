@@ -143,10 +143,7 @@ describe('ApiKeyController (e2e)', () => {
         scopes: [ApiKeyScope.READ_ESCROWS],
       };
 
-      await request(httpServer)
-        .post('/api-keys')
-        .send(createDto)
-        .expect(401);
+      await request(httpServer).post('/api-keys').send(createDto).expect(401);
     });
 
     it('should fail with invalid scopes', async () => {
@@ -197,7 +194,7 @@ describe('ApiKeyController (e2e)', () => {
       const body = response.body as ListApiKeyResponse[];
       expect(Array.isArray(body)).toBe(true);
       expect(body.length).toBeGreaterThan(0);
-      
+
       // Verify sensitive data is not exposed
       body.forEach((key) => {
         expect(key).not.toHaveProperty('key');
@@ -209,9 +206,7 @@ describe('ApiKeyController (e2e)', () => {
     });
 
     it('should fail without authentication', async () => {
-      await request(httpServer)
-        .get('/api-keys')
-        .expect(401);
+      await request(httpServer).get('/api-keys').expect(401);
     });
   });
 
@@ -237,9 +232,7 @@ describe('ApiKeyController (e2e)', () => {
     });
 
     it('should fail without authentication', async () => {
-      await request(httpServer)
-        .get(`/api-keys/${apiKeyId}`)
-        .expect(401);
+      await request(httpServer).get(`/api-keys/${apiKeyId}`).expect(401);
     });
   });
 
@@ -365,9 +358,7 @@ describe('ApiKeyController (e2e)', () => {
     });
 
     it('should fail without authentication', async () => {
-      await request(httpServer)
-        .delete(`/api-keys/${apiKeyId}`)
-        .expect(401);
+      await request(httpServer).delete(`/api-keys/${apiKeyId}`).expect(401);
     });
   });
 
@@ -410,9 +401,7 @@ describe('ApiKeyController (e2e)', () => {
     });
 
     it('should fail without API key or JWT', async () => {
-      await request(httpServer)
-        .get('/api-keys')
-        .expect(401);
+      await request(httpServer).get('/api-keys').expect(401);
     });
 
     it('should include rate limit headers', async () => {
@@ -428,11 +417,11 @@ describe('ApiKeyController (e2e)', () => {
 
     it('should enforce rate limiting', async () => {
       // Make 200 requests to hit the rate limit
-      const requests = Array(200).fill(null).map(() =>
-        request(httpServer)
-          .get('/api-keys')
-          .set('X-API-Key', testApiKey)
-      );
+      const requests = Array(200)
+        .fill(null)
+        .map(() =>
+          request(httpServer).get('/api-keys').set('X-API-Key', testApiKey),
+        );
 
       await Promise.all(requests);
 

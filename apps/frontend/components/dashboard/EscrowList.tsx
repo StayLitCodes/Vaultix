@@ -36,6 +36,7 @@ interface EscrowListProps {
   hasNextPage?: boolean;
   fetchNextPage?: () => void;
   isFetchingNextPage?: boolean;
+  searchedAddress?: string;
 }
 
 const EscrowList: React.FC<EscrowListProps> = ({
@@ -48,6 +49,7 @@ const EscrowList: React.FC<EscrowListProps> = ({
   hasNextPage,
   fetchNextPage,
   isFetchingNextPage,
+  searchedAddress,
 }) => {
   // Show loading skeletons when data is loading
   if (isLoading && escrows.length === 0) {
@@ -123,7 +125,7 @@ const EscrowList: React.FC<EscrowListProps> = ({
   return (
     <div className="space-y-4">
       {escrows.map((escrow) => (
-        <EscrowCard key={escrow.id} escrow={escrow} />
+        <EscrowCard key={escrow.id} escrow={escrow} searchedAddress={searchedAddress} />
       ))}
 
       {/* Load more button for pagination */}

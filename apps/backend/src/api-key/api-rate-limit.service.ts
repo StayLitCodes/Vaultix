@@ -40,6 +40,10 @@ export class ApiRateLimitService {
     }
 
     record.count++;
-    return { limit: effectiveLimit, remaining: effectiveLimit - record.count, resetAt: record.resetAt };
+    return {
+      limit: effectiveLimit,
+      remaining: effectiveLimit - record.count,
+      resetAt: record.resetAt,
+    };
   }
 }

@@ -49,6 +49,6 @@ import { AdminEmailTemplateController } from './controllers/admin-email-template
     AdminAuditLogService,
     AnalyticsService,
   ],
-  exports: [AdminService, ConsistencyCheckerService],
+  exports: [AdminService, ConsistencyCheckerService, AdminAuditLogService],
 })
 export class AdminModule {}

@@ -2,7 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan } from 'typeorm';
 import { Escrow, EscrowStatus } from '../../escrow/entities/escrow.entity';
-import { Dispute, DisputeStatus, DisputeOutcome } from '../../escrow/entities/dispute.entity';
+import {
+  Dispute,
+  DisputeStatus,
+  DisputeOutcome,
+} from '../../escrow/entities/dispute.entity';
 import { User } from '../../user/entities/user.entity';
 
 export interface ChartData {
@@ -152,7 +156,9 @@ export class AnalyticsService {
       .where('escrow.status = :status', { status: EscrowStatus.COMPLETED })
       .getRawMany<{ amount: string }>();
 
-    const amounts = rows.map((r) => parseFloat(r.amount || '0')).sort((a, b) => a - b);
+    const amounts = rows
+      .map((r) => parseFloat(r.amount || '0'))
+      .sort((a, b) => a - b);
     const total = amounts.reduce((sum, v) => sum + v, 0);
     const avg = amounts.length > 0 ? total / amounts.length : 0;
 
@@ -262,10 +268,18 @@ export class AnalyticsService {
 
     const [total, active30d, new7d, new30d, new90d] = await Promise.all([
       this.userRepository.count(),
-      this.userRepository.count({ where: { updatedAt: MoreThan(this.daysAgo(30)) } }),
-      this.userRepository.count({ where: { createdAt: MoreThan(this.daysAgo(7)) } }),
-      this.userRepository.count({ where: { createdAt: MoreThan(this.daysAgo(30)) } }),
-      this.userRepository.count({ where: { createdAt: MoreThan(this.daysAgo(90)) } }),
+      this.userRepository.count({
+        where: { updatedAt: MoreThan(this.daysAgo(30)) },
+      }),
+      this.userRepository.count({
+        where: { createdAt: MoreThan(this.daysAgo(7)) },
+      }),
+      this.userRepository.count({
+        where: { createdAt: MoreThan(this.daysAgo(30)) },
+      }),
+      this.userRepository.count({
+        where: { createdAt: MoreThan(this.daysAgo(90)) },
+      }),
     ]);
 
     const metrics: UserMetrics = { total, active30d, new7d, new30d, new90d };
@@ -278,33 +292,46 @@ export class AnalyticsService {
     const cached = this.getFromCache<DisputeMetrics>(cacheKey);
     if (cached) return cached;
 
-    const [totalEscrows, totalDisputes, resolvedCount, outcomes, avgResolutionRaw, buyerWins] =
-      await Promise.all([
-        this.escrowRepository.count(),
-        this.disputeRepository.count(),
-        this.disputeRepository.count({ where: { status: DisputeStatus.RESOLVED } }),
-        this.disputeRepository
-          .createQueryBuilder('dispute')
-          .select('dispute.outcome', 'outcome')
-          .addSelect('COUNT(*)', 'count')
-          .where('dispute.status = :status', { status: DisputeStatus.RESOLVED })
-          .groupBy('dispute.outcome')
-          .getRawMany<{ outcome: string | null; count: string }>(),
-        this.disputeRepository
-          .createQueryBuilder('dispute')
-          .select(
-            'AVG(julianday(dispute.resolvedAt) - julianday(dispute.createdAt))',
-            'avgDays',
-          )
-          .where('dispute.status = :status', { status: DisputeStatus.RESOLVED })
-          .getRawOne<{ avgDays: string | null }>(),
-        this.disputeRepository.count({
-          where: { status: DisputeStatus.RESOLVED, outcome: DisputeOutcome.REFUNDED_TO_BUYER },
-        }),
-      ]);
+    const [
+      totalEscrows,
+      totalDisputes,
+      resolvedCount,
+      outcomes,
+      avgResolutionRaw,
+      buyerWins,
+    ] = await Promise.all([
+      this.escrowRepository.count(),
+      this.disputeRepository.count(),
+      this.disputeRepository.count({
+        where: { status: DisputeStatus.RESOLVED },
+      }),
+      this.disputeRepository
+        .createQueryBuilder('dispute')
+        .select('dispute.outcome', 'outcome')
+        .addSelect('COUNT(*)', 'count')
+        .where('dispute.status = :status', { status: DisputeStatus.RESOLVED })
+        .groupBy('dispute.outcome')
+        .getRawMany<{ outcome: string | null; count: string }>(),
+      this.disputeRepository
+        .createQueryBuilder('dispute')
+        .select(
+          'AVG(julianday(dispute.resolvedAt) - julianday(dispute.createdAt))',
+          'avgDays',
+        )
+        .where('dispute.status = :status', { status: DisputeStatus.RESOLVED })
+        .getRawOne<{ avgDays: string | null }>(),
+      this.disputeRepository.count({
+        where: {
+          status: DisputeStatus.RESOLVED,
+          outcome: DisputeOutcome.REFUNDED_TO_BUYER,
+        },
+      }),
+    ]);
 
-    const disputeRate = totalEscrows > 0 ? (totalDisputes / totalEscrows) * 100 : 0;
-    const resolutionRate = totalDisputes > 0 ? (resolvedCount / totalDisputes) * 100 : 0;
+    const disputeRate =
+      totalEscrows > 0 ? (totalDisputes / totalEscrows) * 100 : 0;
+    const resolutionRate =
+      totalDisputes > 0 ? (resolvedCount / totalDisputes) * 100 : 0;
     const winRate = resolvedCount > 0 ? (buyerWins / resolvedCount) * 100 : 0;
 
     const metrics: DisputeMetrics = {
@@ -328,7 +355,10 @@ export class AnalyticsService {
     return metrics;
   }
 
-  async getVolumeTimeSeries(from?: string, to?: string): Promise<VolumeTimeSeries> {
+  async getVolumeTimeSeries(
+    from?: string,
+    to?: string,
+  ): Promise<VolumeTimeSeries> {
     const cacheKey = `analytics_volume_ts_${from}_${to}`;
     const cached = this.getFromCache<VolumeTimeSeries>(cacheKey);
     if (cached) return cached;
@@ -449,7 +479,9 @@ export class AnalyticsService {
       walletAddress: u.walletAddress,
       escrowCount: parseInt(u.escrowCount),
       totalVolume: parseFloat(u.totalVolume || '0'),
-      completionRate: parseFloat(parseFloat(u.completionRate || '0').toFixed(4)),
+      completionRate: parseFloat(
+        parseFloat(u.completionRate || '0').toFixed(4),
+      ),
     }));
 
     this.setCache(cacheKey, stats, this.SUMMARY_TTL);
@@ -483,7 +515,9 @@ export class AnalyticsService {
     return query.getRawMany<{ bucket: string; volume: string | null }>();
   }
 
-  private toChartData(rows: { bucket: string; volume: string | null }[]): ChartData {
+  private toChartData(
+    rows: { bucket: string; volume: string | null }[],
+  ): ChartData {
     return {
       labels: rows.map((r) => r.bucket),
       values: rows.map((r) => parseFloat(r.volume || '0')),

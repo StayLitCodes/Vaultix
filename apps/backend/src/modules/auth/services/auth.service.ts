@@ -1,5 +1,8 @@
 import {
   Injectable,
+  Inject,
+  forwardRef,
+  Logger,
   UnauthorizedException,
   BadRequestException,
   Logger,
@@ -14,8 +17,9 @@ import { UserService } from '../../user/user.service';
 import { EmailVerification } from '../../user/entities/email-verification.entity';
 import { UpdateProfileDto } from '../dto/profile.dto';
 import { IpfsService } from '../../ipfs/ipfs.service';
-import { EmailTemplateService } from '../../../notifications/services/email-template.service';
-import { EmailSender } from '../../../notifications/senders/email.sender';
+import { EmailService } from '../../../email/email.service';
+import { PreferenceService } from '../../../notifications/preference.service';
+import { validateJwtSecret } from './jwt-validation.util';
 
 // Stellar SDK types for signature verification
 interface StellarKeypair {
@@ -42,13 +46,15 @@ export class AuthService {
     @InjectRepository(EmailVerification)
     private emailVerificationRepository: Repository<EmailVerification>,
     private ipfsService: IpfsService,
-    private emailTemplateService: EmailTemplateService,
-    private emailSender: EmailSender,
+    private emailService: EmailService,
+    @Inject(forwardRef(() => PreferenceService))
+    private preferenceService: PreferenceService,
   ) {}
 
   async generateChallenge(
     walletAddress: string,
   ): Promise<{ nonce: string; message: string }> {
+    this.logger.log({ msg: 'Generating challenge', walletAddress });
     const nonce = crypto.randomBytes(16).toString('hex');
     const message = `Sign this message to authenticate with Vaultix: ${nonce}`;
 
@@ -59,6 +65,17 @@ export class AuthService {
         walletAddress,
         nonce,
       });
+
+      // Seed default notification preferences for the new user. Failures
+      // are logged but must not block the signup / challenge flow.
+      try {
+        await this.preferenceService.seedDefaultPreferences(user.id);
+      } catch (error) {
+        this.logger.error(
+          `Failed to seed default notification preferences for user ${user.id}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
     } else {
       user = await this.userService.update(user.id, { nonce });
     }
@@ -70,6 +87,7 @@ export class AuthService {
     signature: string,
     publicKey: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
+    this.logger.log({ msg: 'Verifying signature', publicKey });
     // Derive walletAddress from publicKey (trusted source after signature verification)
     const walletAddress = publicKey;
 
@@ -100,6 +118,11 @@ export class AuthService {
 
     const accessToken = this.generateAccessToken(user.id, walletAddress);
     const refreshToken = await this.generateRefreshToken(user.id);
+
+    this.logger.log({
+      msg: 'User authenticated successfully',
+      userId: user.id,
+    });
 
     return { accessToken, refreshToken };
   }
@@ -148,11 +171,25 @@ export class AuthService {
     }
 
     // If email is being updated, reset emailVerified
-    if (updateProfileDto.email && updateProfileDto.email !== user.email) {
+    const emailChanged =
+      Boolean(updateProfileDto.email) && updateProfileDto.email !== user.email;
+    if (emailChanged) {
       updateProfileDto.emailVerified = false;
     }
 
-    return this.userService.update(userId, updateProfileDto);
+    const updated = await this.userService.update(userId, updateProfileDto);
+
+    // Automatically send a verification email whenever a new address is set
+    if (emailChanged) {
+      this.sendEmailVerification(userId).catch((error: unknown) => {
+        this.logger.error(
+          `Failed to queue verification email for user ${userId}`,
+          error instanceof Error ? error.stack : String(error),
+        );
+      });
+    }
+
+    return updated;
   }
 
   async uploadAvatar(
@@ -195,26 +232,40 @@ export class AuthService {
     });
     await this.emailVerificationRepository.save(emailVerification);
 
-    // Send verification email
-    const template = this.emailTemplateService.renderVerificationEmail({
-      code: token,
-      expiresIn: '24 hours',
-    });
+    // Queue the verification email for async delivery (retried on failure)
+    const verificationUrl = this.buildVerificationUrl(token);
+    await this.emailService.sendEmail(
+      user.email,
+      'Verify your email address - Vaultix',
+      this.buildVerificationEmailHtml(user, verificationUrl),
+      `Hi${user.displayName ? ` ${user.displayName}` : ''},\n\n` +
+        `Please verify your email address by opening the link below:\n\n` +
+        `${verificationUrl}\n\n` +
+        `This link expires in 24 hours. If you did not request this, you can ignore this email.`,
+    );
+    this.logger.log(`Verification email queued for user ${userId}`);
+  }
 
-    try {
-      await this.emailSender.sendDirect(
-        user.email,
-        template.subject,
-        template.html,
-        template.text,
-      );
-    } catch (error) {
-      this.logger.error(
-        `Failed to send verification email to ${user.email}`,
-        error instanceof Error ? error.stack : String(error),
-      );
-      // Don't throw - the token is saved, user can retry
-    }
+  private buildVerificationUrl(token: string): string {
+    const baseUrl = this.configService.get<string>(
+      'email.verificationBaseUrl',
+      'http://localhost:3000/auth/profile/verify-email',
+    );
+    return `${baseUrl}?token=${encodeURIComponent(token)}`;
+  }
+
+  private buildVerificationEmailHtml(
+    user: User,
+    verificationUrl: string,
+  ): string {
+    const greeting = user.displayName ? `Hi ${user.displayName},` : 'Hi,';
+    return (
+      `<p>${greeting}</p>` +
+      `<p>Please verify your email address to finish setting up your Vaultix account.</p>` +
+      `<p><a href="${verificationUrl}">Verify email address</a></p>` +
+      `<p>Or copy and paste this link into your browser:<br/>${verificationUrl}</p>` +
+      `<p><small>This link expires in 24 hours. If you did not request this, you can ignore this email.</small></p>`
+    );
   }
 
   async verifyEmail(token: string): Promise<void> {
@@ -236,8 +287,11 @@ export class AuthService {
     token: string,
   ): Promise<{ userId: string; walletAddress: string }> {
     try {
+      const secret = validateJwtSecret(
+        this.configService.get<string>('JWT_SECRET'),
+      );
       const payload = (await this.jwtService.verifyAsync(token, {
-        secret: this.configService.get<string>('JWT_SECRET'),
+        secret,
       })) as unknown as { sub: string; walletAddress: string; type: string };
 
       if (payload.type !== 'access') {

@@ -64,7 +64,10 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
     <WebSocketContext.Provider value={{ socket, isConnected, connectionError }}>
       {children}
       {!isConnected && (
-        <div className="fixed bottom-0 left-0 w-full bg-amber-500 text-white text-center py-2 text-sm font-semibold shadow-lg z-[100] flex items-center justify-center gap-2 animate-in slide-in-from-bottom">
+        <div 
+          aria-live="polite"
+          className="fixed bottom-0 left-0 w-full bg-amber-500 text-white text-center py-2 text-sm font-semibold shadow-lg z-[100] flex items-center justify-center gap-2 animate-in slide-in-from-bottom"
+        >
           <Loader2 className="w-4 h-4 animate-spin" />
           Reconnecting to live updates... {connectionError && `(${connectionError})`}
         </div>

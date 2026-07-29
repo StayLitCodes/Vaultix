@@ -13,8 +13,10 @@ import { ApiKey } from './api-key/entities/api-key.entity';
 import { AdminAuditLog } from './modules/admin/entities/admin-audit-log.entity';
 import { Webhook } from './modules/webhook/webhook.entity';
 import { WebhookDelivery } from './modules/webhook/entities/webhook-delivery.entity';
+import { WebhookDeadLetter } from './modules/webhook/entities/webhook-dead-letter.entity';
 import { StellarEvent } from './modules/stellar/entities/stellar-event.entity';
 import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
+import { EmailOutbox } from './email/entities/email-outbox.entity';
 
 config(); // Load .env file
 
@@ -35,8 +37,10 @@ export default new DataSource({
     AdminAuditLog,
     Webhook,
     WebhookDelivery,
+    WebhookDeadLetter,
     StellarEvent,
     AllowedAsset,
+    EmailOutbox,
   ],
   migrations: ['./src/migrations/*.ts'],
   synchronize: false,

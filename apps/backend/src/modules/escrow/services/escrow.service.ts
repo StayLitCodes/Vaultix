@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   ConflictException,
   UnprocessableEntityException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository, SelectQueryBuilder } from 'typeorm';
@@ -47,6 +48,8 @@ import { NotificationEventType } from '../../../notifications/enums/notification
 
 @Injectable()
 export class EscrowService {
+  private readonly logger = new Logger(EscrowService.name);
+
   constructor(
     @InjectRepository(Escrow)
     private escrowRepository: Repository<Escrow>,
@@ -143,6 +146,13 @@ export class EscrowService {
       // Dispatch webhook for escrow.created
       await this.webhookService.dispatchEvent('escrow.created', {
         escrowId: savedEscrow.id,
+      });
+
+      this.logger.log({
+        msg: 'Escrow created successfully',
+        userId: creatorId,
+        escrowId: savedEscrow.id,
+        escrowType: dto.type,
       });
 
       return await this.findOne(savedEscrow.id);
@@ -342,6 +352,13 @@ export class EscrowService {
       );
     }
 
+    if (query.walletAddress) {
+      qb.andWhere(
+        '(escrow.creatorId = :walletAddress OR party.userId = :walletAddress)',
+        { walletAddress: query.walletAddress },
+      );
+    }
+
     const sortOrder = query.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC';
     qb.orderBy(`escrow.${query.sortBy || 'createdAt'}`, sortOrder);
 
@@ -531,6 +548,13 @@ export class EscrowService {
       );
 
     const fundedAt = new Date();
+
+    this.logger.log({
+      msg: 'Escrow funded successfully',
+      userId,
+      escrowId: id,
+      amount: dto.amount,
+    });
     await this.escrowRepository.update(id, {
       stellarTxHash,
       fundedAt,
@@ -720,6 +744,13 @@ export class EscrowService {
       escrowId,
       conditionId,
       fulfilledBy: userId,
+    });
+
+    this.logger.log({
+      msg: 'Escrow condition fulfilled',
+      userId,
+      escrowId,
+      conditionId,
     });
 
     return condition;
@@ -971,6 +1002,27 @@ export class EscrowService {
       disputeId: savedDispute.id,
     });
 
+
+    // Notify the other escrow participants (fire-and-forget)
+    await this.notifyDisputeParticipants(
+      escrow,
+      NotificationEventType.DISPUTE_RAISED,
+      {
+        escrowId,
+        escrowTitle: escrow.title,
+        disputeId: savedDispute.id,
+      },
+      userId,
+    );
+
+    this.logger.log({
+      msg: 'Dispute filed successfully',
+      userId,
+      escrowId,
+      disputeId: savedDispute.id,
+    });
+
+
     return this.disputeRepository.findOne({
       where: { id: savedDispute.id },
       relations: ['filedBy'],
@@ -1072,10 +1124,54 @@ export class EscrowService {
       outcome: dto.outcome,
     });
 
+    // Notify the other escrow participants (fire-and-forget)
+    await this.notifyDisputeParticipants(
+      escrow,
+      NotificationEventType.DISPUTE_RESOLVED,
+      {
+        escrowId,
+        escrowTitle: escrow.title,
+        disputeId: resolved.id,
+        outcome: dto.outcome,
+      },
+      arbitratorUserId,
+    );
+
     return this.disputeRepository.findOne({
       where: { id: resolved.id },
       relations: ['filedBy', 'resolvedBy'],
     }) as Promise<Dispute>;
+  }
+
+  /**
+   * Dispatch a dispute notification to every escrow participant
+   * (creator + parties), excluding the acting user. Failures must not
+   * block the dispute workflow.
+   */
+  private async notifyDisputeParticipants(
+    escrow: Escrow,
+    eventType: NotificationEventType,
+    payload: Record<string, unknown>,
+    excludeUserId?: string,
+  ): Promise<void> {
+    const recipientIds = new Set<string>();
+    if (escrow.creatorId) recipientIds.add(escrow.creatorId);
+    for (const party of escrow.parties ?? []) {
+      if (party.userId) recipientIds.add(party.userId);
+    }
+    if (excludeUserId) recipientIds.delete(excludeUserId);
+
+    for (const recipientId of recipientIds) {
+      const recipient = await this.userRepository.findOne({
+        where: { id: recipientId },
+      });
+      this.notificationService
+        .handleEscrowEvent(recipientId, eventType, {
+          ...payload,
+          email: recipient?.email ?? undefined,
+        })
+        .catch(() => undefined);
+    }
   }
 
   async proposeMilestoneChange(

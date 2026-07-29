@@ -1,13 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { IEscrowExtended } from '@/types/escrow';
+import { useCurrency } from "@/context/CurrencyContext";
+import { useFiatPrice } from "@/hooks/useFiatPrice";
 
 interface TermsSectionProps {
   escrow: IEscrowExtended;
   userRole: 'creator' | 'counterparty' | 'arbitrator' | null;
 }
 
+const formatFiat = (amount: number, currency: string) => {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currency.toUpperCase(),
+  }).format(amount);
+};
+
 const TermsSection: React.FC<TermsSectionProps> = ({ escrow, userRole }) => {
   const [timeLeft, setTimeLeft] = useState('');
+  const { showFiat, currency } = useCurrency();
+  const { prices } = useFiatPrice();
 
   useEffect(() => {
     if (!escrow.expiresAt) return;
@@ -24,6 +35,16 @@ const TermsSection: React.FC<TermsSectionProps> = ({ escrow, userRole }) => {
     return () => clearInterval(t);
   }, [escrow.expiresAt]);
 
+  let fiatDisplay = null;
+  if (showFiat && escrow.asset === 'XLM' && prices[currency]) {
+    const fiatAmount = parseFloat(escrow.amount) * prices[currency];
+    fiatDisplay = (
+      <span className="text-muted-foreground ml-1 font-normal">
+        (~{formatFiat(fiatAmount, currency)})
+      </span>
+    );
+  }
+
   return (
     <div className="bg-card text-card-foreground rounded-xl shadow-sm border border-border p-4 sm:p-6 lg:sticky lg:top-8">
       <h2 className="text-lg sm:text-xl font-semibold text-foreground mb-4">Terms & Actions</h2>
@@ -36,7 +57,7 @@ const TermsSection: React.FC<TermsSectionProps> = ({ escrow, userRole }) => {
             <div className="flex justify-between items-center gap-2">
               <dt className="text-sm text-muted-foreground shrink-0">Amount</dt>
               <dd className="text-sm font-medium text-foreground text-right">
-                {Number(escrow.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 7 })} {escrow.asset}
+                {Number(escrow.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 7 })} {escrow.asset} {fiatDisplay}
               </dd>
             </div>
             <div className="flex justify-between items-center gap-2">

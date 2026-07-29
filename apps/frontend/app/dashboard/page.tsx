@@ -6,6 +6,7 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import StatusTabs from "@/components/dashboard/StatusTabs";
 import EscrowList from "@/components/dashboard/EscrowList";
 import EscrowFilters from "@/components/dashboard/EscrowFilters";
+import FilterBadges from "@/components/dashboard/FilterBadges";
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ErrorFallback } from '@/components/ErrorFallback';
 import { useEscrows } from "../../hooks/useEscrows";
@@ -32,6 +33,7 @@ function DashboardContent() {
   const maxAmount = searchParams.get("maxAmount") || "";
   const fromDate = searchParams.get("fromDate") || "";
   const toDate = searchParams.get("toDate") || "";
+  const walletAddress = searchParams.get("walletAddress") || "";
 
   const hasActiveFilters =
     activeStatuses.length > 0 ||
@@ -39,7 +41,8 @@ function DashboardContent() {
     minAmount ||
     maxAmount ||
     fromDate ||
-    toDate;
+    toDate ||
+    walletAddress;
 
   const createQueryString = useCallback(
     (paramsToUpdate: Record<string, string | null>) => {
@@ -81,6 +84,14 @@ function DashboardContent() {
     router.push(
       `${pathname}?${createQueryString({ fromDate: from, toDate: to })}`,
     );
+  const handleWalletAddressChange = (address: string) =>
+    router.push(
+      `${pathname}?${createQueryString({ walletAddress: address })}`,
+    );
+  const handleClearFilter = (key: string) =>
+    router.push(
+      `${pathname}?${createQueryString({ [key]: null })}`,
+    );
 
   const {
     data: escrowsData,
@@ -100,6 +111,7 @@ function DashboardContent() {
     maxAmount,
     fromDate,
     toDate,
+    walletAddress,
   });
 
   const flatEscrows =
@@ -194,6 +206,18 @@ function DashboardContent() {
             activeStatuses={activeStatuses}
             onToggleStatus={handleToggleStatus}
           />
+          <FilterBadges
+            searchQuery={searchQuery}
+            minAmount={minAmount}
+            maxAmount={maxAmount}
+            fromDate={fromDate}
+            toDate={toDate}
+            activeStatuses={activeStatuses}
+            walletAddress={walletAddress}
+            onWalletAddressChange={handleWalletAddressChange}
+            onClear={handleClearFilter}
+            onClearAll={() => router.push(pathname)}
+          />
           <EscrowFilters
             searchQuery={searchQuery}
             onSearchChange={handleSearch}
@@ -225,6 +249,7 @@ function DashboardContent() {
               hasNextPage={hasNextPage}
               fetchNextPage={fetchNextPage}
               isFetchingNextPage={isFetchingNextPage}
+              searchedAddress={walletAddress}
             />
           </ErrorBoundary>
         </div>

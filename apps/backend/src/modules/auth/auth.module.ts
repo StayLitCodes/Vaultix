@@ -7,19 +7,23 @@ import { AuthGuard } from './middleware/auth.guard';
 import { AdminGuard } from './middleware/admin.guard';
 import { UserModule } from '../user/user.module';
 import { IpfsModule } from '../ipfs/ipfs.module';
+import { EmailModule } from '../../email/email.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EmailVerification } from '../user/entities/email-verification.entity';
 import { NotificationsModule } from '../../notifications/notifications.module';
+
+import { validateJwtSecret } from './services/jwt-validation.util';
 
 @Module({
   imports: [
     UserModule,
     IpfsModule,
+    EmailModule,
+    forwardRef(() => NotificationsModule),
     TypeOrmModule.forFeature([EmailVerification]),
     JwtModule.registerAsync({
       useFactory: () => ({
-        secret:
-          process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+        secret: validateJwtSecret(process.env.JWT_SECRET),
       }),
     }),
     ThrottlerModule.forRoot([
