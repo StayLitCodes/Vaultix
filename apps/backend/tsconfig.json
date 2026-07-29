@@ -20,7 +20,7 @@
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
-    "types": ["node"],
+    "types": ["node", "multer"],
     "lib": ["es2021"]
   }
 }

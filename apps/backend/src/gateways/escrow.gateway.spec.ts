@@ -1,14 +1,14 @@
-import { EventsGateway } from './escrow.gateway';
+import { EscrowGateway } from './escrow.gateway';
 
 describe('EventsGateway', () => {
-  let gateway: EventsGateway;
+  let gateway: EscrowGateway;
   let jwtService: { verify: jest.Mock };
 
   beforeEach(() => {
     jwtService = {
       verify: jest.fn().mockReturnValue({ sub: 'user-1' }),
     };
-    gateway = new EventsGateway(jwtService as any);
+    gateway = new EscrowGateway(jwtService as any);
   });
 
   it('authenticates a socket and emits a connected event', async () => {

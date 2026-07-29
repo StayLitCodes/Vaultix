@@ -45,7 +45,7 @@ import { IpfsService } from '../../ipfs/ipfs.service';
 import { AllowedAsset } from '../../assets/entities/allowed-asset.entity';
 import { NotificationService } from '../../../notifications/notifications.service';
 import { NotificationEventType } from '../../../notifications/enums/notification-event.enum';
-import { EventsGateway } from '../../../gateways/escrow.gateway';
+import { EscrowGateway } from '../../../gateways/escrow.gateway';
 
 @Injectable()
 export class EscrowService {
@@ -69,7 +69,7 @@ export class EscrowService {
     private readonly webhookService: WebhookService,
     private readonly ipfsService: IpfsService,
     private readonly notificationService: NotificationService,
-    @Optional() private readonly eventsGateway?: EventsGateway,
+    @Optional() private readonly eventsGateway?: EscrowGateway,
   ) {}
 
   async create(

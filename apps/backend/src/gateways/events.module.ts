@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
-import { EventsGateway } from './escrow.gateway';
+import { EscrowGateway } from './escrow.gateway';
 
 @Module({
   imports: [
@@ -17,7 +17,7 @@ import { EventsGateway } from './escrow.gateway';
       inject: [ConfigService],
     }),
   ],
-  providers: [EventsGateway],
-  exports: [EventsGateway],
+  providers: [EscrowGateway],
+  exports: [EscrowGateway],
 })
 export class EventsModule {}

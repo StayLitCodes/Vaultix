@@ -31,11 +31,11 @@ interface ClientAuthPayload {
     credentials: true,
   },
 })
-export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class EscrowGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server!: Server;
 
-  private readonly logger = new Logger(EventsGateway.name);
+  private readonly logger = new Logger(EscrowGateway.name);
   private readonly userSocketMap = new Map<string, Set<string>>();
   private readonly socketUserMap = new Map<string, string>();
   private readonly socketEscrowMap = new Map<string, Set<string>>();
@@ -44,9 +44,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private extractToken(client: Socket): string | undefined {
     const authPayload = client.handshake.auth as ClientAuthPayload | undefined;
-    const authorizationHeader = client.handshake.headers.authorization as
-      | string
-      | undefined;
+    const authorizationHeader = client.handshake.headers.authorization;
 
     if (authPayload?.token) {
       return authPayload.token;
@@ -253,8 +251,5 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       ...data,
       timestamp: new Date().toISOString(),
     });
-  }
-  isHealthy(): boolean {
-    return this.server !== undefined;
   }
 }

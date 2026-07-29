@@ -12,7 +12,7 @@ import { WebhookSender } from './senders/webhook.sender';
 import { Repository, IsNull } from 'typeorm';
 import { EmailSender } from './senders/email.sender';
 import { PreferenceService } from './preference.service';
-import { EventsGateway } from '../gateways/escrow.gateway';
+import { EscrowGateway } from '../gateways/escrow.gateway';
 
 @Injectable()
 export class NotificationService {
@@ -25,7 +25,7 @@ export class NotificationService {
     private preferenceService: PreferenceService,
     emailSender: EmailSender,
     webhookSender: WebhookSender,
-    @Optional() private readonly eventsGateway?: EventsGateway,
+    @Optional() private readonly eventsGateway?: EscrowGateway,
   ) {
     this.senders = new Map([
       [NotificationChannel.EMAIL, emailSender],

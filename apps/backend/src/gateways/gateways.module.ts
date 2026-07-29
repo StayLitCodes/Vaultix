@@ -1,10 +1,8 @@
 import { Module } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
-import { EscrowGateway } from './escrow.gateway';
+import { EventsModule } from './events.module';
 
 @Module({
-  imports: [JwtModule],
-  providers: [EscrowGateway],
-  exports: [EscrowGateway],
+  imports: [EventsModule],
+  exports: [EventsModule],
 })
 export class GatewaysModule {}

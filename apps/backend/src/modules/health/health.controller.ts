@@ -52,6 +52,8 @@ export class HealthController {
       () => this.checkDatabase(),
       () => this.checkStellar(),
       () => this.checkWebSocket(),
+      () => this.checkMemory(),
+      () => this.checkDisk(),
     ]);
   }
 

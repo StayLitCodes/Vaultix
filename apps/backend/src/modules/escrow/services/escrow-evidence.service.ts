@@ -16,13 +16,6 @@ import {
   UploadEvidenceResponseDto,
 } from '../dto/upload-evidence.dto';
 
-interface FileWithMetadata extends Express.Multer.File {
-  buffer: Buffer;
-  originalname: string;
-  mimetype: string;
-  size: number;
-}
-
 @Injectable()
 export class EscrowEvidenceService {
   private readonly logger = new Logger(EscrowEvidenceService.name);
@@ -57,7 +50,7 @@ export class EscrowEvidenceService {
    */
   async uploadEvidence(
     escrowId: string,
-    files: FileWithMetadata[],
+    files: Express.Multer.File[],
     userId: string,
   ): Promise<UploadEvidenceResponseDto> {
     this.logger.log(
@@ -230,7 +223,7 @@ export class EscrowEvidenceService {
    * - Check MIME type against allowlist
    * - Check file size (max 10MB)
    */
-  private validateFile(file: FileWithMetadata): void {
+  private validateFile(file: Express.Multer.File): void {
     // Validate MIME type
     if (!this.ALLOWED_MIME_TYPES.includes(file.mimetype)) {
       throw new BadRequestException(
