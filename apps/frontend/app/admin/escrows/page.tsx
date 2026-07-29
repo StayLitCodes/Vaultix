@@ -3,10 +3,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Filter, ChevronLeft, ChevronRight, Eye, RefreshCw, X,
-  Loader2, AlertCircle, CheckCircle2, Clock, XCircle, AlertTriangle,
+  Loader2, AlertCircle, CheckCircle2, Clock, XCircle, AlertTriangle, Download,
 } from 'lucide-react';
 import { AdminService } from '@/services/admin';
 import { IAdminEscrow, IAdminEscrowResponse } from '@/types/admin';
+import { ExportDropdown, ExportFormat } from '@/components/ExportDropdown';
+import { ExportModal } from '@/components/ExportModal';
+import { useToast } from '@/hooks/useToast';
 import EscrowTimeline from '@/components/escrow/EscrowTimeline';
 
 const STATUS_CONFIG: Record<string, { color: string; bg: string; icon: React.ElementType }> = {
@@ -155,6 +158,12 @@ export default function AdminEscrowsPage() {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [selectedEscrow, setSelectedEscrow] = useState<IAdminEscrow | null>(null);
+  const { success, error } = useToast();
+
+  // Export state
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("csv");
 
   const statuses = ['ALL', 'ACTIVE', 'COMPLETED', 'PENDING', 'CANCELLED', 'DISPUTED'];
 
@@ -170,11 +179,93 @@ export default function AdminEscrowsPage() {
 
   useEffect(() => { fetchEscrows(); }, [fetchEscrows]);
 
+  const handleExportClick = (format: ExportFormat) => {
+    setExportFormat(format);
+    setExportModalOpen(true);
+  };
+
+  const handleExportConfirm = async (exportDateFrom: string, exportDateTo: string) => {
+    setIsExporting(true);
+    setExportModalOpen(false);
+
+    try {
+      // Fetch all escrows with the selected filters (no pagination for export)
+      const result = await AdminService.getEscrows({
+        status: statusFilter === 'ALL' ? undefined : statusFilter,
+        page: 1,
+        limit: 10000,
+      });
+
+      setTimeout(() => {
+        try {
+          if (exportFormat === "csv") {
+            // Convert escrows to CSV format
+            const headers = ["ID", "Title", "Amount", "Asset", "Status", "Type", "Created At"];
+            const rows = result.escrows.map(escrow => [
+            escrow.id,
+            escrow.title,
+            escrow.amount,
+            escrow.asset,
+            escrow.status,
+            escrow.type,
+            new Date(escrow.createdAt).toISOString(),
+          ]);
+
+          const csvContent = [
+            headers.join(","),
+            ...rows.map(row =>
+              row.map(cell => {
+                const cellStr = String(cell);
+                if (cellStr.includes(",") || cellStr.includes('"') || cellStr.includes("\n")) {
+                  return `"${cellStr.replace(/"/g, '""')}"`;
+                }
+                return cellStr;
+              }).join(",")
+            )
+          ].join("\n");
+
+          const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+          const link = document.createElement("a");
+          const url = URL.createObjectURL(blob);
+          link.setAttribute("href", url);
+          link.setAttribute("download", `vaultix-escrows-${new Date().toISOString().split("T")[0]}.csv`);
+          link.style.visibility = "hidden";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+
+          success(`Successfully exported ${result.escrows.length} escrows to CSV`);
+        } else {
+          // PDF export would require jsPDF - for now show a message
+          error("PDF export for escrows is not yet implemented");
+        }
+        } catch (err) {
+          error("Failed to generate export file");
+          console.error("Export error:", err);
+        } finally {
+          setIsExporting(false);
+        }
+      }, 100);
+    } catch (err) {
+      error("Failed to fetch data for export");
+      console.error("Fetch error:", err);
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-white">Escrow Management</h1>
-        <p className="text-sm text-gray-500 mt-1">Monitor and manage all platform escrows</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-white">Escrow Management</h1>
+          <p className="text-sm text-gray-500 mt-1">Monitor and manage all platform escrows</p>
+        </div>
+        <ExportDropdown
+          onExport={handleExportClick}
+          disabled={!data || data.escrows.length === 0}
+          isLoading={isExporting}
+        />
       </div>
 
       {/* Filters — scrollable on mobile */}
@@ -286,6 +377,14 @@ export default function AdminEscrowsPage() {
           onConsistencyCheck={(id) => console.log('consistency check', id)}
         />
       )}
+
+      {/* Export Modal */}
+      <ExportModal
+        isOpen={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        onConfirm={handleExportConfirm}
+        isLoading={isExporting}
+      />
     </div>
   );
 }

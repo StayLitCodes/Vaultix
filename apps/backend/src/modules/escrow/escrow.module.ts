@@ -26,6 +26,9 @@ import { EscrowQueryService } from './escrow-query.service';
 import { EventsModule } from '../../gateways/events.module';
 import { EscrowEvidenceService } from './services/escrow-evidence.service';
 import { EscrowIpfsSyncService } from './services/escrow-ipfs-sync.service';
+import { EscrowExpirySchedulerService } from './services/escrow-expiry-scheduler.service';
+import { AdminModule } from '../admin/admin.module';
+import { forwardRef } from '@nestjs/common';
 
 @Module({
   imports: [
@@ -43,6 +46,7 @@ import { EscrowIpfsSyncService } from './services/escrow-ipfs-sync.service';
     WebhookModule,
     IpfsModule,
     NotificationsModule,
+    forwardRef(() => AdminModule),
   ],
   controllers: [EscrowController, EscrowSchedulerController, EventsController],
   providers: [
@@ -57,6 +61,7 @@ import { EscrowIpfsSyncService } from './services/escrow-ipfs-sync.service';
     EscrowQueryService,
     EscrowEvidenceService,
     EscrowIpfsSyncService,
+    EscrowExpirySchedulerService,
   ],
   exports: [
     EscrowService,
@@ -67,6 +72,7 @@ import { EscrowIpfsSyncService } from './services/escrow-ipfs-sync.service';
     EscrowQueryService,
     EscrowEvidenceService,
     EscrowIpfsSyncService,
+    EscrowExpirySchedulerService,
   ],
 })
 export class EscrowModule {}

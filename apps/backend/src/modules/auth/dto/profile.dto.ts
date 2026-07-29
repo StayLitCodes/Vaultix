@@ -3,12 +3,14 @@ import {
   IsEmail,
   IsOptional,
   IsString,
+  IsNotEmpty,
   MaxLength,
 } from 'class-validator';
 
 export class UpdateProfileDto {
   @IsOptional()
   @IsString()
+  @IsNotEmpty()
   @MaxLength(100)
   displayName?: string;
 
@@ -23,10 +25,13 @@ export class UpdateProfileDto {
 
   @IsOptional()
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(500)
   bio?: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(20)
+  @IsNotEmpty()
+  @MaxLength(12)
   preferredAsset?: string;
 }

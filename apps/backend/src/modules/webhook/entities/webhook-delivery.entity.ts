@@ -44,7 +44,7 @@ export class WebhookDelivery {
   @Column({ type: 'datetime', nullable: true })
   nextRetryAt!: Date | null;
 
-  @Column({ nullable: true })
+  @Column({ type: 'integer', nullable: true })
   lastStatusCode!: number | null;
 
   @Column({ type: 'text', nullable: true })

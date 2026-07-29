@@ -4,6 +4,7 @@ import { AdminService } from '../admin.service';
 import { AdminAuditLogService } from '../services/admin-audit-log.service';
 import { AdminGuard } from '../../auth/middleware/admin.guard';
 import { AuthGuard } from '../../auth/middleware/auth.guard';
+import { EscrowExpirySchedulerService } from '../../escrow/services/escrow-expiry-scheduler.service';
 
 describe('AdminController (audit log endpoint)', () => {
   let controller: AdminController;
@@ -21,6 +22,12 @@ describe('AdminController (audit log endpoint)', () => {
           provide: AdminAuditLogService,
           useValue: {
             findAll: jest.fn().mockResolvedValue({ data: [], total: 0 }),
+          },
+        },
+        {
+          provide: EscrowExpirySchedulerService,
+          useValue: {
+            refundExpiredActiveEscrows: jest.fn(),
           },
         },
       ],

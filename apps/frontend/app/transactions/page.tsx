@@ -18,9 +18,13 @@ import {
   downloadCSV,
   generateTransactionFilename,
 } from "@/lib/csv-export";
+import { convertEventsToPDF, downloadPDF } from "@/lib/pdf-export";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { ExportDropdown, ExportFormat } from "@/components/ExportDropdown";
+import { ExportModal } from "@/components/ExportModal";
+import { useToast } from "@/hooks/useToast";
 
 const EVENT_TYPES = [
   { value: "", label: "All Events" },
@@ -41,6 +45,7 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const { success, error } = useToast();
 
   // Filters
   const [eventType, setEventType] = useState("");
@@ -48,6 +53,11 @@ export default function TransactionsPage() {
   const [dateTo, setDateTo] = useState("");
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortOrder, setSortOrder] = useState<"ASC" | "DESC">("DESC");
+
+  // Export state
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("csv");
 
   // Running totals
   const [totals, setTotals] = useState({
@@ -107,10 +117,53 @@ export default function TransactionsPage() {
     });
   };
 
-  const handleExportCSV = () => {
-    const csvContent = convertEventsToCSV(events);
-    const filename = generateTransactionFilename();
-    downloadCSV(csvContent, filename);
+  const handleExportClick = (format: ExportFormat) => {
+    setExportFormat(format);
+    setExportModalOpen(true);
+  };
+
+  const handleExportConfirm = async (exportDateFrom: string, exportDateTo: string) => {
+    setIsExporting(true);
+    setExportModalOpen(false);
+
+    try {
+      // Fetch all events with the selected date range (no pagination for export)
+      const response = await fetchEvents({
+        page: 1,
+        limit: 10000, // Large limit to get all data
+        eventType: eventType || undefined,
+        dateFrom: exportDateFrom || undefined,
+        dateTo: exportDateTo || undefined,
+        sortBy,
+        sortOrder,
+      });
+
+      // Use setTimeout to allow UI to update before heavy processing
+      setTimeout(() => {
+        try {
+          const filename = generateTransactionFilename(exportFormat);
+
+          if (exportFormat === "csv") {
+            const csvContent = convertEventsToCSV(response.data);
+            downloadCSV(csvContent, filename);
+            success(`Successfully exported ${response.data.length} transactions to CSV`);
+          } else {
+            const pdfDoc = convertEventsToPDF(response.data);
+            downloadPDF(pdfDoc, filename);
+            success(`Successfully exported ${response.data.length} transactions to PDF`);
+          }
+        } catch (err) {
+          error("Failed to generate export file");
+          console.error("Export error:", err);
+        } finally {
+          setIsExporting(false);
+        }
+      }, 100);
+    } catch (err) {
+      error("Failed to fetch data for export");
+      console.error("Fetch error:", err);
+      setIsExporting(false);
+    }
   };
 
   const clearFilters = () => {
@@ -150,25 +203,25 @@ export default function TransactionsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4">
+    <div className="min-h-screen bg-background text-foreground py-8 px-4">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+          <h1 className="text-3xl font-bold text-foreground mb-2">
             Transaction History
           </h1>
-          <p className="text-gray-600">
+          <p className="text-muted-foreground">
             View and export all your escrow-related transactions
           </p>
         </div>
 
         {/* Running Totals */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-blue-500">
+          <div className="bg-card rounded-lg shadow p-6 border-l-4 border-blue-500 border border-border">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 mb-1">Total Funded</p>
-                <p className="text-2xl font-bold text-gray-900">
+                <p className="text-sm text-muted-foreground mb-1">Total Funded</p>
+                <p className="text-2xl font-bold text-foreground">
                   {totals.totalFunded.toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 7,
@@ -180,11 +233,11 @@ export default function TransactionsPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-green-500">
+          <div className="bg-card rounded-lg shadow p-6 border-l-4 border-green-500 border border-border">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 mb-1">Total Released</p>
-                <p className="text-2xl font-bold text-gray-900">
+                <p className="text-sm text-muted-foreground mb-1">Total Released</p>
+                <p className="text-2xl font-bold text-foreground">
                   {totals.totalReleased.toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 7,
@@ -196,11 +249,11 @@ export default function TransactionsPage() {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow p-6 border-l-4 border-orange-500">
+          <div className="bg-card rounded-lg shadow p-6 border-l-4 border-orange-500 border border-border">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600 mb-1">Total In Escrow</p>
-                <p className="text-2xl font-bold text-gray-900">
+                <p className="text-sm text-muted-foreground mb-1">Total In Escrow</p>
+                <p className="text-2xl font-bold text-foreground">
                   {totals.totalInEscrow.toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 7,
@@ -214,11 +267,11 @@ export default function TransactionsPage() {
         </div>
 
         {/* Filters and Actions */}
-        <div className="bg-white rounded-lg shadow p-4 mb-6">
+        <div className="bg-card rounded-lg shadow p-4 mb-6 border border-border">
           <div className="flex flex-wrap gap-4 items-end">
             {/* Event Type Filter */}
             <div className="flex-1 min-w-[200px]">
-              <label className="text-sm font-medium text-gray-700 mb-1 block">
+              <label className="text-sm font-medium text-foreground mb-1 block">
                 Event Type
               </label>
               <select
@@ -227,7 +280,7 @@ export default function TransactionsPage() {
                   setEventType(e.target.value);
                   setPage(1);
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 {EVENT_TYPES.map((type) => (
                   <option key={type.value} value={type.value}>
@@ -239,7 +292,7 @@ export default function TransactionsPage() {
 
             {/* Date From */}
             <div className="flex-1 min-w-[180px]">
-              <label className="text-sm font-medium text-gray-700 mb-1 block">
+              <label className="text-sm font-medium text-foreground mb-1 block">
                 From Date
               </label>
               <Input
@@ -255,7 +308,7 @@ export default function TransactionsPage() {
 
             {/* Date To */}
             <div className="flex-1 min-w-[180px]">
-              <label className="text-sm font-medium text-gray-700 mb-1 block">
+              <label className="text-sm font-medium text-foreground mb-1 block">
                 To Date
               </label>
               <Input
@@ -271,7 +324,7 @@ export default function TransactionsPage() {
 
             {/* Sort Order */}
             <div className="flex-1 min-w-[180px]">
-              <label className="text-sm font-medium text-gray-700 mb-1 block">
+              <label className="text-sm font-medium text-foreground mb-1 block">
                 Sort By
               </label>
               <select
@@ -282,7 +335,7 @@ export default function TransactionsPage() {
                   setSortOrder(newSortOrder as "ASC" | "DESC");
                   setPage(1);
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="createdAt-DESC">Newest First</option>
                 <option value="createdAt-ASC">Oldest First</option>
@@ -299,77 +352,74 @@ export default function TransactionsPage() {
               Clear
             </Button>
 
-            {/* Export CSV */}
-            <Button
-              onClick={handleExportCSV}
+            {/* Export */}
+            <ExportDropdown
+              onExport={handleExportClick}
               disabled={events.length === 0}
-              className="flex items-center gap-1"
-            >
-              <Download className="w-4 h-4" />
-              Export CSV
-            </Button>
+              isLoading={isExporting}
+            />
           </div>
         </div>
 
         {/* Transaction Table */}
-        <div className="bg-white rounded-lg shadow overflow-hidden">
+        <div className="bg-card rounded-lg shadow overflow-hidden border border-border">
           {loading ? (
             <div className="flex items-center justify-center py-16">
-              <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
             </div>
           ) : events.length === 0 ? (
             <div className="text-center py-16">
-              <Calendar className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-              <p className="text-gray-500 text-lg">No transactions found</p>
-              <p className="text-gray-400 text-sm mt-1">
+              <Calendar className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+              <p className="text-foreground text-lg">No transactions found</p>
+              <p className="text-muted-foreground text-sm mt-1">
                 Try adjusting your filters or date range
               </p>
             </div>
           ) : (
             <>
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
+                <table className="min-w-full divide-y divide-border">
+                  <thead className="bg-muted">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Date
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Escrow
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Event Type
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Amount
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Status
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Tx Hash
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-card divide-y divide-border">
                     {events.map((event) => {
                       const txHash =
                         event.data?.transactionHash ||
                         event.data?.stellarTxHash;
 
                       return (
-                        <tr key={event.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <tr key={event.id} className="hover:bg-accent/50">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                             {new Date(event.createdAt).toLocaleDateString()}
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs text-muted-foreground">
                               {new Date(event.createdAt).toLocaleTimeString()}
                             </div>
                           </td>
                           <td className="px-6 py-4">
-                            <div className="text-sm font-medium text-gray-900">
+                            <div className="text-sm font-medium text-foreground">
                               {event.escrow?.title || "Unknown"}
                             </div>
-                            <div className="text-xs text-gray-500 font-mono">
+                            <div className="text-xs text-muted-foreground font-mono">
                               {event.escrowId.slice(0, 8)}...
                             </div>
                           </td>
@@ -380,7 +430,7 @@ export default function TransactionsPage() {
                               {formatEventType(event.eventType)}
                             </Badge>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
                             {event.escrow ? (
                               <div>
                                 <div className="font-medium">
@@ -392,14 +442,14 @@ export default function TransactionsPage() {
                                     },
                                   )}
                                 </div>
-                                <div className="text-xs text-gray-500">
+                                <div className="text-xs text-muted-foreground">
                                   {event.escrow.assetIssuer
                                     ? `${event.escrow.assetCode}:${event.escrow.assetIssuer.slice(0, 8)}...`
                                     : event.escrow.assetCode}
                                 </div>
                               </div>
                             ) : (
-                              <span className="text-gray-400">N/A</span>
+                              <span className="text-muted-foreground">N/A</span>
                             )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -423,7 +473,7 @@ export default function TransactionsPage() {
                                 href={getExplorerUrl(txHash)}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                                className="text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1"
                               >
                                 <span className="font-mono text-xs">
                                   {txHash.slice(0, 8)}...
@@ -431,7 +481,7 @@ export default function TransactionsPage() {
                                 <ExternalLink className="w-3 h-3" />
                               </a>
                             ) : (
-                              <span className="text-gray-400">N/A</span>
+                              <span className="text-muted-foreground">N/A</span>
                             )}
                           </td>
                         </tr>
@@ -442,9 +492,9 @@ export default function TransactionsPage() {
               </div>
 
               {/* Pagination */}
-              <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
+              <div className="bg-muted/50 px-6 py-4 border-t border-border">
                 <div className="flex items-center justify-between">
-                  <div className="text-sm text-gray-700">
+                  <div className="text-sm text-foreground">
                     Showing{" "}
                     <span className="font-medium">
                       {(page - 1) * PAGE_SIZE + 1}
@@ -481,6 +531,14 @@ export default function TransactionsPage() {
           )}
         </div>
       </div>
+
+      {/* Export Modal */}
+      <ExportModal
+        isOpen={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        onConfirm={handleExportConfirm}
+        isLoading={isExporting}
+      />
     </div>
   );
 }

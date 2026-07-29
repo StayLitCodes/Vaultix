@@ -1,8 +1,28 @@
-// DTOs and types for the Consistency Checker feature
+import { IsArray, IsNumber, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 
+export class ConsistencyCheckByIdsDto {
+  @IsArray()
+  @IsNumber({}, { each: true })
+  @Min(1, { each: true })
+  @Type(() => Number)
+  escrowIds: number[];
+}
+
+export class ConsistencyCheckByRangeDto {
+  @IsNumber()
+  @Min(1)
+  fromId: number;
+
+  @IsNumber()
+  @Min(1)
+  toId: number;
+}
+
+// Union type for request validation
 export type ConsistencyCheckRequest =
-  | { escrowIds: number[] }
-  | { fromId: number; toId: number };
+  | ConsistencyCheckByIdsDto
+  | ConsistencyCheckByRangeDto;
 
 export interface FieldMismatch {
   fieldName: string;

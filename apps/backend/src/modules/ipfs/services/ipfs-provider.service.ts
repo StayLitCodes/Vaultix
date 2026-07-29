@@ -31,6 +31,45 @@ export class IpfsProviderService {
   }
 
   /**
+   * Whether the configured provider has the credentials/URL it needs.
+   */
+  get isConfigured(): boolean {
+    if (this.provider === 'pinata') {
+      return Boolean(this.config.pinataJwt);
+    }
+    return Boolean(this.config.localNodeUrl);
+  }
+
+  /**
+   * Verify IPFS provider connectivity for health checks.
+   * @param timeoutMs Max time to wait for the probe request
+   * @returns true when the provider is reachable
+   */
+  async checkHealth(timeoutMs = 5000): Promise<boolean> {
+    try {
+      if (this.provider === 'pinata') {
+        await axios.get('https://api.pinata.cloud/data/testAuthentication', {
+          headers: {
+            Authorization: `Bearer ${this.config.pinataJwt}`,
+          },
+          timeout: timeoutMs,
+        });
+      } else {
+        // Local IPFS HTTP API requires POST for /api/v0 endpoints
+        await axios.post(`${this.config.localNodeUrl}/api/v0/version`, null, {
+          timeout: timeoutMs,
+        });
+      }
+      return true;
+    } catch (error) {
+      this.logger.warn(
+        `IPFS health check failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return false;
+    }
+  }
+
+  /**
    * Uploads JSON metadata to IPFS
    * @param data The JSON data to upload
    * @param name The name for the pin

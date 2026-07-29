@@ -3,6 +3,7 @@ export enum WebhookDeliveryStatus {
   DELIVERED = 'delivered',
   RETRYING = 'retrying',
   FAILED = 'failed',
+  DEAD_LETTERED = 'dead_lettered',
 }
 
 export type WebhookEvent =

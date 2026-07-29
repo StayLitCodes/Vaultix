@@ -11,25 +11,28 @@ import {
   MaxLength,
   ArrayMinSize,
   ValidateIf,
+  IsUUID,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { EscrowType } from '../entities/escrow.entity';
 import { PartyRole } from '../entities/party.entity';
 import { ConditionType } from '../entities/condition.entity';
+import { IsStellarAddress } from '../../../utils/validators';
 
 export class EscrowAssetDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(12)
   code: string;
 
   @ValidateIf((o: EscrowAssetDto) => o.code !== 'XLM')
-  @IsString()
+  @IsStellarAddress()
   @IsNotEmpty()
   issuer: string;
 }
 
 export class CreatePartyDto {
-  @IsString()
+  @IsUUID()
   @IsNotEmpty()
   userId: string;
 
@@ -93,5 +96,6 @@ export class CreateEscrowDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(64)
   metadataHash?: string;
 }

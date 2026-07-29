@@ -451,6 +451,17 @@ export class EscrowStellarIntegrationService {
   }
 
   /**
+   * Refunds an expired escrow on the Stellar blockchain
+   * @param escrowId The ID of the escrow to refund
+   * @returns Transaction hash of the refund transaction
+   */
+  refundExpiredOnChain(escrowId: string): Promise<string> {
+    this.logger.log(`Refunding expired on-chain escrow ${escrowId}`);
+    // Mock implementation for the refund process
+    return Promise.resolve(`mock-refund-tx-hash-${escrowId}-${Date.now()}`);
+  }
+
+  /**
    * Safely extracts error message from unknown error type
    */
   private getErrorMessage(error: unknown): string {

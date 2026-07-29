@@ -4,6 +4,9 @@ import React, { useState, useEffect } from 'react';
 import { BarChart3, PieChart, TrendingUp, Users, Loader2 } from 'lucide-react';
 import { AdminService } from '@/services/admin';
 import { IPlatformStats } from '@/types/admin';
+import { ExportDropdown, ExportFormat } from '@/components/ExportDropdown';
+import { ExportModal } from '@/components/ExportModal';
+import { useToast } from '@/hooks/useToast';
 
 // ── Date Range Selector ────────────────────────────────────────────────────
 
@@ -219,12 +222,84 @@ export default function AdminAnalyticsPage() {
   const [stats, setStats] = useState<IPlatformStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState<Range>('30d');
+  const { success, error } = useToast();
+
+  // Export state
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("csv");
 
   useEffect(() => {
     AdminService.getStats()
       .then(setStats)
       .finally(() => setLoading(false));
   }, []);
+
+  const handleExportClick = (format: ExportFormat) => {
+    setExportFormat(format);
+    setExportModalOpen(true);
+  };
+
+  const handleExportConfirm = async (exportDateFrom: string, exportDateTo: string) => {
+    setIsExporting(true);
+    setExportModalOpen(false);
+
+    try {
+      // For analytics, we'll export the current stats as a summary
+      setTimeout(() => {
+        try {
+          if (exportFormat === "csv") {
+            const headers = ["Metric", "Value"];
+            const rows = [
+              ["Total Escrows", String(stats?.escrows.total || 0)],
+              ["Active Escrows", String(stats?.escrows.active || 0)],
+              ["Completed Escrows", String(stats?.escrows.completed || 0)],
+              ["Total Users", String(stats?.users.total || 0)],
+              ["Date Range", range],
+              ["Export Date", new Date().toISOString()],
+            ];
+
+            const csvContent = [
+              headers.join(","),
+              ...rows.map(row =>
+                row.map(cell => {
+                  const cellStr = String(cell);
+                  if (cellStr.includes(",") || cellStr.includes('"') || cellStr.includes("\n")) {
+                    return `"${cellStr.replace(/"/g, '""')}"`;
+                  }
+                  return cellStr;
+                }).join(",")
+              )
+            ].join("\n");
+
+            const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", `vaultix-analytics-${range}-${new Date().toISOString().split("T")[0]}.csv`);
+            link.style.visibility = "hidden";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            success("Successfully exported analytics to CSV");
+          } else {
+            error("PDF export for analytics is not yet implemented");
+          }
+        } catch (err) {
+          error("Failed to generate export file");
+          console.error("Export error:", err);
+        } finally {
+          setIsExporting(false);
+        }
+      }, 100);
+    } catch (err) {
+      error("Failed to export analytics");
+      console.error("Export error:", err);
+      setIsExporting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -244,20 +319,27 @@ export default function AdminAnalyticsPage() {
           <h1 className="text-2xl font-bold text-white">Analytics</h1>
           <p className="text-sm text-gray-500 mt-1">Platform-wide metrics and trends</p>
         </div>
-        <div className="flex gap-1 bg-white/5 rounded-lg p-1">
-          {RANGES.map((r) => (
-            <button
-              key={r.value}
-              onClick={() => setRange(r.value)}
-              className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                range === r.value
-                  ? 'bg-white/10 text-white font-medium'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              {r.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          <div className="flex gap-1 bg-white/5 rounded-lg p-1">
+            {RANGES.map((r) => (
+              <button
+                key={r.value}
+                onClick={() => setRange(r.value)}
+                className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                  range === r.value
+                    ? 'bg-white/10 text-white font-medium'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
+          </div>
+          <ExportDropdown
+            onExport={handleExportClick}
+            disabled={!stats}
+            isLoading={isExporting}
+          />
         </div>
       </div>
 
@@ -272,6 +354,14 @@ export default function AdminAnalyticsPage() {
         <DisputeMetrics stats={stats} />
         <TopUsersTable />
       </div>
+
+      {/* Export Modal */}
+      <ExportModal
+        isOpen={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        onConfirm={handleExportConfirm}
+        isLoading={isExporting}
+      />
     </div>
   );
 }

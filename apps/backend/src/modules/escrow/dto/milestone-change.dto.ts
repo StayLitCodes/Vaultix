@@ -1,5 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsNumber, Min } from 'class-validator';
+import {
+  IsOptional,
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  Min,
+  Max,
+  MaxLength,
+} from 'class-validator';
 
 export class ProposeMilestoneChangeDto {
   @ApiPropertyOptional({
@@ -9,6 +17,7 @@ export class ProposeMilestoneChangeDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(1e13)
   amount?: number;
 
   @ApiPropertyOptional({
@@ -17,5 +26,7 @@ export class ProposeMilestoneChangeDto {
   })
   @IsOptional()
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(2000)
   description?: string;
 }

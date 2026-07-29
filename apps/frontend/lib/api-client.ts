@@ -28,10 +28,12 @@ class ApiClient {
       if (token) {
         window.localStorage.setItem('vaultix_token', token);
         window.localStorage.setItem('vaultix_login_time', String(Date.now()));
+        document.cookie = 'vaultix_token=' + token + '; path=/; max-age=86400';
       } else {
         window.localStorage.removeItem('vaultix_token');
         window.localStorage.removeItem('vaultix_refresh_token');
         window.localStorage.removeItem('vaultix_login_time');
+        document.cookie = 'vaultix_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
       }
     }
   }

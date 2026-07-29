@@ -1,5 +1,7 @@
 import React, { memo } from "react";
 import Link from "next/link";
+import { useCurrency } from "@/context/CurrencyContext";
+import { useFiatPrice } from "@/hooks/useFiatPrice";
 
 interface IEscrow {
   id: string;
@@ -20,13 +22,34 @@ const STATUS_COLORS: Record<string, string> = {
   expired: "bg-orange-100 text-orange-800",
 };
 
+const formatFiat = (amount: number, currency: string) => {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: currency.toUpperCase(),
+  }).format(amount);
+};
+
 const EscrowListItem = memo(function EscrowListItem({
   escrow,
 }: {
   escrow: IEscrow;
 }) {
+  const { showFiat, currency } = useCurrency();
+  const { prices } = useFiatPrice();
+
   const colorClass =
     STATUS_COLORS[escrow.status] ?? "bg-gray-100 text-gray-800";
+
+  let fiatDisplay = null;
+  if (showFiat && escrow.asset === 'XLM' && prices[currency]) {
+    const fiatAmount = parseFloat(escrow.amount) * prices[currency];
+    fiatDisplay = (
+      <span className="text-gray-400 ml-1">
+        (~{formatFiat(fiatAmount, currency)})
+      </span>
+    );
+  }
+
   return (
     <Link
       href={`/escrow/${escrow.id}`}
@@ -36,7 +59,7 @@ const EscrowListItem = memo(function EscrowListItem({
         <div className="min-w-0">
           <p className="truncate font-semibold text-gray-900">{escrow.title}</p>
           <p className="mt-0.5 text-sm text-gray-500">
-            {escrow.amount} {escrow.asset}
+            {escrow.amount} {escrow.asset} {fiatDisplay}
           </p>
         </div>
         <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${colorClass}`}>
