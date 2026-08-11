@@ -263,7 +263,11 @@ export class StellarEventListenerService
       });
 
       if (existingEvent) {
-        this.logger.debug(`Event already processed: ${txHash}:${eventIndex}`);
+        this.logger.debug({
+          msg: 'Event already processed',
+          txHash,
+          eventIndex,
+        });
         return;
       }
 
@@ -282,14 +286,19 @@ export class StellarEventListenerService
       // Update related escrow records
       await this.updateEscrowFromEvent(normalizedEvent);
 
-      this.logger.debug(
-        `Processed event: ${normalizedEvent.eventType} for escrow: ${normalizedEvent.escrowId}`,
-      );
+      this.logger.log({
+        msg: 'Processed stellar event',
+        eventType: normalizedEvent.eventType,
+        escrowId: normalizedEvent.escrowId,
+        txHash,
+      });
     } catch (error) {
-      this.logger.error(
-        `Error processing event ${eventData.txHash}:${eventData.eventIndex}:`,
-        error,
-      );
+      this.logger.error({
+        msg: 'Error processing event',
+        txHash: eventData.txHash,
+        eventIndex: eventData.eventIndex,
+        error: error instanceof Error ? error.message : error,
+      });
     }
   }
 

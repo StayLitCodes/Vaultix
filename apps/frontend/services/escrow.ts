@@ -184,6 +184,7 @@ export class EscrowService {
       maxAmount,
       fromDate,
       toDate,
+      walletAddress,
     } = filters;
 
     let filteredEscrows = [...MOCK_ESCROWS];
@@ -236,6 +237,16 @@ export class EscrowService {
         (e) =>
           e.title.toLowerCase().includes(searchTerm) ||
           e.counterpartyAddress.toLowerCase().includes(searchTerm),
+      );
+    }
+
+    // Apply wallet address filter
+    if (walletAddress) {
+      const walletLower = walletAddress.toLowerCase();
+      filteredEscrows = filteredEscrows.filter(
+        (e) =>
+          e.creatorAddress.toLowerCase() === walletLower ||
+          e.counterpartyAddress.toLowerCase() === walletLower
       );
     }
 

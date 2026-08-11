@@ -13,6 +13,7 @@ import { AdminGuard } from '../auth/middleware/admin.guard';
 import { AdminService } from './admin.service';
 import { AdminAuditLogService } from './services/admin-audit-log.service';
 import { EscrowStatus } from '../escrow/entities/escrow.entity';
+import { EscrowExpirySchedulerService } from '../escrow/services/escrow-expiry-scheduler.service';
 
 interface AuditLogQuery {
   actorId?: string;
@@ -44,6 +45,7 @@ export class AdminController {
   constructor(
     private readonly adminService: AdminService,
     private readonly adminAuditLogService: AdminAuditLogService,
+    private readonly escrowExpirySchedulerService: EscrowExpirySchedulerService,
   ) {}
 
   @Get('audit-logs')
@@ -99,5 +101,12 @@ export class AdminController {
     @Query('actorId') actorId?: string,
   ) {
     return this.adminService.suspendUser(id, actorId);
+  }
+
+  @Post('escrows/:id/refund')
+  @HttpCode(HttpStatus.OK)
+  async manualRefundEscrow(@Param('id') id: string) {
+    await this.escrowExpirySchedulerService.processRefundById(id);
+    return { success: true, message: `Escrow ${id} refunded successfully` };
   }
 }

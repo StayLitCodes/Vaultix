@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from '../modules/auth/auth.module';
@@ -10,12 +10,14 @@ import { PreferenceService } from './preference.service';
 import { EmailSender } from './senders/email.sender';
 import { WebhookSender } from './senders/webhook.sender';
 import { EventsModule } from '../gateways/events.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
     ConfigModule,
-    AuthModule,
+    forwardRef(() => AuthModule),
     EventsModule,
+    EmailModule,
     TypeOrmModule.forFeature([Notification, NotificationPreference]),
   ],
   controllers: [NotificationController],

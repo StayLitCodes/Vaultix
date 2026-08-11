@@ -212,6 +212,8 @@ export interface IEventResponse {
     assetCode: string;
     assetIssuer?: string;
     status: string;
+    completedAt?: string;
+    deadline?: string;
   };
   actor?: {
     walletAddress?: string;

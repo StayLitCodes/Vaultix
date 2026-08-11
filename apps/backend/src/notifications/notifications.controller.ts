@@ -5,6 +5,8 @@ import {
   Body,
   Controller,
   Get,
+  ParseArrayPipe,
+  Patch,
   Put,
   Req,
   UseGuards,
@@ -15,7 +17,8 @@ import { UpdatePreferencesDto } from './entities/update-preferences.dto';
 
 interface AuthenticatedRequest extends Request {
   user: {
-    id: string;
+    userId: string;
+    walletAddress: string;
   };
 }
 
@@ -29,25 +32,36 @@ export class NotificationController {
 
   @Get('preferences')
   getPreferences(@Req() req: AuthenticatedRequest) {
-    return this.preferenceService.getUserPreferences(req.user.id);
+    return this.preferenceService.getUserPreferences(req.user.userId);
   }
 
-  @Put('preferences')
+  @Patch('preferences')
   updatePreferences(
     @Req() req: AuthenticatedRequest,
-    @Body() dto: UpdatePreferencesDto[],
+    @Body(new ParseArrayPipe({ items: UpdatePreferencesDto, whitelist: true }))
+    dto: UpdatePreferencesDto[],
   ) {
-    return this.preferenceService.updatePreferences(req.user.id, dto);
+    return this.preferenceService.updatePreferences(req.user.userId, dto);
+  }
+
+  // Kept for backward compatibility with older clients; PATCH is preferred.
+  @Put('preferences')
+  replacePreferences(
+    @Req() req: AuthenticatedRequest,
+    @Body(new ParseArrayPipe({ items: UpdatePreferencesDto, whitelist: true }))
+    dto: UpdatePreferencesDto[],
+  ) {
+    return this.preferenceService.updatePreferences(req.user.userId, dto);
   }
 
   @Get()
   getNotifications(@Req() req: AuthenticatedRequest) {
-    return this.notificationService.getUserNotifications(req.user.id);
+    return this.notificationService.getUserNotifications(req.user.userId);
   }
 
   @Get('unread-count')
   getUnreadCount(@Req() req: AuthenticatedRequest) {
-    return this.notificationService.getUnreadCount(req.user.id);
+    return this.notificationService.getUnreadCount(req.user.userId);
   }
 
   @Post('mark-as-read')
@@ -55,6 +69,6 @@ export class NotificationController {
     @Req() req: AuthenticatedRequest,
     @Body('notificationId') notificationId?: string,
   ) {
-    return this.notificationService.markAsRead(req.user.id, notificationId);
+    return this.notificationService.markAsRead(req.user.userId, notificationId);
   }
 }

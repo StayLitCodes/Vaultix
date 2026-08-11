@@ -45,6 +45,6 @@ import { AdminWebhookController } from './controllers/admin-webhook.controller';
     AdminAuditLogService,
     AnalyticsService,
   ],
-  exports: [AdminService, ConsistencyCheckerService],
+  exports: [AdminService, ConsistencyCheckerService, AdminAuditLogService],
 })
 export class AdminModule {}

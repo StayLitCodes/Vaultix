@@ -2,18 +2,15 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { User, Copy, Check, Bell, Shield, Settings as SettingsIcon, ArrowRight } from "lucide-react";
+import { User, Copy, Check, Bell, Shield, Settings as SettingsIcon, ArrowRight, Loader2, DollarSign } from "lucide-react";
 import { useWallet } from "@/app/contexts/WalletContext";
 import ApiKeyManager from "@/components/settings/ApiKeyManager";
+import { useNotifications, UserPreferences } from "@/hooks/useNotifications";
+import { useCurrency } from "@/context/CurrencyContext";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-interface NotificationPref {
-  eventType: string;
-  label: string;
-  email: boolean;
-  inApp: boolean;
-}
+type PrefChannel = "email" | "inApp";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -34,10 +31,10 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+    <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden text-foreground">
+      <div className="px-5 py-4 border-b border-border flex items-center gap-2">
         <Icon className="w-4 h-4 text-blue-500" />
-        <h2 className="font-semibold text-gray-800">{title}</h2>
+        <h2 className="font-semibold text-foreground">{title}</h2>
       </div>
       <div className="px-5 py-4">{children}</div>
     </div>
@@ -61,39 +58,39 @@ function ProfileSectionInner() {
   return (
     <div className="space-y-3">
       <div>
-        <p className="text-xs text-gray-500 mb-1">Connected wallet</p>
+        <p className="text-xs text-muted-foreground mb-1">Connected wallet</p>
         {wallet ? (
           <div className="flex items-center gap-2">
-            <code className="text-sm font-mono bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-lg break-all">
+            <code className="text-sm font-mono bg-muted text-foreground border border-border px-3 py-1.5 rounded-lg break-all">
               {wallet.publicKey}
             </code>
             <button
               onClick={handleCopy}
-              className="flex-shrink-0 p-1.5 rounded hover:bg-gray-100 transition-colors"
+              className="flex-shrink-0 p-1.5 rounded hover:bg-accent transition-colors"
               aria-label="Copy address"
             >
               {copied ? (
                 <Check className="w-4 h-4 text-green-500" />
               ) : (
-                <Copy className="w-4 h-4 text-gray-400" />
+                <Copy className="w-4 h-4 text-muted-foreground" />
               )}
             </button>
           </div>
         ) : (
-          <p className="text-sm text-gray-400 italic">No wallet connected</p>
+          <p className="text-sm text-muted-foreground italic">No wallet connected</p>
         )}
       </div>
       {wallet && (
-        <div className="flex gap-4 text-sm text-gray-500">
+        <div className="flex gap-4 text-sm text-muted-foreground">
           <span>
             Network:{" "}
-            <span className="font-medium text-gray-700 capitalize">
+            <span className="font-medium text-foreground capitalize">
               {wallet.network}
             </span>
           </span>
           <span>
             Provider:{" "}
-            <span className="font-medium text-gray-700 capitalize">
+            <span className="font-medium text-foreground capitalize">
               {wallet.walletType}
             </span>
           </span>
@@ -122,64 +119,58 @@ function ProfileSection() {
 
 // ── Notification Preferences ───────────────────────────────────────────────
 
-const DEFAULT_PREFS: NotificationPref[] = [
-  {
-    eventType: "ESCROW_FUNDED",
-    label: "Escrow funded",
-    email: true,
-    inApp: true,
-  },
-  {
-    eventType: "MILESTONE_RELEASED",
-    label: "Milestone released",
-    email: true,
-    inApp: true,
-  },
-  {
-    eventType: "DISPUTE_RAISED",
-    label: "Dispute raised",
-    email: true,
-    inApp: true,
-  },
-  {
-    eventType: "DISPUTE_RESOLVED",
-    label: "Dispute resolved",
-    email: true,
-    inApp: true,
-  },
-  {
-    eventType: "ESCROW_EXPIRED",
-    label: "Escrow expired",
-    email: false,
-    inApp: true,
-  },
-  {
-    eventType: "EXPIRATION_WARNING",
-    label: "Expiration warning",
-    email: true,
-    inApp: true,
-  },
-  {
-    eventType: "PARTY_JOINED",
-    label: "Party joined",
-    email: false,
-    inApp: true,
-  },
+const EVENT_LABELS: Record<string, string> = {
+  ESCROW_FUNDED: "Escrow funded",
+  MILESTONE_RELEASED: "Milestone released",
+  DISPUTE_RAISED: "Dispute raised",
+  DISPUTE_RESOLVED: "Dispute resolved",
+  ESCROW_EXPIRED: "Escrow expired",
+  EXPIRATION_WARNING: "Expiration warning",
+  PARTY_JOINED: "Party joined",
+  ESCROW_CREATED: "Escrow created",
+  ESCROW_COMPLETED: "Escrow completed",
+  ESCROW_CANCELLED: "Escrow cancelled",
+  CONDITION_FULFILLED: "Condition fulfilled",
+  CONDITION_CONFIRMED: "Condition confirmed",
+  PARTY_INVITED: "Party invited",
+  PARTY_ACCEPTED: "Party accepted",
+  PARTY_REJECTED: "Party rejected",
+};
+
+/** Ordered list of event types to display in the settings UI, derived from hook's known types */
+const DISPLAY_EVENT_TYPES: string[] = [
+  "ESCROW_FUNDED",
+  "MILESTONE_RELEASED",
+  "DISPUTE_RAISED",
+  "DISPUTE_RESOLVED",
+  "ESCROW_EXPIRED",
+  "EXPIRATION_WARNING",
+  "ESCROW_CREATED",
+  "ESCROW_COMPLETED",
+  "ESCROW_CANCELLED",
+  "CONDITION_FULFILLED",
+  "CONDITION_CONFIRMED",
+  "PARTY_INVITED",
+  "PARTY_ACCEPTED",
+  "PARTY_REJECTED",
 ];
 
 function Toggle({
   checked,
   onChange,
+  disabled = false,
 }: {
   checked: boolean;
   onChange: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       onClick={onChange}
+      disabled={disabled}
       className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-        checked ? "bg-blue-600" : "bg-gray-300"
-      }`}
+        disabled ? "opacity-50 cursor-not-allowed" : ""
+      } ${checked ? "bg-blue-600" : "bg-gray-300"}`}
     >
       <span
         className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
@@ -191,10 +182,18 @@ function Toggle({
 }
 
 function NotificationPrefsSection() {
-  const [prefs, setPrefs] = useState(DEFAULT_PREFS);
-  const [saved, setSaved] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  const {
+    preferences,
+    preferencesLoading,
+    savingPreferences,
+    updatePreferences,
+  } = useNotifications();
 
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [lastSaveSucceeded, setLastSaveSucceeded] = useState<boolean | null>(null);
+  const successTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Load sound preference from localStorage on mount
   useEffect(() => {
     const savedSound = localStorage.getItem('vaultix_sound_enabled');
     if (savedSound !== null) {
@@ -202,60 +201,133 @@ function NotificationPrefsSection() {
     }
   }, []);
 
-  const toggle = (index: number, field: "email" | "inApp") => {
-    setPrefs((prev) =>
-      prev.map((p, i) => (i === index ? { ...p, [field]: !p[field] } : p))
-    );
-    setSaved(false);
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    };
+  }, []);
+
+  /** Toggle a channel for an event type. The hook handles optimistic UI + debounced API save. */
+  const toggleChannel = async (eventType: string, channel: PrefChannel) => {
+    const updated: UserPreferences = {
+      ...preferences,
+      [eventType]: {
+        ...preferences[eventType],
+        [channel]: !preferences[eventType]?.[channel],
+      },
+    };
+
+    const success = await updatePreferences(updated);
+    setLastSaveSucceeded(success);
+
+    // Clear success/failure indicator after 3 seconds
+    if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    successTimerRef.current = setTimeout(() => setLastSaveSucceeded(null), 3000);
   };
 
   const handleToggleSound = () => {
     const nextVal = !soundEnabled;
     setSoundEnabled(nextVal);
     localStorage.setItem('vaultix_sound_enabled', String(nextVal));
-    setSaved(false);
   };
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
+  // Loading skeleton
+  if (preferencesLoading) {
+    return (
+      <SectionCard title="Notification Preferences" icon={Bell}>
+        <div className="space-y-4">
+          {/* Sound toggle skeleton */}
+          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+            <div className="space-y-1">
+              <div className="h-4 w-32 bg-gray-200 rounded animate-pulse" />
+              <div className="h-3 w-48 bg-gray-100 rounded animate-pulse" />
+            </div>
+            <div className="h-5 w-9 bg-gray-200 rounded-full animate-pulse" />
+          </div>
+          {/* Header skeleton */}
+          <div className="grid grid-cols-[1fr_auto_auto] gap-x-6">
+            <div className="h-3 w-10 bg-gray-100 rounded animate-pulse" />
+            <div className="h-3 w-10 bg-gray-100 rounded animate-pulse" />
+            <div className="h-3 w-10 bg-gray-100 rounded animate-pulse" />
+          </div>
+          {/* Row skeletons */}
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="grid grid-cols-[1fr_auto_auto] gap-x-6 items-center">
+              <div className="h-4 w-28 bg-gray-100 rounded animate-pulse" />
+              <div className="h-5 w-9 bg-gray-100 rounded-full animate-pulse" />
+              <div className="h-5 w-9 bg-gray-100 rounded-full animate-pulse" />
+            </div>
+          ))}
+          <div className="pt-2">
+            <div className="h-9 w-32 bg-gray-200 rounded-lg animate-pulse" />
+          </div>
+        </div>
+      </SectionCard>
+    );
+  }
 
   return (
     <SectionCard title="Notification Preferences" icon={Bell}>
       <div className="space-y-4">
         {/* Sound toggle */}
-        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+        <div className="flex items-center justify-between border-b border-border pb-3">
           <div>
-            <span className="text-sm font-medium text-gray-700 block">Notification Sound</span>
-            <span className="text-xs text-gray-400">Play a chime when a new notification is received</span>
+            <span className="text-sm font-medium text-foreground block">Notification Sound</span>
+            <span className="text-xs text-muted-foreground">Play a chime when a new notification is received</span>
           </div>
           <Toggle checked={soundEnabled} onChange={handleToggleSound} />
         </div>
 
-        <div className="grid grid-cols-[1fr_auto_auto] gap-x-6 text-xs text-gray-400 font-medium uppercase tracking-wider px-1 pt-1">
+        {/* Status indicator */}
+        {savingPreferences && (
+          <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-3 py-1.5 rounded-lg">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            Saving preferences…
+          </div>
+        )}
+        {!savingPreferences && lastSaveSucceeded === true && (
+          <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/50 px-3 py-1.5 rounded-lg">
+            <Check className="w-3 h-3" />
+            Preferences saved
+          </div>
+        )}
+        {!savingPreferences && lastSaveSucceeded === false && (
+          <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/50 px-3 py-1.5 rounded-lg">
+            <span className="font-medium">Failed to save</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-[1fr_auto_auto] gap-x-6 text-xs text-muted-foreground font-medium uppercase tracking-wider px-1 pt-1">
           <span>Event</span>
           <span>Email</span>
           <span>In-app</span>
         </div>
-        {prefs.map((pref, i) => (
-          <div
-            key={pref.eventType}
-            className="grid grid-cols-[1fr_auto_auto] gap-x-6 items-center"
-          >
-            <span className="text-sm text-gray-700">{pref.label}</span>
-            <Toggle checked={pref.email} onChange={() => toggle(i, "email")} />
-            <Toggle checked={pref.inApp} onChange={() => toggle(i, "inApp")} />
-          </div>
-        ))}
-        <div className="pt-2">
-          <button
-            onClick={handleSave}
-            className="text-sm px-4 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            {saved ? "Saved!" : "Save preferences"}
-          </button>
-        </div>
+        {DISPLAY_EVENT_TYPES.map((eventType) => {
+          const pref = preferences[eventType];
+          // Skip event types that aren't in the preferences map
+          if (!pref) return null;
+          return (
+            <div
+              key={eventType}
+              className="grid grid-cols-[1fr_auto_auto] gap-x-6 items-center"
+            >
+              <span className="text-sm text-foreground">
+                {EVENT_LABELS[eventType] || eventType}
+              </span>
+              <Toggle
+                checked={pref.email}
+                onChange={() => toggleChannel(eventType, "email")}
+                disabled={savingPreferences}
+              />
+              <Toggle
+                checked={pref.inApp}
+                onChange={() => toggleChannel(eventType, "inApp")}
+                disabled={savingPreferences}
+              />
+            </div>
+          );
+        })}
       </div>
     </SectionCard>
   );
@@ -267,23 +339,76 @@ function ApiKeysSection() {
   return <ApiKeyManager />;
 }
 
+// ── Currency Preferences Section ───────────────────────────────────────────
+
+function CurrencyPreferencesSection() {
+  const { currency, setCurrency, showFiat, setShowFiat } = useCurrency();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <SectionCard title="Currency Display" icon={DollarSign}>
+        <div className="text-sm text-muted-foreground italic">Loading…</div>
+      </SectionCard>
+    );
+  }
+
+  return (
+    <SectionCard title="Currency Display" icon={DollarSign}>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between border-b border-border pb-3">
+          <div>
+            <span className="text-sm font-medium text-foreground block">Show Fiat Equivalent</span>
+            <span className="text-xs text-muted-foreground">Display fiat equivalents alongside XLM amounts</span>
+          </div>
+          <Toggle checked={showFiat} onChange={() => setShowFiat(!showFiat)} />
+        </div>
+        
+        <div className="flex items-center justify-between pt-1">
+          <div>
+            <span className="text-sm font-medium text-foreground block">Preferred Currency</span>
+            <span className="text-xs text-muted-foreground">Choose your local currency for conversion</span>
+          </div>
+          <select
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value as any)}
+            className="text-sm border border-border bg-background text-foreground rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
+            disabled={!showFiat}
+          >
+            <option value="usd">USD</option>
+            <option value="eur">EUR</option>
+            <option value="ngn">NGN</option>
+            <option value="kes">KES</option>
+            <option value="ghs">GHS</option>
+            <option value="zar">ZAR</option>
+          </select>
+        </div>
+      </div>
+    </SectionCard>
+  );
+}
+
 // ── Templates Link Section ─────────────────────────────────────────────────
 
 function TemplatesLinkSection() {
   return (
     <Link href="/settings/templates">
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden hover:border-blue-300 transition-colors">
+      <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
         <div className="px-5 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-50 rounded-lg">
-              <SettingsIcon className="w-4 h-4 text-blue-600" />
+            <div className="p-2 bg-blue-50 dark:bg-blue-950/50 rounded-lg">
+              <SettingsIcon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-800">Manage Templates</h3>
-              <p className="text-xs text-gray-500">Create, edit, and delete your custom escrow templates</p>
+              <h3 className="font-semibold text-foreground">Manage Templates</h3>
+              <p className="text-xs text-muted-foreground">Create, edit, and delete your custom escrow templates</p>
             </div>
           </div>
-          <ArrowRight className="w-4 h-4 text-gray-400" />
+          <ArrowRight className="w-4 h-4 text-muted-foreground" />
         </div>
       </div>
     </Link>
@@ -294,15 +419,16 @@ function TemplatesLinkSection() {
 
 export default function SettingsPage() {
   return (
-    <div className="min-h-screen bg-gray-50 py-10 px-4">
+    <div className="min-h-screen bg-background text-foreground py-10 px-4">
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="flex items-center gap-3 mb-2">
           <Shield className="w-6 h-6 text-blue-500" />
-          <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+          <h1 className="text-2xl font-bold text-foreground">Settings</h1>
         </div>
 
         <ProfileSection />
         <TemplatesLinkSection />
+        <CurrencyPreferencesSection />
         <NotificationPrefsSection />
         <ApiKeysSection />
       </div>

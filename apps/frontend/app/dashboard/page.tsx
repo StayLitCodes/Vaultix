@@ -1,15 +1,21 @@
 "use client";
 
 import { Suspense, useCallback, useState } from "react";
+import { QueryErrorResetBoundary } from "@tanstack/react-query";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import StatusTabs from "@/components/dashboard/StatusTabs";
 import EscrowList from "@/components/dashboard/EscrowList";
 import EscrowFilters from "@/components/dashboard/EscrowFilters";
+import FilterBadges from "@/components/dashboard/FilterBadges";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ErrorFallback } from "@/components/ErrorFallback";
 import { useEscrows } from "../../hooks/useEscrows";
 import ActivityFeed from "@/components/common/ActivityFeed";
 import Link from "next/link";
 import { PlusCircle, Activity, X } from "lucide-react";
 import { useEscrowWebSocket } from "@/hooks/useEscrowWebSocket";
+import { EscrowCardSkeleton } from "@/components/ui/EscrowCardSkeleton";
+import { ActivityFeedSkeleton } from "@/components/ui/ActivityFeedSkeleton";
 
 function DashboardContent() {
   const searchParams = useSearchParams();
@@ -19,24 +25,17 @@ function DashboardContent() {
 
   useEscrowWebSocket();
 
-  const activeStatuses =
-    searchParams.get("status")?.split(",").filter(Boolean) || [];
+  const activeStatuses = searchParams.get("status")?.split(",").filter(Boolean) || [];
   const searchQuery = searchParams.get("search") || "";
-  const sortBy =
-    (searchParams.get("sort") as "date" | "amount" | "deadline") || "date";
+  const sortBy = (searchParams.get("sort") as "date" | "amount" | "deadline") || "date";
   const sortOrder = (searchParams.get("order") as "asc" | "desc") || "desc";
   const minAmount = searchParams.get("minAmount") || "";
   const maxAmount = searchParams.get("maxAmount") || "";
   const fromDate = searchParams.get("fromDate") || "";
   const toDate = searchParams.get("toDate") || "";
+  const walletAddress = searchParams.get("walletAddress") || "";
 
-  const hasActiveFilters =
-    activeStatuses.length > 0 ||
-    searchQuery ||
-    minAmount ||
-    maxAmount ||
-    fromDate ||
-    toDate;
+  const hasActiveFilters = activeStatuses.length > 0 || searchQuery || minAmount || maxAmount || fromDate || toDate || walletAddress;
 
   const createQueryString = useCallback(
     (paramsToUpdate: Record<string, string | null>) => {
@@ -55,37 +54,27 @@ function DashboardContent() {
     if (status === "all") {
       nextStatuses = [];
     } else {
-      nextStatuses = activeStatuses.includes(status)
-        ? activeStatuses.filter((s) => s !== status)
-        : [...activeStatuses, status];
+      nextStatuses = activeStatuses.includes(status) ? activeStatuses.filter((s) => s !== status) : [...activeStatuses, status];
     }
-    router.push(
-      `${pathname}?${createQueryString({ status: nextStatuses.length ? nextStatuses.join(",") : null })}`,
-    );
+    router.push(`${pathname}?${createQueryString({ status: nextStatuses.length ? nextStatuses.join(",") : null })}`);
   };
 
-  const handleSearch = (query: string) =>
-    router.push(`${pathname}?${createQueryString({ search: query })}`);
-  const handleSortChange = (
-    field: "date" | "amount" | "deadline",
-    order: "asc" | "desc",
-  ) => router.push(`${pathname}?${createQueryString({ sort: field, order })}`);
-  const handleAmountChange = (min: string, max: string) =>
-    router.push(
-      `${pathname}?${createQueryString({ minAmount: min, maxAmount: max })}`,
-    );
-  const handleDateChange = (from: string, to: string) =>
-    router.push(
-      `${pathname}?${createQueryString({ fromDate: from, toDate: to })}`,
-    );
+  const handleSearch = (query: string) => router.push(`${pathname}?${createQueryString({ search: query })}`);
+  const handleSortChange = (field: "date" | "amount" | "deadline", order: "asc" | "desc") => router.push(`${pathname}?${createQueryString({ sort: field, order })}`);
+  const handleAmountChange = (min: string, max: string) => router.push(`${pathname}?${createQueryString({ minAmount: min, maxAmount: max })}`);
+  const handleDateChange = (from: string, to: string) => router.push(`${pathname}?${createQueryString({ fromDate: from, toDate: to })}`);
+  const handleWalletAddressChange = (address: string) => router.push(`${pathname}?${createQueryString({ walletAddress: address })}`);
+  const handleClearFilter = (key: string) => router.push(`${pathname}?${createQueryString({ [key]: null })}`);
 
   const {
     data: escrowsData,
+    error: escrowsError,
     isLoading,
     isError,
     hasNextPage,
     fetchNextPage,
     isFetchingNextPage,
+    refetch: refetchEscrows,
   } = useEscrows({
     status: activeStatuses.join(","),
     search: searchQuery,
@@ -95,36 +84,23 @@ function DashboardContent() {
     maxAmount,
     fromDate,
     toDate,
+    walletAddress,
   });
 
-  const flatEscrows =
-    escrowsData?.pages.flatMap((page: any) => page.escrows) || [];
+  const flatEscrows = escrowsData?.pages.flatMap((page: any) => page.escrows) || [];
 
-  const validStatuses = [
-    "all",
-    "active",
-    "pending",
-    "completed",
-    "disputed",
-  ] as const;
+  const validStatuses = ["all", "active", "pending", "completed", "disputed"] as const;
   type ValidStatus = (typeof validStatuses)[number];
 
   const firstStatus = activeStatuses[0];
-  const activeTab: ValidStatus = validStatuses.includes(
-    firstStatus as ValidStatus,
-  )
-    ? (firstStatus as ValidStatus)
-    : "all";
+  const activeTab: ValidStatus = validStatuses.includes(firstStatus as ValidStatus) ? (firstStatus as ValidStatus) : "all";
 
   return (
     <>
       {/* Mobile Activity Drawer */}
       {showActivity && (
         <div className="fixed inset-0 z-50 lg:hidden">
-          <div
-            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-            onClick={() => setShowActivity(false)}
-          />
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowActivity(false)} />
           <div className="absolute right-0 top-0 h-full w-full max-w-sm bg-card text-card-foreground shadow-2xl flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-border">
               <h2 className="font-semibold text-foreground">Activity Feed</h2>
@@ -137,7 +113,9 @@ function DashboardContent() {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
-              <ActivityFeed />
+              <ErrorBoundary fallback={({ error, reset }) => <ErrorFallback error={error} reset={reset} title="Failed to load activity" compact />}>
+                <ActivityFeed />
+              </ErrorBoundary>
             </div>
           </div>
         </div>
@@ -174,9 +152,18 @@ function DashboardContent() {
             </div>
           </div>
 
-          <StatusTabs
+          <StatusTabs activeStatuses={activeStatuses} onToggleStatus={handleToggleStatus} />
+          <FilterBadges
+            searchQuery={searchQuery}
+            minAmount={minAmount}
+            maxAmount={maxAmount}
+            fromDate={fromDate}
+            toDate={toDate}
             activeStatuses={activeStatuses}
-            onToggleStatus={handleToggleStatus}
+            walletAddress={walletAddress}
+            onWalletAddressChange={handleWalletAddressChange}
+            onClear={handleClearFilter}
+            onClearAll={() => router.push(pathname)}
           />
           <EscrowFilters
             searchQuery={searchQuery}
@@ -191,19 +178,24 @@ function DashboardContent() {
             toDate={toDate}
             onDateChange={handleDateChange}
           />
-          <EscrowList
-            escrows={flatEscrows}
-            isLoading={isLoading}
-            isError={isError}
-            activeTab={activeTab}
-            hasNextPage={hasNextPage}
-            fetchNextPage={fetchNextPage}
-            isFetchingNextPage={isFetchingNextPage}
-          />
+          <ErrorBoundary fallback={({ error, reset }) => <ErrorFallback error={error} reset={reset} title="Failed to load escrows" compact />}>
+            <EscrowList
+              escrows={flatEscrows}
+              isLoading={isLoading}
+              isError={isError}
+              activeTab={activeTab}
+              hasNextPage={hasNextPage}
+              fetchNextPage={fetchNextPage}
+              isFetchingNextPage={isFetchingNextPage}
+              searchedAddress={walletAddress}
+            />
+          </ErrorBoundary>
         </div>
 
         <div className="hidden lg:block lg:col-span-1">
-          <ActivityFeed className="h-[calc(100vh-12rem)] sticky top-8" />
+          <ErrorBoundary fallback={({ error, reset }) => <ErrorFallback error={error} reset={reset} title="Failed to load activity" compact />}>
+            <ActivityFeed className="h-[calc(100vh-12rem)] sticky top-8" />
+          </ErrorBoundary>
         </div>
       </div>
     </>
@@ -215,22 +207,43 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-background text-foreground py-6 sm:py-12">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-6 sm:mb-10">
-          <h1 className="text-2xl sm:text-4xl font-extrabold text-foreground">
-            Escrow Dashboard
-          </h1>
-          <p className="mt-2 sm:mt-4 text-base sm:text-lg text-muted-foreground">
-            Manage all your escrow agreements in one place
-          </p>
+          <h1 className="text-2xl sm:text-4xl font-extrabold text-foreground">Escrow Dashboard</h1>
+          <p className="mt-2 sm:mt-4 text-base sm:text-lg text-muted-foreground">Manage all your escrow agreements in one place</p>
         </div>
-        <Suspense
-          fallback={
-            <div className="text-center py-20 text-muted-foreground">
-              Loading Dashboard...
-            </div>
-          }
-        >
-          <DashboardContent />
-        </Suspense>
+        <QueryErrorResetBoundary>
+          {({ reset }) => (
+            <ErrorBoundary
+              onReset={reset}
+              fallback={({ error, reset: boundaryReset }) => (
+                <ErrorFallback
+                  error={error}
+                  reset={() => {
+                    reset();
+                    boundaryReset();
+                  }}
+                  title="Failed to load dashboard"
+                />
+              )}
+            >
+              <Suspense
+                fallback={
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2 bg-card text-card-foreground rounded-xl shadow-sm border border-border p-4 sm:p-6 space-y-4">
+                      {Array.from({ length: 3 }).map((_, i) => (
+                        <EscrowCardSkeleton key={i} />
+                      ))}
+                    </div>
+                    <div className="hidden lg:block lg:col-span-1">
+                      <ActivityFeedSkeleton />
+                    </div>
+                  </div>
+                }
+              >
+                <DashboardContent />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+        </QueryErrorResetBoundary>
       </div>
     </div>
   );

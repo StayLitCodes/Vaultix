@@ -4,9 +4,12 @@ import { UserService } from '../../user/user.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { EmailVerification } from '../../user/entities/email-verification.entity';
 import { IpfsService } from '../../ipfs/ipfs.service';
+import { EmailService } from '../../../email/email.service';
+import { PreferenceService } from '../../../notifications/preference.service';
 
 // Mock Stellar SDK
 jest.mock('stellar-sdk', () => ({
@@ -24,6 +27,8 @@ describe('AuthService', () => {
   let configService: jest.Mocked<ConfigService>;
   let emailVerificationRepository: any;
   let ipfsService: any;
+  let emailService: { sendEmail: jest.Mock };
+  let preferenceService: { seedDefaultPreferences: jest.Mock };
 
   const mockUser = {
     id: 'user-id',
@@ -81,6 +86,18 @@ describe('AuthService', () => {
             getGatewayUrl: jest.fn(),
           },
         },
+        {
+          provide: EmailService,
+          useValue: {
+            sendEmail: jest.fn(),
+          },
+        },
+        {
+          provide: PreferenceService,
+          useValue: {
+            seedDefaultPreferences: jest.fn().mockResolvedValue([]),
+          },
+        },
       ],
     }).compile();
 
@@ -92,6 +109,8 @@ describe('AuthService', () => {
       getRepositoryToken(EmailVerification),
     );
     ipfsService = module.get(IpfsService);
+    emailService = module.get(EmailService);
+    preferenceService = module.get(PreferenceService);
   });
 
   it('should be defined', () => {
@@ -111,6 +130,26 @@ describe('AuthService', () => {
         walletAddress: 'GD...123',
         nonce: expect.any(String),
       });
+    });
+
+    it('should seed default notification preferences for a new user', async () => {
+      userService.findByWalletAddress.mockResolvedValue(null);
+      userService.create.mockResolvedValue(mockUser as any);
+
+      await service.generateChallenge('GD...123');
+
+      expect(preferenceService.seedDefaultPreferences).toHaveBeenCalledWith(
+        mockUser.id,
+      );
+    });
+
+    it('should not seed preferences when the user already exists', async () => {
+      userService.findByWalletAddress.mockResolvedValue(mockUser as any);
+      userService.update.mockResolvedValue(mockUser as any);
+
+      await service.generateChallenge('GD...123');
+
+      expect(preferenceService.seedDefaultPreferences).not.toHaveBeenCalled();
     });
 
     it('should update nonce if user exists', async () => {
@@ -176,6 +215,53 @@ describe('AuthService', () => {
       expect(userService.invalidateRefreshToken).toHaveBeenCalledWith(
         'refresh-token',
       );
+    });
+  });
+
+  describe('sendEmailVerification', () => {
+    it('should save a token and queue the verification email', async () => {
+      const userWithEmail = {
+        id: 'user-id',
+        email: 'user@example.com',
+        displayName: 'Alice',
+      };
+      userService.findById.mockResolvedValue(userWithEmail as any);
+      configService.get.mockReturnValue(
+        'http://localhost:3000/auth/profile/verify-email',
+      );
+      emailVerificationRepository.create.mockImplementation(
+        (input: any) => input,
+      );
+      emailVerificationRepository.save.mockImplementation((input: any) =>
+        Promise.resolve(input),
+      );
+      emailService.sendEmail.mockResolvedValue({} as any);
+
+      await service.sendEmailVerification('user-id');
+
+      expect(emailVerificationRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-id',
+          token: expect.any(String),
+        }),
+      );
+      const savedToken = emailVerificationRepository.save.mock.calls[0][0]
+        .token as string;
+      expect(emailService.sendEmail).toHaveBeenCalledWith(
+        'user@example.com',
+        expect.stringContaining('Verify'),
+        expect.stringContaining(savedToken),
+        expect.stringContaining(savedToken),
+      );
+    });
+
+    it('should throw if the user has no email set', async () => {
+      userService.findById.mockResolvedValue({ id: 'user-id' } as any);
+
+      await expect(service.sendEmailVerification('user-id')).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(emailService.sendEmail).not.toHaveBeenCalled();
     });
   });
 
