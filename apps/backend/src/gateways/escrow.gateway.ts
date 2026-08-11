@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { InjectRepository } from '@nestjs/typeorm';
 import {
   OnGatewayConnection,
   OnGatewayDisconnect,
@@ -8,6 +9,8 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { Repository } from 'typeorm';
+import { EscrowEvent } from '../modules/escrow/entities/escrow-event.entity';
 
 interface EscrowEventData {
   [key: string]: unknown;
@@ -21,6 +24,11 @@ interface JwtPayload {
 
 interface ClientAuthPayload {
   token?: string;
+}
+
+interface ReconnectPayload {
+  escrowIds?: string[];
+  lastCursor?: string;
 }
 
 @WebSocketGateway({
@@ -40,7 +48,11 @@ export class EscrowGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly socketUserMap = new Map<string, string>();
   private readonly socketEscrowMap = new Map<string, Set<string>>();
 
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: JwtService,
+    @InjectRepository(EscrowEvent)
+    private readonly eventRepository: Repository<EscrowEvent>,
+  ) {}
 
   private extractToken(client: Socket): string | undefined {
     const authPayload = client.handshake.auth as ClientAuthPayload | undefined;
@@ -183,7 +195,7 @@ export class EscrowGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @SubscribeMessage('reconnect')
   async handleReconnect(
     client: Socket,
-    payload: { escrowIds?: string[] },
+    payload: ReconnectPayload,
   ): Promise<void> {
     if (payload?.escrowIds?.length) {
       for (const escrowId of payload.escrowIds) {
@@ -192,7 +204,46 @@ export class EscrowGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     const userId = this.socketUserMap.get(client.id);
-    client.emit('reconnected', { userId, socketId: client.id });
+    const missedEvents = await this.findMissedEvents(
+      userId,
+      payload?.escrowIds,
+      payload?.lastCursor,
+    );
+    client.emit('reconnected', {
+      userId,
+      socketId: client.id,
+      missedEvents,
+      latestCursor:
+        missedEvents[missedEvents.length - 1]?.cursor ?? payload?.lastCursor,
+    });
+  }
+
+  private async findMissedEvents(
+    userId?: string,
+    escrowIds?: string[],
+    lastCursor?: string,
+  ): Promise<EscrowEvent[]> {
+    if (
+      !userId ||
+      !escrowIds?.length ||
+      !lastCursor ||
+      !/^\d+$/.test(lastCursor)
+    ) {
+      return [];
+    }
+
+    return this.eventRepository
+      .createQueryBuilder('event')
+      .innerJoin('event.escrow', 'escrow')
+      .leftJoin('escrow.parties', 'party')
+      .where('event.escrowId IN (:...escrowIds)', { escrowIds })
+      .andWhere('event.cursor > :lastCursor', { lastCursor })
+      .andWhere('(escrow.creatorId = :userId OR party.userId = :userId)', {
+        userId,
+      })
+      .orderBy('event.cursor', 'ASC')
+      .take(100)
+      .getMany();
   }
 
   broadcastEscrowStatusChanged(escrowId: string, data: EscrowEventData): void {

@@ -3,12 +3,14 @@ import { EscrowGateway } from './escrow.gateway';
 describe('EventsGateway', () => {
   let gateway: EscrowGateway;
   let jwtService: { verify: jest.Mock };
+  let eventRepository: { createQueryBuilder: jest.Mock };
 
   beforeEach(() => {
     jwtService = {
       verify: jest.fn().mockReturnValue({ sub: 'user-1' }),
     };
-    gateway = new EscrowGateway(jwtService as any);
+    eventRepository = { createQueryBuilder: jest.fn() };
+    gateway = new EscrowGateway(jwtService as any, eventRepository as any);
   });
 
   it('authenticates a socket and emits a connected event', async () => {
@@ -49,6 +51,40 @@ describe('EventsGateway', () => {
     expect(emit).toHaveBeenCalledWith(
       'notification.new',
       expect.objectContaining({ message: 'new message' }),
+    );
+  });
+
+  it('returns authorized missed events in cursor order on reconnect', async () => {
+    const missedEvents = [{ id: 'event-2', cursor: '2' }];
+    const queryBuilder = {
+      innerJoin: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue(missedEvents),
+    };
+    eventRepository.createQueryBuilder.mockReturnValue(queryBuilder);
+    gateway['socketUserMap'].set('socket-1', 'user-1');
+    const client = {
+      id: 'socket-1',
+      emit: jest.fn(),
+      join: jest.fn(),
+    };
+
+    await gateway.handleReconnect(client as any, {
+      escrowIds: ['esc-1'],
+      lastCursor: '1',
+    });
+
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+      '(escrow.creatorId = :userId OR party.userId = :userId)',
+      { userId: 'user-1' },
+    );
+    expect(client.emit).toHaveBeenCalledWith(
+      'reconnected',
+      expect.objectContaining({ missedEvents, latestCursor: '2' }),
     );
   });
 });
