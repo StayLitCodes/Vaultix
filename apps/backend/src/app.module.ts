@@ -35,6 +35,7 @@ import { IpfsModule } from './modules/ipfs/ipfs.module';
 import { HealthModule } from './modules/health/health.module';
 import { AppVersionModule } from './app-version/app-version.module';
 import { EventsModule } from './gateways/events.module';
+import { FeesModule } from './modules/fees/fees.module';
 import stellarConfig from './config/stellar.config';
 import ipfsConfig from './config/ipfs.config';
 
@@ -91,6 +92,7 @@ import ipfsConfig from './config/ipfs.config';
     IpfsModule,
     HealthModule,
     AppVersionModule,
+    FeesModule,
     JwtModule.registerAsync({
       useFactory: (configService: ConfigService) => ({
         secret:
@@ -104,4 +106,4 @@ import ipfsConfig from './config/ipfs.config';
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule { }

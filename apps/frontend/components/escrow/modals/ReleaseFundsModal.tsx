@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { IEscrowExtended } from "@/types/escrow";
 import TransactionTracker from "@/components/stellar/TransactionTracker";
+import { calculateFee, calculateTieredFeeBps, BPS_DENOMINATOR, formatFeePercentage } from "@/lib/fee";
 
 type ReleaseMode = "manual" | "auto";
 
@@ -28,9 +29,6 @@ interface ReleaseFundsModalProps {
 }
 
 type Step = "review" | "confirm" | "success";
-
-const PLATFORM_FEE_BPS = 50;
-const BPS_DENOMINATOR = 10_000;
 
 export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
   isOpen,
@@ -72,13 +70,14 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
     })} ${escrow.asset}`;
   }, [escrow.amount, escrow.asset]);
 
-  const { feeAmount, recipientAmount } = useMemo(() => {
+  const { feeAmount, recipientAmount, feeBps } = useMemo(() => {
     const rawAmount = Number(escrow.amount);
     if (Number.isNaN(rawAmount)) {
-      return { feeAmount: null, recipientAmount: null };
+      return { feeAmount: null, recipientAmount: null, feeBps: 0 };
     }
 
-    const fee = (rawAmount * PLATFORM_FEE_BPS) / BPS_DENOMINATOR;
+    const currentFeeBps = calculateTieredFeeBps(rawAmount);
+    const fee = calculateFee(rawAmount);
     const recipient = rawAmount - fee;
 
     return {
@@ -90,6 +89,7 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
         minimumFractionDigits: 2,
         maximumFractionDigits: 7,
       })} ${escrow.asset}`,
+      feeBps: currentFeeBps,
     };
   }, [escrow.amount, escrow.asset]);
 
@@ -208,11 +208,10 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
 
           {!isAlreadyReleased && step !== "success" && (
             <div
-              className={`p-4 rounded-lg border ${
-                step === "confirm"
-                  ? "bg-amber-50 border-amber-200"
-                  : "bg-slate-50 border-slate-200"
-              }`}
+              className={`p-4 rounded-lg border ${step === "confirm"
+                ? "bg-amber-50 border-amber-200"
+                : "bg-slate-50 border-slate-200"
+                }`}
             >
               <div className="flex items-start space-x-3">
                 {step === "confirm" ? (
@@ -222,18 +221,16 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
                 )}
                 <div>
                   <h4
-                    className={`font-semibold ${
-                      step === "confirm" ? "text-amber-800" : "text-slate-900"
-                    }`}
+                    className={`font-semibold ${step === "confirm" ? "text-amber-800" : "text-slate-900"
+                      }`}
                   >
                     {step === "confirm"
                       ? "Confirm on-chain release"
                       : "Review payout details"}
                   </h4>
                   <p
-                    className={`text-sm mt-1 ${
-                      step === "confirm" ? "text-amber-700" : "text-slate-600"
-                    }`}
+                    className={`text-sm mt-1 ${step === "confirm" ? "text-amber-700" : "text-slate-600"
+                      }`}
                   >
                     {step === "confirm"
                       ? "This will submit a blockchain transaction to release escrowed funds. This action cannot be undone."
@@ -305,8 +302,8 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
                       Platform fee (estimated)
                     </p>
                     <p className="text-sm text-gray-900">
-                      {feeAmount} ({PLATFORM_FEE_BPS / 100}
-                      %)
+                      {feeAmount} ({formatFeePercentage(feeBps)}
+                      )
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
                       Based on the current on-chain configuration. The exact fee
@@ -362,13 +359,12 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
               type="button"
               onClick={handlePrimaryAction}
               disabled={primaryDisabled}
-              className={`flex-1 px-4 py-2.5 font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                step === "success"
+              className={`flex-1 px-4 py-2.5 font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${step === "success"
+                ? "bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-500"
+                : step === "confirm"
                   ? "bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-500"
-                  : step === "confirm"
-                    ? "bg-emerald-600 text-white hover:bg-emerald-700 focus:ring-emerald-500"
-                    : "bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500"
-              }`}
+                  : "bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500"
+                }`}
             >
               {isSubmitting ? (
                 <span className="flex items-center justify-center space-x-2">
