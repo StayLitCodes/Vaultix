@@ -116,7 +116,7 @@ Run all of these from `apps/mobile`.
 | `pnpm start` | Runs `expo start` — starts the Metro bundler and prints a QR code / dev-server URL. Press `a` for Android, `i` for iOS, `w` for web, `r` to reload, `j` to open the debugger. |
 | `pnpm android` | Runs `expo start --android` — starts Metro and launches the app on a running Android emulator or a USB-connected device (`adb devices` must list it). |
 | `pnpm ios` | Runs `expo start --ios` — starts Metro and launches the app in the iOS simulator (macOS + Xcode only). |
-| `pnpm lint` | Runs `eslint . --ext .ts,.tsx` over the app sources. |
+| `pnpm lint` | Runs `eslint . --ext .ts,.tsx` using `.eslintrc.js` (TypeScript parser + `@typescript-eslint` recommended rules). |
 | `pnpm type-check` | Runs `tsc --noEmit` using `tsconfig.json` (strict mode, `@/*` path alias). |
 | `pnpm test` | Runs the Jest suite with the `jest-expo` preset over `__tests__/`, `utils/*.test.ts` and `services/cache/*.test.ts`. |
 
@@ -190,9 +190,10 @@ apps/mobile
 │                       # environment (dev/testnet/production) and its API/RPC URLs
 ├── utils/              # Framework-agnostic helpers: error mapping, network checks, retry,
 │                       # SecureStore wrappers, QR payload validation
-├── types/              # Shared TypeScript types (escrow, notification, qr)
+├── types/              # Shared TypeScript types (escrow, notification, qr) and ambient declarations
 ├── __tests__/          # Jest test suites
 ├── app.json            # Expo app config (scheme `vaultix`, bundle id `io.vaultix.mobile`)
+├── .eslintrc.js        # ESLint config for the app sources
 ├── babel.config.js     # Babel config (`babel-preset-expo`)
 └── tsconfig.json       # Strict TypeScript config with the `@/*` path alias
 ```
@@ -239,19 +240,9 @@ rm -rf node_modules && pnpm install
 - Wrong package versions for the SDK: `npx expo install --check` lists mismatches and `npx expo install --fix` pins the SDK 52-compatible versions.
 - Corrupted store or partial install: `rm -rf node_modules pnpm-lock.yaml && pnpm store prune && pnpm install` (re-resolves from `package.json`).
 
-**`pnpm test` fails immediately with `SyntaxError: Unexpected identifier 'ErrorHandler'`**
+**Jest fails with `SyntaxError: Unexpected identifier 'ErrorHandler'`**
 
-pnpm's default symlinked layout places React Native packages under `node_modules/.pnpm/...`, which the `jest-expo` `transformIgnorePatterns` do not match, so Flow-typed RN sources are never transpiled. Run Jest with the patterns overridden:
-
-```bash
-npx jest --transformIgnorePatterns "/node_modules/react-native-reanimated/plugin/"
-```
-
-Alternatively, install this app's dependencies with `npm install --legacy-peer-deps` (flat `node_modules`), after which `pnpm test` / `npx jest` runs unmodified.
-
-**`pnpm lint` reports "ESLint couldn't find a configuration file"**
-
-`apps/mobile` does not yet ship an ESLint config (the root config lives with the frontend/backend apps). Until one is added, use `pnpm type-check` for static checking, or generate a local config with `npx eslint --init` (choose TypeScript + React Native) — do not commit it without coordinating with maintainers.
+pnpm's symlinked layout places React Native packages under `node_modules/.pnpm/<pkg>@<version>/node_modules/...`, which the stock `jest-expo` `transformIgnorePatterns` do not match, so Flow-typed RN sources are never transpiled. The `jest.transformIgnorePatterns` entry in `package.json` accounts for the extra `.pnpm/<pkg>@<version>/node_modules/` segment — if you see this error, make sure you have not overridden it locally.
 
 **Emulator / device connection issues**
 
@@ -261,9 +252,8 @@ Alternatively, install this app's dependencies with `npm install --legacy-peer-d
 - Port `8081` already in use: `npx expo start --port 8082`, or kill the process with `lsof -ti:8081 | xargs kill`.
 - iOS simulator does not open: run `open -a Simulator` first, and ensure `xcode-select -p` points at your Xcode installation.
 
-**Known pre-existing failures (not caused by your setup)**
+**`pnpm lint` prints warnings**
 
-- `pnpm type-check` currently reports TypeScript errors in `app/escrow/create.tsx` (the file contains escaped literal newlines).
-- `__tests__/session.test.ts`, `__tests__/walletAuth.test.ts` and one assertion in `__tests__/api.test.ts` fail on a clean checkout.
+Unused-import and `no-explicit-any` findings are reported as warnings, so the command exits `0`. Only errors fail the script.
 
 Report anything else in [GitHub Issues](https://github.com/paris27-A/Vaultix/issues), and see the root [README](../../README.md) and [CONTRIBUTING.md](../../CONTRIBUTING.md) for repository-wide workflow.

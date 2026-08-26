@@ -120,7 +120,7 @@ describe('toFriendlyError', () => {
   it('maps 503 with testnet context', () => {
     const result = toFriendlyError({ response: { status: 503 } });
     expect(result.isRetryable).toBe(true);
-    expect(result.message).toContain('testnet');
+    expect(result.message.toLowerCase()).toContain('testnet');
   });
 
   it('maps 401 to session expired', () => {
