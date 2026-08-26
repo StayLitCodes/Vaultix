@@ -12,6 +12,10 @@ on:
       - 'apps/onchain/**'
       - '.github/workflows/contract-ci.yml'
 
+env:
+  WASM_SIZE_WARNING_KB: 500
+  WASM_SIZE_FAIL_KB: 1024
+
 jobs:
   test:
     name: Test Suite
@@ -43,3 +47,68 @@ jobs:
 
       - name: Run tests
         run: cargo test
+
+  build-wasm:
+    name: Build WASM Artifact
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/onchain
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "apps/onchain"
+
+      - name: Build release wasm
+        run: cargo build --target wasm32-unknown-unknown --release
+
+      - name: Determine artifact name
+        id: artifact
+        run: |
+          CRATE_NAME=$(grep '^name' Cargo.toml | head -1 | sed 's/name *= *"\(.*\)"/\1/')
+          echo "crate_name=${CRATE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "wasm_path=target/wasm32-unknown-unknown/release/${CRATE_NAME}.wasm" >> "$GITHUB_OUTPUT"
+
+      - name: Report wasm file size
+        run: |
+          WASM_PATH="${{ steps.artifact.outputs.wasm_path }}"
+          if [ ! -f "$WASM_PATH" ]; then
+            echo "::error::WASM file not found at $WASM_PATH"
+            exit 1
+          fi
+          SIZE_BYTES=$(stat -c%s "$WASM_PATH")
+          SIZE_KB=$((SIZE_BYTES / 1024))
+          echo "## WASM Build Result" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| File | ${{ steps.artifact.outputs.crate_name }}.wasm |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Size | ${SIZE_KB} KB (${SIZE_BYTES} bytes) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Size ceiling: warning at ${{ env.WASM_SIZE_WARNING_KB }} KB, fail at ${{ env.WASM_SIZE_FAIL_KB }} KB" >> "$GITHUB_STEP_SUMMARY"
+          echo ""
+          echo "WASM size: ${SIZE_KB} KB (${SIZE_BYTES} bytes)"
+          if [ "$SIZE_KB" -ge "${{ env.WASM_SIZE_FAIL_KB }}" ]; then
+            echo "::error::WASM binary is ${SIZE_KB} KB, exceeding the hard limit of ${{ env.WASM_SIZE_FAIL_KB }} KB"
+            exit 1
+          elif [ "$SIZE_KB" -ge "${{ env.WASM_SIZE_WARNING_KB }}" ]; then
+            echo "::warning::WASM binary is ${SIZE_KB} KB, exceeding the soft limit of ${{ env.WASM_SIZE_WARNING_KB }} KB"
+          fi
+
+      - name: Upload wasm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.crate_name }}-wasm
+          path: apps/onchain/${{ steps.artifact.outputs.wasm_path }}
+          if-no-files-found: error
+          retention-days: 30
