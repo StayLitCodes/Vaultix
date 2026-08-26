@@ -14,14 +14,14 @@ jest.mock('../services/wallet', () => ({
   signMessage: jest.fn(),
 }));
 
-const store = new Map<string, string>();
+const mockStore = new Map<string, string>();
 jest.mock('../utils/secureStore', () => ({
   saveSecureItem: jest.fn(async (key: string, value: string) => {
-    store.set(key, value);
+    mockStore.set(key, value);
   }),
-  getSecureItem: jest.fn(async (key: string) => store.get(key) ?? null),
+  getSecureItem: jest.fn(async (key: string) => mockStore.get(key) ?? null),
   deleteSecureItem: jest.fn(async (key: string) => {
-    store.delete(key);
+    mockStore.delete(key);
   }),
 }));
 
@@ -39,7 +39,7 @@ const mockChallenge = authApi.requestChallenge as jest.Mock;
 const mockVerify = authApi.verifySignature as jest.Mock;
 
 beforeEach(() => {
-  store.clear();
+  mockStore.clear();
   __resetSessionForTests();
   jest.clearAllMocks();
 
@@ -65,8 +65,8 @@ describe('signInWithBuiltInWallet', () => {
 
     expect(session.walletAddress).toBe(ADDRESS);
     expect(getAccessToken()).toBe('access.jwt');
-    expect(store.get('vaultix-access-token')).toBe('access.jwt');
-    expect(store.get('vaultix-refresh-token')).toBe('refresh.jwt');
+    expect(mockStore.get('vaultix-access-token')).toBe('access.jwt');
+    expect(mockStore.get('vaultix-refresh-token')).toBe('refresh.jwt');
   });
 
   it('never invents a token or address', async () => {
@@ -80,7 +80,7 @@ describe('signInWithBuiltInWallet', () => {
 
     await expect(signInWithBuiltInWallet()).rejects.toMatchObject({ code: 'ERR_NETWORK' });
     expect(getSession()).toBeNull();
-    expect(store.size).toBe(0);
+    expect(mockStore.size).toBe(0);
   });
 
   it('propagates a rejected signature without signing in', async () => {

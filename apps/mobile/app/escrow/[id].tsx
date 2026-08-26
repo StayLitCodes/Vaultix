@@ -2,7 +2,14 @@
  * #315 – Mobile Escrow Detail: milestones, parties, timeline, role-gated actions
  */
 import React, { useCallback, useEffect, useState } from 'react';
-import {\n  ActivityIndicator,\n  ScrollView,\n  StyleSheet,\n  Text,\n  TouchableOpacity,\n  View,\n} from 'react-native';
+import {
+  ActivityIndicator,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { escrowApi } from '../../services/api';
 import { requireAuth } from '../../services/auth';
@@ -53,8 +60,8 @@ function MilestoneRow({ milestone, canRelease, onRelease }: {
         <TouchableOpacity
           style={styles.releaseBtn}
           onPress={() => onRelease(milestone.id)}
-          accessibilityRole=\"button\"
-          accessibilityLabel={release milestone ${milestone.title}}
+          accessibilityRole="button"
+          accessibilityLabel={`release milestone ${milestone.title}`}
         >
           <Text style={styles.releaseBtnText}>Release</Text>
         </TouchableOpacity>
@@ -75,7 +82,7 @@ function PartyRow({ party }: { party: Party }) {
           {party.status}
         </Text>
       </View>
-      <CopyButton value={party.walletAddress} label=\"Copy\" compact />
+      <CopyButton value={party.walletAddress} label="Copy" compact />
     </View>
   );
 }
@@ -171,7 +178,7 @@ export default function EscrowDetailScreen() {
   const canReleaseMilestones =
     CURRENT_USER_ROLE === 'depositor' &&
     ['funded', 'confirmed'].includes(escrow.status) &&
-    %hasActiveDispute;
+    !hasActiveDispute;
 
   return (
     <View style={styles.root}>
@@ -188,8 +195,8 @@ export default function EscrowDetailScreen() {
 
       {/* Share & Copy row */}
       <View style={styles.shareRow}>
-        <CopyButton value={escrow.id} label=\"Copy Escrow ID\" toastMessage=\"Escrow ID copied!\" variant=\"ghost\" />
-        <ShareButton url={buildEscrowShareUrl(escrow.id)} label=\"Share Escrow\" variant=\"primary\" />
+        <CopyButton value={escrow.id} label="Copy Escrow ID" toastMessage="Escrow ID copied!" variant="ghost" />
+        <ShareButton url={buildEscrowShareUrl(escrow.id)} label="Share Escrow" variant="primary" />
       </View>
 
       {/* Amount & Deadline */}
@@ -205,7 +212,7 @@ export default function EscrowDetailScreen() {
       </View>
 
       {dispute && (
-        <Section title=\"Dispute Information\">
+        <Section title="Dispute Information">
           <DisputeDetailsCard status={dispute.status} reason={dispute.reason} />
           <ResolutionSummary dispute={dispute} />
         </Section>
@@ -213,9 +220,9 @@ export default function EscrowDetailScreen() {
 
       {/* Milestones */}
       {escrow.milestones && escrow.milestones.length > 0 && (
-        <Section title=\"Milestones\">
+        <Section title="Milestones">
           {escrow.milestones.map((m) => (
-            <MilestonRow
+            <MilestoneRow
               key={m.id}
               milestone={m}
               canRelease={canReleaseMilestones}
@@ -227,10 +234,109 @@ export default function EscrowDetailScreen() {
 
       {/* Parties */}
       {escrow.parties && escrow.parties.length > 0 && (
-        <Section title=\"Parties\">
+        <Section title="Parties">
           {escrow.parties.map((p) => <PartyRow key={p.id} party={p} />)}
         </Section>
       )}
 
       {/* Timeline */}
-      {escrow.events && escrow.events.length > 0 && (\n        <Section title=\"Activity Timeline\">\n          {escrow.events.map((e) => <TimelineItem key={e.id} event={e} />)}\n        </Section>\n      )}\n\n      {/* Role-gated actions */}\n      <Section title=\"Actions\">\n        {escrow.status === 'disputed' && CURRENT_USER_ROLE === 'arbitrator' && (\n          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#ef476f' }]}>\n            <Text style={styles.actionBtnText}>Resolve Dispute</Text>\n          </TouchableOpacity>\n        )}\n        {escrow.status === 'created' && CURRENT_USER_ROLE === 'depositor' && (\n          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#00b4d8' }]}>\n            <Text style={styles.actionBtnText}>Fund Escrow</Text>\n          </TouchableOpacity>\n        )}\n        {['funded', 'confirmed'].includes(escrow.status) && CURRENT_USER_ROLE === 'depositor' && !hasActiveDispute && (\n          <TouchableOpacity \n            style={[styles.actionBtn, { backgroundColor: '#ef476f22', borderWidth: 1, borderColor: '#ef476f' }]}\n            onPress={() => setDisputeModalVisible(true)}\n          >\n            <Text style={[styles.actionBtnText, { color: '#ef476f' }]}>Raise Dispute</Text>\n          </TouchableOpacity>\n        )}\n        {!['disputed', 'created', 'funded', 'confirmed'].includes(escrow.status) && (\n          <Text style={styles.noActions}>No actions available for this status.</Text>\n        )}\n      </Section>\n\n      <RaiseDisputeModal\n        visible={isDisputeModalVisible}\n        onClose={() => setDisputeModalVisible(false)}\n        onSubmit={async (reason, description) => {\n          const res = await raiseDispute(escrow.id, reason, description);\n          if (res.success) {\n            setDisputeModalVisible(false);\n          }\n        }}\n        isSubmitting={isSubmitting}\n      />\n      </ScrollView>\n    </View>\n  );\n}\n\nconst styles = StyleSheet.create({\n  root: { flex: 1, backgroundColor: '#12121f' },\n  container: { flex: 1, backgroundColor: '#12121f' },\n  content: { padding: 16, paddingBottom: 40 },\n  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#12121f' },\n  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },\n  title: { color: '#fff', fontSize: 20, fontWeight: '700', flex: 1, marginRight: 8 },\n  statusBadge: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4 },\n  statusText: { fontSize: 11, fontWeight: '700' },\n  description: { color: '#aaa', fontSize: 14, marginBottom: 16, lineHeight: 20 },\n  metaRow: { flexDirection: 'row', gap: 16, marginBottom: 8 },\n  metaItem: { flex: 1, backgroundColor: '#1e1e30', borderRadius: 10, padding: 12 },\n  metaLabel: { color: '#888', fontSize: 11, marginBottom: 4 },\n  metaValue: { color: '#fff', fontWeight: '600', fontSize: 15 },\n  section: { marginTop: 20 },\n  sectionTitle: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 10 },\n  milestoneRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1e1e30', borderRadius: 10, padding: 12, marginBottom: 8 },\n  milestoneInfo: { flex: 1, marginRight: 8 },\n  milestoneTitle: { color: '#fff', fontWeight: '600', fontSize: 14 },\n  milestoneAmount: { color: '#888', fontSize: 12, marginTop: 2 },\n  releasedBadge: { backgroundColor: '#06d6a022', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },\n  releasedText: { color: '#06d6a0', fontSize: 12, fontWeight: '600' },\n  releaseBtn: { backgroundColor: '#6c63ff', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },\n  releaseBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },\n  pendingBadge: { backgroundColor: '#2d2d44', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },\n  pendingText: { color: '#aaa', fontSize: 12 },\n  partyRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e1e30', borderRadius: 10, padding: 12, marginBottom: 8 },\n  partyInfo: { flex: 1, marginRight: 8 },\n  partyRole: { color: '#6c63ff', fontWeight: '700', fontSize: 12 },\n  partyAddress: { color: '#fff', fontSize: 14, marginTop: 2 },\n  partyStatus: { color: '#888', fontSize: 12, marginTop: 2 },\n  timelineItem: { flexDirection: 'row', marginBottom: 10 },\n  timelineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#6c63ff', marginTop: 5, marginRight: 10 },\n  timelineContent: { flex: 1 },\n  timelineEvent: { color: '#fff', fontSize: 14, fontWeight: '500' },\n  timelineDate: { color: '#777', fontSize: 12, marginTop: 2 },\n  skeletonHeader: { height: 22, backgroundColor: '#2d2d44', borderRadius: 4, marginBottom: 12, width: '60%' },\n  skeletonLine: { height: 12, backgroundColor: '#2d2d44', borderRadius: 4, marginBottom: 8, width: '90%' },\n  skeletonRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },\n  skeletonBox: { flex: 1, height: 70, backgroundColor: '#1e1e30', borderRadius: 10 },\n  skeletonSection: { height: 16, backgroundColor: '#2d2d44', borderRadius: 4, marginVertical: 16, width: '40%' },\n  skeletonCard: { height: 90, backgroundColor: '#1e1e30', borderRadius: 10, marginBottom: 12 },\n  errorEmoji: { fontSize: 36, marginBottom: 8 },\n  errorTitle: { color: '#ef476f', fontSize: 16, fontWeight: '700', marginBottom: 6, textAlign: 'center' },\n  errorMessage: { color: '#aaa', fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 16 },\n  retryBtn: { backgroundColor: '#6c63ff', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10 },\n  retryText: { color: '#fff', fontWeight: '600' },\n  shareRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },\n  actionBtn: { borderRadius: 10, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },\n  actionBtnText: { color: '#fff', fontWeight: '600', fontSize: 15 },\n  noActions: { color: '#777', fontSize: 14, textAlign: 'center', marginTop: 8 },\n});\n
+      {escrow.events && escrow.events.length > 0 && (
+        <Section title="Activity Timeline">
+          {escrow.events.map((e) => <TimelineItem key={e.id} event={e} />)}
+        </Section>
+      )}
+
+      {/* Role-gated actions */}
+      <Section title="Actions">
+        {escrow.status === 'disputed' && CURRENT_USER_ROLE === 'arbitrator' && (
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#ef476f' }]}>
+            <Text style={styles.actionBtnText}>Resolve Dispute</Text>
+          </TouchableOpacity>
+        )}
+        {escrow.status === 'created' && CURRENT_USER_ROLE === 'depositor' && (
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#00b4d8' }]}>
+            <Text style={styles.actionBtnText}>Fund Escrow</Text>
+          </TouchableOpacity>
+        )}
+        {['funded', 'confirmed'].includes(escrow.status) && CURRENT_USER_ROLE === 'depositor' && !hasActiveDispute && (
+          <TouchableOpacity 
+            style={[styles.actionBtn, { backgroundColor: '#ef476f22', borderWidth: 1, borderColor: '#ef476f' }]}
+            onPress={() => setDisputeModalVisible(true)}
+          >
+            <Text style={[styles.actionBtnText, { color: '#ef476f' }]}>Raise Dispute</Text>
+          </TouchableOpacity>
+        )}
+        {!['disputed', 'created', 'funded', 'confirmed'].includes(escrow.status) && (
+          <Text style={styles.noActions}>No actions available for this status.</Text>
+        )}
+      </Section>
+
+      <RaiseDisputeModal
+        escrowId={escrow.id}
+        visible={isDisputeModalVisible}
+        onClose={() => setDisputeModalVisible(false)}
+        onSubmit={async (reason, description) => {
+          const res = await raiseDispute(escrow.id, reason, description);
+          if (res.success) {
+            setDisputeModalVisible(false);
+          }
+        }}
+        isSubmitting={isSubmitting}
+      />
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: '#12121f' },
+  container: { flex: 1, backgroundColor: '#12121f' },
+  content: { padding: 16, paddingBottom: 40 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#12121f' },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
+  title: { color: '#fff', fontSize: 20, fontWeight: '700', flex: 1, marginRight: 8 },
+  statusBadge: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 4 },
+  statusText: { fontSize: 11, fontWeight: '700' },
+  description: { color: '#aaa', fontSize: 14, marginBottom: 16, lineHeight: 20 },
+  metaRow: { flexDirection: 'row', gap: 16, marginBottom: 8 },
+  metaItem: { flex: 1, backgroundColor: '#1e1e30', borderRadius: 10, padding: 12 },
+  metaLabel: { color: '#888', fontSize: 11, marginBottom: 4 },
+  metaValue: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  section: { marginTop: 20 },
+  sectionTitle: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 10 },
+  milestoneRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1e1e30', borderRadius: 10, padding: 12, marginBottom: 8 },
+  milestoneInfo: { flex: 1, marginRight: 8 },
+  milestoneTitle: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  milestoneAmount: { color: '#888', fontSize: 12, marginTop: 2 },
+  releasedBadge: { backgroundColor: '#06d6a022', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
+  releasedText: { color: '#06d6a0', fontSize: 12, fontWeight: '600' },
+  releaseBtn: { backgroundColor: '#6c63ff', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  releaseBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+  pendingBadge: { backgroundColor: '#2d2d44', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
+  pendingText: { color: '#aaa', fontSize: 12 },
+  partyRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e1e30', borderRadius: 10, padding: 12, marginBottom: 8 },
+  partyInfo: { flex: 1, marginRight: 8 },
+  partyRole: { color: '#6c63ff', fontWeight: '700', fontSize: 12 },
+  partyAddress: { color: '#fff', fontSize: 14, marginTop: 2 },
+  partyStatus: { color: '#888', fontSize: 12, marginTop: 2 },
+  timelineItem: { flexDirection: 'row', marginBottom: 10 },
+  timelineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#6c63ff', marginTop: 5, marginRight: 10 },
+  timelineContent: { flex: 1 },
+  timelineEvent: { color: '#fff', fontSize: 14, fontWeight: '500' },
+  timelineDate: { color: '#777', fontSize: 12, marginTop: 2 },
+  skeletonHeader: { height: 22, backgroundColor: '#2d2d44', borderRadius: 4, marginBottom: 12, width: '60%' },
+  skeletonLine: { height: 12, backgroundColor: '#2d2d44', borderRadius: 4, marginBottom: 8, width: '90%' },
+  skeletonRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  skeletonBox: { flex: 1, height: 70, backgroundColor: '#1e1e30', borderRadius: 10 },
+  skeletonSection: { height: 16, backgroundColor: '#2d2d44', borderRadius: 4, marginVertical: 16, width: '40%' },
+  skeletonCard: { height: 90, backgroundColor: '#1e1e30', borderRadius: 10, marginBottom: 12 },
+  errorEmoji: { fontSize: 36, marginBottom: 8 },
+  errorTitle: { color: '#ef476f', fontSize: 16, fontWeight: '700', marginBottom: 6, textAlign: 'center' },
+  errorMessage: { color: '#aaa', fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 16 },
+  retryBtn: { backgroundColor: '#6c63ff', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10 },
+  retryText: { color: '#fff', fontWeight: '600' },
+  shareRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  actionBtn: { borderRadius: 10, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  actionBtnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  noActions: { color: '#777', fontSize: 14, textAlign: 'center', marginTop: 8 },
+});

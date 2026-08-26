@@ -2,7 +2,16 @@
  * Dashboard tab: escrow list + filters by status
  * Features: status filter tabs, infinite scroll/pagination, skeleton loaders, pull-refresh
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react',"imaport {\n  ActivityIndicator,\n  FlatList,\n  RefreshControl,\n  StyleSheet,\n  Text,\n  TouchableOpacity,\n  View,\n  } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  } from 'react-native';
 import { useRouter } from 'expo-router';
 import { escrowApi } from '../../services/api';
 import { Escrow, EscrowStatus } from '../../types/escrow';

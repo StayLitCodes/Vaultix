@@ -149,21 +149,21 @@ Run all of these from `apps/mobile`.
 | `pnpm start` | Runs `expo start` — starts the Metro bundler and dev server, and prints a QR code for Expo Go plus interactive keys (`a` Android, `i` iOS, `r` reload, `j` debugger). |
 | `pnpm android` | Runs `expo start --android` — starts the dev server and opens the app on a running Android emulator or a USB-connected device (requires Android Studio / `adb`). |
 | `pnpm ios` | Runs `expo start --ios` — starts the dev server and opens the app in the iOS Simulator (macOS with Xcode only). |
-| `pnpm lint` | Runs `eslint . --ext .ts,.tsx` over the mobile sources. |
+| `pnpm lint` | Runs `eslint . --ext .ts,.tsx` over the mobile sources, using `.eslintrc.js`. |
 | `pnpm type-check` | Runs `tsc --noEmit` — type-checks the app in strict mode without emitting output. Run this before pushing. |
 | `pnpm test` | Runs the Jest suite (`jest-expo` preset) over `__tests__/` and co-located `*.test.ts` files. Use `pnpm test -- --watch` while developing and `pnpm test -- --coverage` for a coverage report. |
 
-### Known issues with these scripts
+### Tooling notes
 
-Three of the scripts currently fail on a clean checkout for reasons unrelated to your changes. They
-are listed here so you do not lose time debugging your own environment; fixing them requires
-changes outside this README.
-
-| Command | Symptom | Cause / workaround |
-| --- | --- | --- |
-| `pnpm lint` | `ESLint couldn't find an eslint.config.js file` | Neither `apps/mobile` nor the repository root ships an ESLint flat config (ESLint 9+ requires `eslint.config.js`), so the root `pnpm lint` fails the same way. Until a config is added, use `pnpm type-check` as the pre-push check. |
-| `pnpm test` | Every suite fails immediately with `SyntaxError: Unexpected identifier 'ErrorHandler'` in `@react-native/js-polyfills` | pnpm's default symlinked `node_modules` layout puts React Native under `node_modules/.pnpm/...`, so the `jest-expo` transform ignore patterns never match and RN's Flow-typed sources are left untransformed. Reinstall with a flat layout: `pnpm install --node-linker=hoisted`. After that the suite runs; 3 of 8 suites still fail for pre-existing reasons (`api.test.ts`: `Cannot find module 'expo/virtual/env'`; `session.test.ts` and `walletAuth.test.ts`: sandbox globals). |
-| `pnpm type-check` | `TS1005`/`TS1127` parse errors in `app/escrow/create.tsx` | Pre-existing syntax damage in that file (literal `\n` sequences inside JSX), not a configuration problem. Other files still type-check. |
+- `pnpm lint` uses `apps/mobile/.eslintrc.js` (ESLint 8 config with the TypeScript parser and the
+  `@typescript-eslint` recommended rules). Unused imports and `any` usages are reported as
+  warnings, so the command exits `0`; only errors fail it.
+- `pnpm test` overrides the `jest-expo` preset's `transformIgnorePatterns` in `package.json` to
+  allow for pnpm's symlinked layout (`node_modules/.pnpm/<pkg>@<version>/node_modules/...`).
+  Without that override every suite fails with
+  `SyntaxError: Unexpected identifier 'ErrorHandler'` in `@react-native/js-polyfills`, because
+  React Native's Flow-typed sources are left untransformed. Keep the extra `.pnpm/...` segment in
+  those patterns if you edit them.
 
 ---
 
