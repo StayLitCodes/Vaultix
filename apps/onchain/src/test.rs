@@ -4008,3 +4008,580 @@ fn test_event_topics_are_backwards_compatible() {
         event_idx += 1;
     }
 }
+
+// ===============================================================================
+// extend_deadline tests
+//
+// Acceptance criteria:
+//   1. Happy path: both parties authorise, new deadline accepted, event emitted
+//   2. Single-party auth rejection (depositor only / recipient only)
+//   3. Earlier-deadline rejection (new_deadline <= old_deadline)
+//   4. Terminal-state rejection (Completed, Cancelled, Resolved, Expired)
+//   5. Interaction with refund_expired: extended deadline prevents premature refund
+// ===============================================================================
+
+/// Helper: create + fund an escrow and return its client, parties, and token.
+fn setup_active_escrow_for_extend<'a>(
+    env: &'a Env,
+    escrow_id: u64,
+    deadline: u64,
+) -> (
+    VaultixEscrowClient<'a>,
+    Address,   // depositor
+    Address,   // recipient
+    token::Client<'a>,
+    Address,   // contract_id
+) {
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(env, &contract_id);
+
+    let treasury = Address::generate(env);
+    client.initialize(&treasury, &Some(0));
+
+    let admin = Address::generate(env);
+    let operator = Address::generate(env);
+    let arbitrator = Address::generate(env);
+    client.init(&admin, &operator, &arbitrator);
+
+    let depositor = Address::generate(env);
+    let recipient = Address::generate(env);
+
+    let (token_client, token_admin, token_address) = create_token_contract(env, &admin);
+    token_admin.mint(&depositor, &10_000);
+
+    let milestones = vec![
+        env,
+        Milestone {
+            amount: 10_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &deadline,
+        &valid_metadata_hash(env),
+    );
+    token_client.approve(&depositor, &contract_id, &10_000, &200);
+    client.deposit_funds(&escrow_id);
+
+    (client, depositor, recipient, token_client, contract_id)
+}
+
+/// AC-1: Happy path — both parties authorise; deadline updates, event emitted.
+#[test]
+fn test_extend_deadline_happy_path() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let escrow_id = 3_001u64;
+    let old_deadline = 5_000u64;
+    let new_deadline = 10_000u64;
+
+    let (client, depositor, recipient, _token_client, contract_id) =
+        setup_active_escrow_for_extend(&env, escrow_id, old_deadline);
+
+    // Set ledger time before old deadline so it's valid
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+
+    let events_before = env.events().all().len();
+
+    client.extend_deadline(&escrow_id, &new_deadline);
+
+    // Deadline updated in storage
+    let escrow = client.get_escrow(&escrow_id);
+    assert_eq!(escrow.deadline, new_deadline);
+    assert_eq!(escrow.status, EscrowStatus::Active);
+
+    // Event emitted with correct payload
+    let events = env.events().all();
+    assert_eq!(events.len(), events_before + 1);
+
+    let event = events.last().unwrap();
+    assert_eq!(event.0, contract_id);
+
+    let expected_topics: soroban_sdk::Vec<Val> = (
+        Symbol::new(&env, "Vaultix"),
+        Symbol::new(&env, "v1"),
+        Symbol::new(&env, "DeadlineExtended"),
+    )
+        .into_val(&env);
+    assert_eq!(event.1, expected_topics);
+
+    let payload: DeadlineExtendedEvent = event.2.clone().into_val(&env);
+    assert_eq!(payload.escrow_id, escrow_id);
+    assert_eq!(payload.depositor, depositor);
+    assert_eq!(payload.recipient, recipient);
+    assert_eq!(payload.old_deadline, old_deadline);
+    assert_eq!(payload.new_deadline, new_deadline);
+    assert_eq!(payload.status, EscrowStatus::Active);
+    assert_eq!(payload.timestamp, 1_000);
+}
+
+/// AC-1 (Created status): extension also works on a Created (not-yet-funded) escrow.
+#[test]
+fn test_extend_deadline_on_created_escrow() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    client.initialize(&treasury, &Some(0));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let admin = Address::generate(&env);
+
+    let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &5_000);
+
+    let old_deadline = 5_000u64;
+    let escrow_id = 3_010u64;
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &old_deadline,
+        &valid_metadata_hash(&env),
+    );
+
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+    client.extend_deadline(&escrow_id, &20_000u64);
+
+    assert_eq!(client.get_escrow(&escrow_id).deadline, 20_000u64);
+}
+
+/// AC-2a: Only the depositor signs — must be rejected.
+#[test]
+fn test_extend_deadline_depositor_only_rejected() {
+    let env = Env::default();
+    env.mock_all_auths(); // allow all setup calls
+
+    let escrow_id = 3_002u64;
+    let old_deadline = 5_000u64;
+    let new_deadline = 10_000u64;
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    client.initialize(&treasury, &Some(0));
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    client.init(&admin, &operator, &arbitrator);
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &10_000);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 10_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &old_deadline,
+        &valid_metadata_hash(&env),
+    );
+    token_client.approve(&depositor, &contract_id, &10_000, &200);
+    client.deposit_funds(&escrow_id);
+
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+
+    // Switch to authorising ONLY the depositor for the extend_deadline call
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &depositor,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "extend_deadline",
+            args: (escrow_id, new_deadline).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    // Soroban auth failure panics rather than returning a contract error
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.extend_deadline(&escrow_id, &new_deadline);
+    }));
+    assert!(result.is_err(), "extending with only depositor auth must fail");
+}
+
+/// AC-2b: Only the recipient signs — must be rejected.
+#[test]
+fn test_extend_deadline_recipient_only_rejected() {
+    let env = Env::default();
+    env.mock_all_auths(); // allow all setup calls
+
+    let escrow_id = 3_003u64;
+    let old_deadline = 5_000u64;
+    let new_deadline = 10_000u64;
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    client.initialize(&treasury, &Some(0));
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    client.init(&admin, &operator, &arbitrator);
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &10_000);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 10_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &old_deadline,
+        &valid_metadata_hash(&env),
+    );
+    token_client.approve(&depositor, &contract_id, &10_000, &200);
+    client.deposit_funds(&escrow_id);
+
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+
+    // Switch to authorising ONLY the recipient for the extend_deadline call
+    env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+        address: &recipient,
+        invoke: &soroban_sdk::testutils::MockAuthInvoke {
+            contract: &contract_id,
+            fn_name: "extend_deadline",
+            args: (escrow_id, new_deadline).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.extend_deadline(&escrow_id, &new_deadline);
+    }));
+    assert!(result.is_err(), "extending with only recipient auth must fail");
+}
+
+/// AC-3a: new_deadline == old_deadline must be rejected with InvalidDeadline.
+#[test]
+fn test_extend_deadline_same_deadline_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let escrow_id = 3_004u64;
+    let old_deadline = 5_000u64;
+
+    let (client, _depositor, _recipient, _token_client, _contract_id) =
+        setup_active_escrow_for_extend(&env, escrow_id, old_deadline);
+
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+
+    let result = client.try_extend_deadline(&escrow_id, &old_deadline);
+    assert_eq!(result, Err(Ok(Error::InvalidDeadline)));
+}
+
+/// AC-3b: new_deadline < old_deadline must be rejected with InvalidDeadline.
+#[test]
+fn test_extend_deadline_earlier_deadline_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let escrow_id = 3_005u64;
+    let old_deadline = 5_000u64;
+
+    let (client, _depositor, _recipient, _token_client, _contract_id) =
+        setup_active_escrow_for_extend(&env, escrow_id, old_deadline);
+
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+
+    // Deadline in the past relative to old_deadline
+    let result = client.try_extend_deadline(&escrow_id, &(old_deadline - 1));
+    assert_eq!(result, Err(Ok(Error::InvalidDeadline)));
+}
+
+/// AC-3c: new_deadline > old_deadline but <= current_time (in the past) is rejected.
+#[test]
+fn test_extend_deadline_past_new_deadline_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let escrow_id = 3_006u64;
+    let old_deadline = 5_000u64;
+
+    let (client, _depositor, _recipient, _token_client, _contract_id) =
+        setup_active_escrow_for_extend(&env, escrow_id, old_deadline);
+
+    // Advance time to well past old_deadline
+    env.ledger().with_mut(|l| l.timestamp = 20_000);
+
+    // new_deadline is after old_deadline but still in the past
+    let result = client.try_extend_deadline(&escrow_id, &15_000u64);
+    assert_eq!(result, Err(Ok(Error::InvalidDeadline)));
+}
+
+/// AC-4a: Completed status — extension rejected.
+#[test]
+fn test_extend_deadline_completed_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let escrow_id = 3_007u64;
+    let old_deadline = 5_000u64;
+
+    let (client, _depositor, _recipient, _token_client, _contract_id) =
+        setup_active_escrow_for_extend(&env, escrow_id, old_deadline);
+
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+
+    // Release all milestones and complete
+    client.release_milestone(&escrow_id, &0);
+    client.complete_escrow(&escrow_id);
+
+    assert_eq!(
+        client.get_escrow(&escrow_id).status,
+        EscrowStatus::Completed
+    );
+
+    let result = client.try_extend_deadline(&escrow_id, &(old_deadline + 1_000));
+    assert_eq!(result, Err(Ok(Error::InvalidEscrowStatus)));
+}
+
+/// AC-4b: Cancelled status — extension rejected.
+#[test]
+fn test_extend_deadline_cancelled_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let escrow_id = 3_008u64;
+    let old_deadline = 5_000u64;
+
+    let (client, _depositor, _recipient, _token_client, _contract_id) =
+        setup_active_escrow_for_extend(&env, escrow_id, old_deadline);
+
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+    client.cancel_escrow(&escrow_id);
+
+    assert_eq!(
+        client.get_escrow(&escrow_id).status,
+        EscrowStatus::Cancelled
+    );
+
+    let result = client.try_extend_deadline(&escrow_id, &(old_deadline + 1_000));
+    assert_eq!(result, Err(Ok(Error::InvalidEscrowStatus)));
+}
+
+/// AC-4c: Resolved status — extension rejected.
+#[test]
+fn test_extend_deadline_resolved_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register_contract(None, VaultixEscrow);
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    client.initialize(&treasury, &Some(0));
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    client.init(&admin, &operator, &arbitrator);
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &2_000);
+
+    let old_deadline = 5_000u64;
+    let escrow_id = 3_009u64;
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 2_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &old_deadline,
+        &valid_metadata_hash(&env),
+    );
+    token_client.approve(&depositor, &contract_id, &2_000, &200);
+    client.deposit_funds(&escrow_id);
+    client.raise_dispute(&escrow_id, &depositor);
+    client.resolve_dispute(&escrow_id, &recipient, &None);
+
+    assert_eq!(
+        client.get_escrow(&escrow_id).status,
+        EscrowStatus::Resolved
+    );
+
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+    let result = client.try_extend_deadline(&escrow_id, &(old_deadline + 1_000));
+    assert_eq!(result, Err(Ok(Error::InvalidEscrowStatus)));
+}
+
+/// AC-4d: Expired status — extension rejected.
+#[test]
+fn test_extend_deadline_expired_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let escrow_id = 3_011u64;
+    let old_deadline = 5_000u64;
+
+    let (client, depositor, _recipient, _token_client, _contract_id) =
+        setup_active_escrow_for_extend(&env, escrow_id, old_deadline);
+
+    // Advance past deadline and trigger refund → Expired status
+    env.ledger().with_mut(|l| l.timestamp = old_deadline + 1);
+    client.refund_expired(&escrow_id, &depositor);
+
+    assert_eq!(client.get_escrow(&escrow_id).status, EscrowStatus::Expired);
+
+    let result = client.try_extend_deadline(&escrow_id, &(old_deadline + 10_000));
+    assert_eq!(result, Err(Ok(Error::InvalidEscrowStatus)));
+}
+
+/// Paused contract — extension rejected with ContractPaused.
+#[test]
+fn test_extend_deadline_paused_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let escrow_id = 3_012u64;
+    let old_deadline = 5_000u64;
+
+    let (client, _depositor, _recipient, _token_client, _contract_id) =
+        setup_active_escrow_for_extend(&env, escrow_id, old_deadline);
+
+    client.set_paused(&true);
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+
+    let result = client.try_extend_deadline(&escrow_id, &(old_deadline + 1_000));
+    assert_eq!(result, Err(Ok(Error::ContractPaused)));
+}
+
+/// AC-5: Interaction with refund_expired.
+/// After extending, refund_expired must fail until the new deadline has passed.
+#[test]
+fn test_extend_deadline_prevents_premature_refund_expired() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let escrow_id = 3_013u64;
+    let old_deadline = 5_000u64;
+    let new_deadline = 20_000u64;
+
+    let (client, depositor, _recipient, _token_client, _contract_id) =
+        setup_active_escrow_for_extend(&env, escrow_id, old_deadline);
+
+    // Set time just before old deadline so the extension is valid
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+    client.extend_deadline(&escrow_id, &new_deadline);
+
+    // Advance to just past the OLD deadline — refund must now be blocked
+    env.ledger().with_mut(|l| l.timestamp = old_deadline + 1);
+    let result = client.try_refund_expired(&escrow_id, &depositor);
+    assert_eq!(
+        result,
+        Err(Ok(Error::DeadlineNotReached)),
+        "refund_expired must fail before new deadline is reached"
+    );
+
+    // Advance to just past the NEW deadline — refund must now succeed
+    env.ledger().with_mut(|l| l.timestamp = new_deadline + 1);
+    let result = client.try_refund_expired(&escrow_id, &depositor);
+    assert!(
+        result.is_ok(),
+        "refund_expired must succeed after new deadline: {:?}",
+        result
+    );
+
+    assert_eq!(client.get_escrow(&escrow_id).status, EscrowStatus::Expired);
+}
+
+/// AC-5 continued: multiple sequential extensions all gate refund_expired correctly.
+#[test]
+fn test_extend_deadline_multiple_extensions() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let escrow_id = 3_014u64;
+    let deadline_1 = 5_000u64;
+    let deadline_2 = 15_000u64;
+    let deadline_3 = 30_000u64;
+
+    let (client, depositor, _recipient, _token_client, _contract_id) =
+        setup_active_escrow_for_extend(&env, escrow_id, deadline_1);
+
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+    client.extend_deadline(&escrow_id, &deadline_2);
+    assert_eq!(client.get_escrow(&escrow_id).deadline, deadline_2);
+
+    // Second extension from deadline_2 → deadline_3
+    env.ledger().with_mut(|l| l.timestamp = 2_000);
+    client.extend_deadline(&escrow_id, &deadline_3);
+    assert_eq!(client.get_escrow(&escrow_id).deadline, deadline_3);
+
+    // Refund must be blocked until deadline_3 has passed
+    env.ledger().with_mut(|l| l.timestamp = deadline_2 + 1);
+    assert_eq!(
+        client.try_refund_expired(&escrow_id, &depositor),
+        Err(Ok(Error::DeadlineNotReached))
+    );
+
+    env.ledger().with_mut(|l| l.timestamp = deadline_3 + 1);
+    assert!(client.try_refund_expired(&escrow_id, &depositor).is_ok());
+}
