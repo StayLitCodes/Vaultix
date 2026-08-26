@@ -12,6 +12,7 @@ import { EmailModule } from '../../email/email.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { EmailVerification } from '../user/entities/email-verification.entity';
 import { NotificationsModule } from '../../notifications/notifications.module';
+import { EmailRateLimiterService } from '../../email/email-rate-limiter.service';
 
 import { validateJwtSecret } from './services/jwt-validation.util';
 
@@ -35,7 +36,7 @@ import { validateJwtSecret } from './services/jwt-validation.util';
     ]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthGuard, AdminGuard, SuperAdminGuard],
+  providers: [AuthService, AuthGuard, AdminGuard, SuperAdminGuard, EmailRateLimiterService],
   exports: [AuthService, AuthGuard, AdminGuard, SuperAdminGuard],
 })
 export class AuthModule {}

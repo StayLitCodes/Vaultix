@@ -25,6 +25,8 @@ export class EmailService {
   private readonly maxAttempts: number;
   private readonly retryBaseDelayMs: number;
   private readonly configured: boolean;
+  /** When false (EMAIL_ENABLED=false), emails are logged but not sent. */
+  private readonly enabled: boolean;
 
   constructor(
     @InjectRepository(EmailOutbox)
@@ -47,6 +49,17 @@ export class EmailService {
     );
     this.configured = Boolean(host);
 
+    // Dry-run mode: EMAIL_ENABLED=false means log-only, no actual sends.
+    const enabledFlag = this.configService.get<string>('EMAIL_ENABLED', 'true');
+    this.enabled = enabledFlag.toLowerCase() !== 'false';
+
+    if (!this.enabled) {
+      this.logger.warn(
+        'Email delivery is DISABLED (EMAIL_ENABLED=false). ' +
+          'Emails will be logged but not sent.',
+      );
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
     this.transporter = createTransport({
       host,
@@ -59,6 +72,11 @@ export class EmailService {
 
   get isConfigured(): boolean {
     return this.configured;
+  }
+
+  /** Whether live delivery is active (EMAIL_ENABLED != false). */
+  get isEnabled(): boolean {
+    return this.enabled;
   }
 
   /**
@@ -87,6 +105,9 @@ export class EmailService {
    * Send an email immediately, bypassing the outbox queue. Used by the
    * outbox processor and by callers that manage their own retries
    * (e.g. the notification system).
+   *
+   * When EMAIL_ENABLED=false (dry-run mode), the email is logged but not
+   * delivered. Callers should treat this as a successful no-op.
    */
   async sendEmailNow(
     to: string,
@@ -94,13 +115,30 @@ export class EmailService {
     html: string,
     text?: string,
   ): Promise<void> {
-    await this.transporter.sendMail({
-      from: this.fromAddress,
-      to,
-      subject,
-      text,
-      html,
-    });
+    if (!this.enabled) {
+      this.logger.log(
+        `[DRY-RUN] Would send email to="${to}" subject="${subject}"`,
+      );
+      return;
+    }
+
+    try {
+      await this.transporter.sendMail({
+        from: this.fromAddress,
+        to,
+        subject,
+        text,
+        html,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(
+        `SMTP delivery failed: to="${to}" subject="${subject}" error="${message}"`,
+        stack,
+      );
+      throw error;
+    }
   }
 
   @Cron(CronExpression.EVERY_30_SECONDS)
