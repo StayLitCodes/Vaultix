@@ -1,8 +1,20 @@
 # Vaultix Mobile
 
-The Vaultix (QuickEx) mobile client — an [Expo](https://docs.expo.dev/) app built with **Expo SDK 52**, **React Native 0.76.5**, **React 18.3.1**, TypeScript and [Expo Router](https://docs.expo.dev/router/introduction/) v4.
+The Vaultix mobile client — an [Expo](https://docs.expo.dev/) (SDK 52) / React Native 0.76 app using
+[Expo Router](https://docs.expo.dev/router/introduction/) for navigation. It talks to the Vaultix
+NestJS backend in `apps/backend` and to the Stellar network.
 
-It talks to the Vaultix NestJS backend in [`apps/backend`](../backend) and to a Stellar RPC endpoint.
+---
+
+## Table of Contents
+
+1. [Prerequisites](#1-prerequisites)
+2. [Installation](#2-installation)
+3. [Environment Variables](#3-environment-variables)
+4. [Available Scripts](#4-available-scripts)
+5. [Running Against a Local Backend](#5-running-against-a-local-backend)
+6. [Project Structure](#6-project-structure)
+7. [Troubleshooting](#7-troubleshooting)
 
 ---
 
@@ -10,100 +22,121 @@ It talks to the Vaultix NestJS backend in [`apps/backend`](../backend) and to a 
 
 | Requirement | Version / Notes |
 | --- | --- |
-| **Node.js** | `>= 18.18` — **20.x LTS recommended** (Expo SDK 52 supports Node 18/20/22; CI runs Node 20). Odd-numbered releases (19, 21, 23) are not supported. |
-| **pnpm** | `>= 9`. Install with `npm install -g pnpm` or `corepack enable pnpm`. |
-| **Expo CLI** | Do **not** install `expo-cli` globally (deprecated). The modern CLI ships with the `expo` package — invoke it as `npx expo <command>`; the package scripts already do this via `expo start`. |
-| **Watchman** (macOS/Linux, optional) | Improves Metro file watching: `brew install watchman`. |
-| **Android Studio** | Required only for the Android emulator / native builds. Install Android Studio, then in **SDK Manager** install the *Android SDK Platform 34/35*, *Android SDK Build-Tools* and *Android Emulator*, create a device in **Device Manager**, and export `ANDROID_HOME` (`~/Library/Android/sdk` on macOS, `~/Android/Sdk` on Linux) plus `$ANDROID_HOME/platform-tools` on your `PATH`. |
-| **Xcode** | macOS only, required for the iOS simulator / native builds. Install Xcode 15 or newer from the App Store, then `xcode-select --install` and open Xcode once to install the iOS simulator runtime. |
+| **Node.js** | `>= 18.18.0`; **Node 20 LTS is recommended**. Expo SDK 52 supports Node 18.18+, 20 and 22. Node 21 and odd-numbered releases are not supported. |
+| **pnpm** | `>= 8`. This monorepo uses pnpm; install with `npm install -g pnpm`. Do not mix in `npm install`/`yarn` inside `apps/mobile`. |
+| **Expo CLI** | Do **not** install the deprecated global `expo-cli`. The modern CLI ships with the `expo` package and is invoked as `npx expo <command>` (the package scripts already do this via `expo start`). |
+| **Expo Go** (optional) | Easiest way to run the app on a physical device — install "Expo Go" from the App Store / Play Store. It must be the Expo Go build for SDK 52. |
+| **Android Studio** | Required to run the Android emulator. Install Android Studio, then in *SDK Manager* install the **Android SDK Platform 34+**, **Android SDK Build-Tools**, and **Android Emulator**, and create a device in *Device Manager*. Set `ANDROID_HOME` (e.g. `~/Library/Android/sdk` on macOS, `~/Android/Sdk` on Linux) and add `$ANDROID_HOME/platform-tools` to your `PATH`. |
+| **Xcode** (macOS only) | Required to run the iOS simulator: Xcode 15+ from the Mac App Store, plus the iOS Simulator runtime and Command Line Tools (`xcode-select --install`). iOS development is not possible on Windows or Linux — use Expo Go on a physical device or the Android emulator instead. |
 
-You do **not** need Android Studio or Xcode to develop against **Expo Go** or the web target — `pnpm start` prints a QR code you can scan with the Expo Go app on a physical device.
+Verify your toolchain:
+
+```bash
+node --version    # v20.x recommended
+pnpm --version    # 8.x or newer
+```
 
 ---
 
 ## 2. Installation
 
-Clone the monorepo and install dependencies:
-
 ```bash
-# 1. From the repository root — installs root-level tooling (ESLint, Prettier)
+# 1. Clone the monorepo and install shared/root dependencies
 git clone https://github.com/paris27-A/Vaultix.git
 cd Vaultix
 pnpm install
 
-# 2. Install the mobile app's own dependencies (apps/mobile has its own lockfile)
+# 2. Install the mobile app's dependencies
 cd apps/mobile
 pnpm install
 ```
 
-`apps/mobile` keeps its own `pnpm-lock.yaml`, so the second install is required — the root install does not hoist the Expo/React Native dependency tree into the app.
+`apps/mobile` keeps its own `package.json` and `pnpm-lock.yaml`, so the second step is required —
+running `pnpm install` only at the repository root does not install the Expo/React Native
+dependencies.
 
-Verify the toolchain:
+> **If you intend to run the Jest suite**, install with a flat `node_modules` layout instead:
+>
+> ```bash
+> pnpm install --node-linker=hoisted
+> ```
+>
+> pnpm's default symlinked layout breaks the `jest-expo` transform of React Native's sources — see
+> [Known issues with these scripts](#known-issues-with-these-scripts).
+
+The install prints peer-dependency warnings about `react-dom` (pulled in by `jest-expo` and
+`expo-router`). They are expected for a React Native-only app and safe to ignore.
+
+Then start the dev server:
 
 ```bash
-node -v          # v20.x
-pnpm -v          # 9.x or newer
-npx expo --version
+pnpm start
 ```
+
+Expo prints a QR code and a dev-server URL. Press `a` to open the Android emulator, `i` for the iOS
+simulator (macOS), or scan the QR code with Expo Go on a physical device.
 
 ---
 
 ## 3. Environment Variables
 
-Expo only exposes variables prefixed with `EXPO_PUBLIC_` to the JavaScript bundle. Create an **`apps/mobile/.env`** file (it is git-ignored) — Expo loads it automatically when Metro starts.
+Expo only exposes variables prefixed with `EXPO_PUBLIC_` to the app bundle. Because they are
+**embedded in the client bundle, never put secrets in them.**
 
-> ⚠️ `EXPO_PUBLIC_*` values are inlined into the JavaScript bundle at build time and are readable by anyone with the app binary. Never put secrets, private keys or API tokens in them.
+Create `apps/mobile/.env` (it is git-ignored) and restart the dev server after any change —
+`EXPO_PUBLIC_*` values are inlined at bundle time, so a running Metro server will not pick them up.
 
 ### Variables read by `security/env.ts`
 
-| Variable | Purpose | Default when unset |
+| Variable | Purpose | Default if unset |
 | --- | --- | --- |
-| `EXPO_PUBLIC_APP_ENV` | Selects the config profile in `security/env.ts`. One of `dev`, `testnet`, `production`. | `dev` |
-| `EXPO_PUBLIC_API_URL` | Backend REST base URL exposed as `envConfig.apiUrl`. | `http://localhost:3000` (dev), `https://api-testnet.vaultix.com` (testnet), `https://api.vaultix.com` (production) |
-| `EXPO_PUBLIC_RPC_URL` | Blockchain RPC endpoint exposed as `envConfig.rpcUrl`. | `http://127.0.0.1:8545` (dev), `https://rpc-testnet.vaultix.com` (testnet), `https://rpc.vaultix.com` (production) |
+| `EXPO_PUBLIC_APP_ENV` | Selects the environment profile in `security/env.ts`. One of `dev`, `testnet`, `production`. Every other value falls back to `dev`. | `dev` |
+| `EXPO_PUBLIC_API_URL` | Base URL of the Vaultix backend API used by the selected profile. | `http://localhost:3000` (dev), `https://api-testnet.vaultix.com` (testnet), `https://api.vaultix.com` (production) |
+| `EXPO_PUBLIC_RPC_URL` | Blockchain RPC endpoint used by the selected profile for on-chain reads/writes. | `http://127.0.0.1:8545` (dev), `https://rpc-testnet.vaultix.com` (testnet), `https://rpc.vaultix.com` (production) |
 
-### Additional `EXPO_PUBLIC_*` variables used elsewhere in the app
+Note that `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_RPC_URL` override the profile defaults for
+*whichever* profile is active — they are not per-profile variables.
 
-| Variable | Used in | Purpose | Default when unset |
-| --- | --- | --- | --- |
-| `EXPO_PUBLIC_API_BASE_URL` | `services/api.ts` | `baseURL` of the Axios client that performs **all** HTTP calls. Set it to the same value as `EXPO_PUBLIC_API_URL`. | `http://localhost:3000` |
-| `EXPO_PUBLIC_AUTH_PATH_PREFIX` | `services/api.ts` | Path prefix for the URI-versioned auth routes on the NestJS backend. Override only when a gateway/proxy rewrites them. | `/v1/auth` |
-| `EXPO_PUBLIC_WEB_BASE_URL` | `components/ShareButton.tsx` | Base URL used to build shareable escrow/invite links. | `https://vaultix.app` |
+### Other variables used by the app
 
-### Example: local development (`.env`)
+| Variable | Purpose | Default if unset |
+| --- | --- | --- |
+| `EXPO_PUBLIC_API_BASE_URL` | Base URL used by the axios client in `services/api.ts` (escrows, disputes, notifications). Set it to the same value as `EXPO_PUBLIC_API_URL`. | `http://localhost:3000` |
+| `EXPO_PUBLIC_AUTH_PATH_PREFIX` | Path prefix for the URI-versioned auth routes on the backend. Only change this if you run a gateway/proxy that rewrites auth paths. | `/v1/auth` |
+| `EXPO_PUBLIC_WEB_BASE_URL` | Base URL used by `components/ShareButton.tsx` to build shareable escrow/invite links. | `https://vaultix.app` |
 
-```dotenv
+### Example: development (local backend, iOS simulator / Expo Go on the same machine)
+
+```env
 EXPO_PUBLIC_APP_ENV=dev
 EXPO_PUBLIC_API_URL=http://localhost:3000
 EXPO_PUBLIC_API_BASE_URL=http://localhost:3000
+EXPO_PUBLIC_RPC_URL=http://127.0.0.1:8545
 EXPO_PUBLIC_AUTH_PATH_PREFIX=/v1/auth
-EXPO_PUBLIC_RPC_URL=https://soroban-testnet.stellar.org
 EXPO_PUBLIC_WEB_BASE_URL=http://localhost:3001
 ```
 
 ### Example: testnet
 
-```dotenv
+```env
 EXPO_PUBLIC_APP_ENV=testnet
 EXPO_PUBLIC_API_URL=https://api-testnet.vaultix.com
 EXPO_PUBLIC_API_BASE_URL=https://api-testnet.vaultix.com
+EXPO_PUBLIC_RPC_URL=https://rpc-testnet.vaultix.com
 EXPO_PUBLIC_AUTH_PATH_PREFIX=/v1/auth
-EXPO_PUBLIC_RPC_URL=https://soroban-testnet.stellar.org
 EXPO_PUBLIC_WEB_BASE_URL=https://testnet.vaultix.app
 ```
 
 ### Example: production
 
-```dotenv
+```env
 EXPO_PUBLIC_APP_ENV=production
 EXPO_PUBLIC_API_URL=https://api.vaultix.com
 EXPO_PUBLIC_API_BASE_URL=https://api.vaultix.com
-EXPO_PUBLIC_AUTH_PATH_PREFIX=/v1/auth
 EXPO_PUBLIC_RPC_URL=https://rpc.vaultix.com
+EXPO_PUBLIC_AUTH_PATH_PREFIX=/v1/auth
 EXPO_PUBLIC_WEB_BASE_URL=https://vaultix.app
 ```
-
-Environment changes are picked up when Metro restarts — stop the dev server and run `pnpm start -- --clear` after editing `.env`.
 
 ---
 
@@ -113,111 +146,105 @@ Run all of these from `apps/mobile`.
 
 | Command | What it does |
 | --- | --- |
-| `pnpm start` | Runs `expo start` — starts the Metro bundler and prints a QR code / dev-server URL. Press `a` for Android, `i` for iOS, `w` for web, `r` to reload, `j` to open the debugger. |
-| `pnpm android` | Runs `expo start --android` — starts Metro and launches the app on a running Android emulator or a USB-connected device (`adb devices` must list it). |
-| `pnpm ios` | Runs `expo start --ios` — starts Metro and launches the app in the iOS simulator (macOS + Xcode only). |
-| `pnpm lint` | Runs `eslint . --ext .ts,.tsx` using `.eslintrc.js` (TypeScript parser + `@typescript-eslint` recommended rules). |
-| `pnpm type-check` | Runs `tsc --noEmit` using `tsconfig.json` (strict mode, `@/*` path alias). |
-| `pnpm test` | Runs the Jest suite with the `jest-expo` preset over `__tests__/`, `utils/*.test.ts` and `services/cache/*.test.ts`. |
+| `pnpm start` | Runs `expo start` — starts the Metro bundler and dev server, and prints a QR code for Expo Go plus interactive keys (`a` Android, `i` iOS, `r` reload, `j` debugger). |
+| `pnpm android` | Runs `expo start --android` — starts the dev server and opens the app on a running Android emulator or a USB-connected device (requires Android Studio / `adb`). |
+| `pnpm ios` | Runs `expo start --ios` — starts the dev server and opens the app in the iOS Simulator (macOS with Xcode only). |
+| `pnpm lint` | Runs `eslint . --ext .ts,.tsx` over the mobile sources, using `.eslintrc.js`. |
+| `pnpm type-check` | Runs `tsc --noEmit` — type-checks the app in strict mode without emitting output. Run this before pushing. |
+| `pnpm test` | Runs the Jest suite (`jest-expo` preset) over `__tests__/` and co-located `*.test.ts` files. Use `pnpm test -- --watch` while developing and `pnpm test -- --coverage` for a coverage report. |
 
-Useful one-offs (no dedicated script):
+### Tooling notes
 
-```bash
-npx expo start -c            # start with a cleared Metro cache
-npx expo start --tunnel      # expose the dev server through a tunnel (device on another network)
-npx expo-doctor              # diagnose dependency/version mismatches against SDK 52
-```
+- `pnpm lint` uses `apps/mobile/.eslintrc.js` (ESLint 8 config with the TypeScript parser and the
+  `@typescript-eslint` recommended rules). Unused imports and `any` usages are reported as
+  warnings, so the command exits `0`; only errors fail it.
+- `pnpm test` overrides the `jest-expo` preset's `transformIgnorePatterns` in `package.json` to
+  allow for pnpm's symlinked layout (`node_modules/.pnpm/<pkg>@<version>/node_modules/...`).
+  Without that override every suite fails with
+  `SyntaxError: Unexpected identifier 'ErrorHandler'` in `@react-native/js-polyfills`, because
+  React Native's Flow-typed sources are left untransformed. Keep the extra `.pnpm/...` segment in
+  those patterns if you edit them.
 
 ---
 
 ## 5. Running Against a Local Backend
 
-1. Start the backend (defaults to port `3000`):
+1. Start the backend (see `apps/backend/README.md` and the root `README.md`). It listens on
+   `http://localhost:3000` by default:
 
    ```bash
    cd apps/backend
-   npm install
-   npm run start:dev
+   pnpm install
+   pnpm start:dev
    ```
 
-2. Point the mobile app at it in `apps/mobile/.env`. **The host you use depends on where the app runs:**
+2. Point the mobile app at it in `apps/mobile/.env`, using the host that is reachable **from where
+   the app is running**:
 
-   | Where the app runs | Host to use in `EXPO_PUBLIC_API_URL` / `EXPO_PUBLIC_API_BASE_URL` |
+   | Where the app runs | Host to use |
    | --- | --- |
-   | iOS simulator | `http://localhost:3000` |
-   | **Android emulator (AVD)** | **`http://10.0.2.2:3000`** — inside the emulator, `localhost` refers to the emulator itself, and `10.0.2.2` is the special loopback alias for the host machine. |
-   | Genymotion emulator | `http://10.0.3.2:3000` |
-   | Physical device (Expo Go, same Wi‑Fi) | Your machine's LAN IP, e.g. `http://192.168.1.42:3000` (find it with `ipconfig getifaddr en0` on macOS or `hostname -I` on Linux). |
+   | iOS Simulator (macOS) | `http://localhost:3000` |
+   | **Android emulator** | **`http://10.0.2.2:3000`** — inside the Android emulator, `localhost` refers to the emulator itself, not your development machine. `10.0.2.2` is the emulator's loopback alias for the host machine. (Genymotion uses `10.0.3.2` instead.) |
+   | Physical device (Expo Go) | Your machine's LAN IP, e.g. `http://192.168.1.42:3000`. The device and computer must be on the same network, and the backend must bind to `0.0.0.0`, not only `127.0.0.1`. |
 
    Android emulator example:
 
-   ```dotenv
+   ```env
    EXPO_PUBLIC_APP_ENV=dev
    EXPO_PUBLIC_API_URL=http://10.0.2.2:3000
    EXPO_PUBLIC_API_BASE_URL=http://10.0.2.2:3000
+   EXPO_PUBLIC_RPC_URL=http://10.0.2.2:8545
    ```
 
-3. Restart Metro so the new values are inlined:
+3. Restart Metro so the new values are inlined into the bundle:
 
    ```bash
    pnpm start -- --clear
    ```
 
-4. If requests fail, forward the port instead of relying on the loopback alias:
-
-   ```bash
-   adb reverse tcp:3000 tcp:3000   # then use http://localhost:3000 from the emulator/device
-   ```
-
-Note: Android blocks cleartext HTTP in release builds. Plain `http://` local URLs work in Expo Go and debug builds; use `https://` for anything shipped.
+> **Plain HTTP:** Android 9+ and iOS block cleartext HTTP by default for release builds. The URLs
+> above work in Expo Go / debug builds; use HTTPS endpoints for any standalone build.
 
 ---
 
 ## 6. Project Structure
 
 ```
-apps/mobile
-├── app/                # Expo Router routes — the file tree is the navigation tree
-│   ├── _layout.tsx     # root layout / providers
-│   ├── (tabs)/         # tab navigator: dashboard, notifications, settings
-│   ├── escrow/         # escrow screens: [id], create, release
-│   └── invite/         # invite acceptance screen: [token]
-├── components/         # Reusable presentational components (Toast, QRScannerModal, banners, …)
-├── hooks/              # Reusable React hooks (useSession, useBiometricLock, useNetworkStatus, caches, …)
-├── services/           # I/O layer: Axios API client, auth/session, wallet, QR scanning,
-│                       # notifications and the `cache/` offline read-through caches
-├── security/           # Security-sensitive configuration — `env.ts` resolves the active
-│                       # environment (dev/testnet/production) and its API/RPC URLs
-├── utils/              # Framework-agnostic helpers: error mapping, network checks, retry,
-│                       # SecureStore wrappers, QR payload validation
-├── types/              # Shared TypeScript types (escrow, notification, qr) and ambient declarations
-├── __tests__/          # Jest test suites
-├── app.json            # Expo app config (scheme `vaultix`, bundle id `io.vaultix.mobile`)
-├── .eslintrc.js        # ESLint config for the app sources
-├── babel.config.js     # Babel config (`babel-preset-expo`)
-└── tsconfig.json       # Strict TypeScript config with the `@/*` path alias
+apps/mobile/
+├── app/           # Screens and routes (Expo Router, file-system based)
+├── components/    # Reusable presentational UI components
+├── hooks/         # Reusable React hooks (state, caching, device features)
+├── services/      # API clients, session/auth, wallet, cache layer
+├── security/      # Environment configuration and security helpers
+├── utils/         # Framework-agnostic helper functions
+├── types/         # Shared TypeScript types (escrow, notification, qr)
+├── __tests__/     # Jest test suites
+├── app.json       # Expo app config (name, scheme, plugins, bundle IDs)
+└── tsconfig.json  # TypeScript config; `@/*` maps to the app root
 ```
 
 | Directory | Purpose |
 | --- | --- |
-| `app/` | Screens and navigation. Expo Router maps each file to a route; `[id].tsx` are dynamic segments and `(tabs)` is a route group rendered as a tab bar. Typed routes are enabled. |
-| `components/` | Stateless/reusable UI building blocks shared across screens. No network calls belong here. |
-| `hooks/` | Stateful logic reused by screens — session hydration, biometric lock, connectivity, dashboard/escrow caching, notifications, app-version checks. |
-| `services/` | All external communication: the Axios instance and endpoint wrappers (`api.ts`), auth/session token handling, Stellar wallet interactions, QR scanning, notification delivery, and cache persistence. |
-| `security/` | Environment and security configuration. `env.ts` exports `envConfig` (`environment`, `apiUrl`, `rpcUrl`) plus `validateEnv()`; change environment behaviour here rather than hard-coding URLs. |
-| `utils/` | Pure helpers with no React dependency — error normalisation, retry/backoff, network probes, SecureStore access, QR validation. |
+| `app/` | Route definitions for Expo Router. Every file is a screen and the file path *is* the URL: `app/dashboard.tsx` → `/dashboard`, `app/escrow/[id].tsx` → `/escrow/:id`, `app/(tabs)/` → the tab navigator, `_layout.tsx` files define nested layouts, and `not-found.tsx` is the fallback route. |
+| `components/` | Shared, mostly stateless UI building blocks used across screens (e.g. `Toast`, `OfflineBanner`, `QRScannerModal`, `ShareButton`). No routing or network logic. |
+| `hooks/` | Custom React hooks encapsulating stateful behaviour: session handling (`useSession`), biometric lock (`useBiometricLock`), network status (`useNetworkStatus`), cached dashboard/escrow data, notifications and app-version checks. |
+| `services/` | The app's integration layer: the axios API client (`api.ts`), authentication and session token storage (`auth.ts`, `session.ts`, `walletAuth.ts`), Stellar wallet interaction (`wallet.ts`), QR scanning (`qrScanner.ts`), notifications, and the offline `cache/` layer. |
+| `security/` | Security-sensitive configuration. `env.ts` resolves the active environment profile (`dev` / `testnet` / `production`) and exposes `envConfig` (`apiUrl`, `rpcUrl`) plus `validateEnv()`. Change environment defaults here, not in feature code. |
+| `utils/` | Small pure helpers with no UI dependencies: error normalisation (`errors.ts`), network helpers (`network.ts`), retry/backoff (`retry.ts`), secure storage wrappers over `expo-secure-store` (`secureStore.ts`), and QR payload validation (`qrValidation.ts`). |
 
 ---
 
 ## 7. Troubleshooting
 
-**Metro cache / stale bundle or "unable to resolve module"**
+### Metro bundler serves stale code / "Unable to resolve module"
+
+Clear the Metro and Expo caches:
 
 ```bash
-npx expo start -c        # clears the Metro cache and restarts
+pnpm start -- --clear     # equivalent to: npx expo start -c
 ```
 
-Also clears stale `.env` values. If it persists, remove caches and reinstall:
+If that is not enough, remove the transient caches and reinstall:
 
 ```bash
 rm -rf node_modules .expo
@@ -225,35 +252,64 @@ pnpm install
 npx expo start -c
 ```
 
-**Node version mismatch** — symptoms are `SyntaxError: Unexpected token '?'`, `ERR_OSSL_EVP_UNSUPPORTED`, or Metro crashing on start:
+### Node version mismatch
+
+Symptoms: install or bundling errors mentioning an unsupported engine, `SyntaxError` in a
+dependency, or the dev server exiting immediately.
 
 ```bash
-node -v            # must be >= 18.18, 20.x LTS recommended
-nvm install 20 && nvm use 20     # or: fnm use 20 / volta install node@20
+node --version   # must be >= 18.18.0; use Node 20 LTS if unsure
+```
+
+Switch versions with a version manager, e.g.:
+
+```bash
+nvm install 20 && nvm use 20
+```
+
+Then reinstall so native/bundled artifacts are rebuilt for the active Node version:
+
+```bash
 rm -rf node_modules && pnpm install
 ```
 
-**Dependency installation issues**
+### Dependency installation issues
 
-- `ERR_PNPM_OUTDATED_LOCKFILE` in CI or after editing `package.json`: run `pnpm install --no-frozen-lockfile` locally and commit the updated `pnpm-lock.yaml`.
-- Peer-dependency errors: `pnpm install --strict-peer-dependencies=false`.
-- Wrong package versions for the SDK: `npx expo install --check` lists mismatches and `npx expo install --fix` pins the SDK 52-compatible versions.
-- Corrupted store or partial install: `rm -rf node_modules pnpm-lock.yaml && pnpm store prune && pnpm install` (re-resolves from `package.json`).
+- Always use `pnpm` in this repo. A stray `package-lock.json` or `yarn.lock` inside `apps/mobile`
+  means a wrong package manager was used — delete it, delete `node_modules`, and rerun
+  `pnpm install`.
+- After a failed or interrupted install:
+  ```bash
+  rm -rf node_modules
+  pnpm store prune
+  pnpm install
+  ```
+- To confirm every dependency matches what Expo SDK 52 expects:
+  ```bash
+  npx expo install --check     # add --fix to apply the suggested versions
+  ```
+- Install new packages with `npx expo install <pkg>` rather than `pnpm add <pkg>`; it selects the
+  version compatible with the installed SDK.
 
-**Jest fails with `SyntaxError: Unexpected identifier 'ErrorHandler'`**
+### Emulator / device connection issues
 
-pnpm's symlinked layout places React Native packages under `node_modules/.pnpm/<pkg>@<version>/node_modules/...`, which the stock `jest-expo` `transformIgnorePatterns` do not match, so Flow-typed RN sources are never transpiled. The `jest.transformIgnorePatterns` entry in `package.json` accounts for the extra `.pnpm/<pkg>@<version>/node_modules/` segment — if you see this error, make sure you have not overridden it locally.
-
-**Emulator / device connection issues**
-
-- `adb devices` lists nothing: start the AVD from Android Studio's Device Manager, or `emulator -list-avds && emulator -avd <name>`; run `adb kill-server && adb start-server` if it stays offline.
-- App loads but every request fails: you are using `localhost` inside the Android emulator — switch to `10.0.2.2` (see §5) or run `adb reverse tcp:3000 tcp:3000`.
-- Expo Go on a physical device can't reach Metro: the phone must be on the same Wi‑Fi as your machine; otherwise use `npx expo start --tunnel`. Allow Node through your firewall on port `8081`.
-- Port `8081` already in use: `npx expo start --port 8082`, or kill the process with `lsof -ti:8081 | xargs kill`.
-- iOS simulator does not open: run `open -a Simulator` first, and ensure `xcode-select -p` points at your Xcode installation.
-
-**`pnpm lint` prints warnings**
-
-Unused-import and `no-explicit-any` findings are reported as warnings, so the command exits `0`. Only errors fail the script.
-
-Report anything else in [GitHub Issues](https://github.com/paris27-A/Vaultix/issues), and see the root [README](../../README.md) and [CONTRIBUTING.md](../../CONTRIBUTING.md) for repository-wide workflow.
+- **Android emulator not detected** by `pnpm android`: make sure the emulator is already running and
+  visible to `adb`:
+  ```bash
+  adb devices          # the emulator should be listed as "device"
+  adb kill-server && adb start-server
+  ```
+  Also confirm `ANDROID_HOME` is set and `$ANDROID_HOME/platform-tools` is on your `PATH`.
+- **iOS Simulator does not open**: run `xcode-select --install`, open Xcode once to accept the
+  license, and confirm a simulator runtime is installed under *Xcode → Settings → Platforms*.
+- **App loads but every request fails / times out**: this is almost always the API host. Use
+  `10.0.2.2` on the Android emulator and your LAN IP on a physical device — see
+  [Running Against a Local Backend](#5-running-against-a-local-backend). Verify the backend is
+  reachable from the host first with `curl http://localhost:3000`.
+- **Physical device cannot reach the dev server**: the device and computer must be on the same
+  Wi-Fi network with client isolation disabled. If the LAN is restricted, use a tunnel:
+  ```bash
+  npx expo start --tunnel
+  ```
+- **Port already in use**: another Metro instance is running. Stop it, or start on another port with
+  `npx expo start --port 8082`.
