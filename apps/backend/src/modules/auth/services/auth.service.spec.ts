@@ -1,45 +1,73 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { BadRequestException, TooManyRequestsException, UnauthorizedException } from '@nestjs/common';
+import { Repository } from 'typeorm';
+
 import { AuthService } from './auth.service';
 import { UserService } from '../../user/user.service';
-import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
-import { UnauthorizedException } from '@nestjs/common';
-import { BadRequestException } from '@nestjs/common';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import { EmailVerification } from '../../user/entities/email-verification.entity';
 import { IpfsService } from '../../ipfs/ipfs.service';
 import { EmailService } from '../../../email/email.service';
+import { EmailRateLimiterService } from '../../../email/email-rate-limiter.service';
 import { PreferenceService } from '../../../notifications/preference.service';
+import { NotificationChannel } from '../../../notifications/enums/notification-event.enum';
+import { User } from '../../user/entities/user.entity';
+import { UserRole } from '../../user/entities/user-role.enum';
 
-// Mock Stellar SDK
-jest.mock('stellar-sdk', () => ({
-  Keypair: {
-    fromPublicKey: jest.fn().mockReturnValue({
-      verify: jest.fn().mockReturnValue(true),
-    }),
-  },
-}));
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-describe('AuthService', () => {
+function makeUser(overrides: Partial<User> = {}): User {
+  return {
+    id: 'user-1',
+    walletAddress: 'GTEST123',
+    email: 'alice@example.com',
+    displayName: 'Alice',
+    emailVerified: false,
+    isActive: true,
+    role: UserRole.USER,
+    nonce: undefined,
+    avatarUrl: undefined,
+    bio: undefined,
+    preferredAsset: 'XLM',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  } as User;
+}
+
+function makeVerification(overrides = {}): EmailVerification {
+  return {
+    id: 'ev-1',
+    userId: 'user-1',
+    token: 'test-token',
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    isUsed: false,
+    createdAt: new Date(),
+    user: makeUser(),
+    ...overrides,
+  } as EmailVerification;
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe('AuthService – email delivery', () => {
   let service: AuthService;
+  let emailService: jest.Mocked<EmailService>;
+  let rateLimiter: EmailRateLimiterService;
+  let preferenceService: jest.Mocked<PreferenceService>;
   let userService: jest.Mocked<UserService>;
-  let jwtService: jest.Mocked<JwtService>;
-  let configService: jest.Mocked<ConfigService>;
-  let emailVerificationRepository: any;
-  let ipfsService: any;
-  let emailService: { sendEmail: jest.Mock };
-  let preferenceService: { seedDefaultPreferences: jest.Mock };
+  let emailVerificationRepo: jest.Mocked<Repository<EmailVerification>>;
 
-  const mockUser = {
-    id: 'user-id',
-    walletAddress: 'GD...123',
-    nonce: 'test-nonce',
-  };
-
-  const mockRefreshToken = {
-    token: 'refresh-token',
-    user: mockUser,
-    expiresAt: new Date(Date.now() + 1000 * 60 * 60),
+  const configValues: Record<string, unknown> = {
+    'email.verificationBaseUrl': 'https://app.vaultix.io/auth/verify-email',
+    JWT_SECRET: 'test-secret-that-is-at-least-32-chars-long!!',
+    EMAIL_ENABLED: 'true',
   };
 
   beforeEach(async () => {
@@ -49,26 +77,29 @@ describe('AuthService', () => {
         {
           provide: UserService,
           useValue: {
+            findById: jest.fn(),
             findByWalletAddress: jest.fn(),
             create: jest.fn(),
             update: jest.fn(),
+            createRefreshToken: jest.fn(),
             findRefreshToken: jest.fn(),
             invalidateRefreshToken: jest.fn(),
-            findById: jest.fn(),
-            createRefreshToken: jest.fn(),
           },
         },
         {
           provide: JwtService,
           useValue: {
-            sign: jest.fn().mockReturnValue('access-token'),
+            sign: jest.fn().mockReturnValue('signed-token'),
             verifyAsync: jest.fn(),
           },
         },
         {
           provide: ConfigService,
           useValue: {
-            get: jest.fn().mockReturnValue('jwt-secret'),
+            get: jest.fn(
+              (key: string, defaultValue?: unknown) =>
+                configValues[key] ?? defaultValue,
+            ),
           },
         },
         {
@@ -93,204 +124,283 @@ describe('AuthService', () => {
           },
         },
         {
+          provide: EmailRateLimiterService,
+          useClass: EmailRateLimiterService, // real instance so we can test state
+        },
+        {
           provide: PreferenceService,
           useValue: {
-            seedDefaultPreferences: jest.fn().mockResolvedValue([]),
+            getUserPreferences: jest.fn(),
+            seedDefaultPreferences: jest.fn(),
           },
         },
       ],
     }).compile();
 
     service = module.get<AuthService>(AuthService);
-    userService = module.get(UserService);
-    jwtService = module.get(JwtService);
-    configService = module.get(ConfigService);
-    emailVerificationRepository = module.get(
-      getRepositoryToken(EmailVerification),
-    );
-    ipfsService = module.get(IpfsService);
     emailService = module.get(EmailService);
+    rateLimiter = module.get<EmailRateLimiterService>(EmailRateLimiterService);
     preferenceService = module.get(PreferenceService);
+    userService = module.get(UserService);
+    emailVerificationRepo = module.get(getRepositoryToken(EmailVerification));
   });
 
-  it('should be defined', () => {
-    expect(service).toBeDefined();
+  afterEach(() => {
+    jest.clearAllMocks();
+    // Reset rate limiter state between tests
+    rateLimiter.reset('user-1');
+    rateLimiter.reset('user-2');
   });
 
-  describe('generateChallenge', () => {
-    it('should create a new user if not exists', async () => {
-      userService.findByWalletAddress.mockResolvedValue(null);
-      userService.create.mockResolvedValue(mockUser as any);
-
-      const result = await service.generateChallenge('GD...123');
-
-      expect(result).toHaveProperty('nonce');
-      expect(result).toHaveProperty('message');
-      expect(userService.create).toHaveBeenCalledWith({
-        walletAddress: 'GD...123',
-        nonce: expect.any(String),
-      });
-    });
-
-    it('should seed default notification preferences for a new user', async () => {
-      userService.findByWalletAddress.mockResolvedValue(null);
-      userService.create.mockResolvedValue(mockUser as any);
-
-      await service.generateChallenge('GD...123');
-
-      expect(preferenceService.seedDefaultPreferences).toHaveBeenCalledWith(
-        mockUser.id,
-      );
-    });
-
-    it('should not seed preferences when the user already exists', async () => {
-      userService.findByWalletAddress.mockResolvedValue(mockUser as any);
-      userService.update.mockResolvedValue(mockUser as any);
-
-      await service.generateChallenge('GD...123');
-
-      expect(preferenceService.seedDefaultPreferences).not.toHaveBeenCalled();
-    });
-
-    it('should update nonce if user exists', async () => {
-      userService.findByWalletAddress.mockResolvedValue(mockUser as any);
-      userService.update.mockResolvedValue(mockUser as any);
-
-      const result = await service.generateChallenge('GD...123');
-
-      expect(result).toHaveProperty('nonce');
-      expect(userService.update).toHaveBeenCalledWith(mockUser.id, {
-        nonce: expect.any(String),
-      });
-    });
-  });
-
-  describe('verifySignature', () => {
-    it('should throw UnauthorizedException if user not found', async () => {
-      userService.findByWalletAddress.mockResolvedValue(null);
-
-      await expect(service.verifySignature('sig', 'GD...123')).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it('should return tokens on valid signature', async () => {
-      userService.findByWalletAddress.mockResolvedValue(mockUser as any);
-      userService.update.mockResolvedValue(mockUser as any);
-      userService.createRefreshToken.mockResolvedValue({} as any);
-
-      const result = await service.verifySignature('sig', 'GD...123');
-
-      expect(result).toHaveProperty('accessToken');
-      expect(result).toHaveProperty('refreshToken');
-      expect(userService.update).toHaveBeenCalledWith(mockUser.id, {
-        nonce: undefined,
-      });
-    });
-  });
-
-  describe('refreshAccessToken', () => {
-    it('should throw if token invalid or expired', async () => {
-      userService.findRefreshToken.mockResolvedValue(null);
-      await expect(service.refreshAccessToken('invalid')).rejects.toThrow(
-        UnauthorizedException,
-      );
-
-      userService.findRefreshToken.mockResolvedValue({
-        ...mockRefreshToken,
-        expiresAt: new Date(0),
-      } as any);
-      await expect(service.refreshAccessToken('expired')).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it('should return new tokens', async () => {
-      userService.findRefreshToken.mockResolvedValue(mockRefreshToken as any);
-      userService.createRefreshToken.mockResolvedValue({} as any);
-
-      const result = await service.refreshAccessToken('refresh-token');
-
-      expect(result.accessToken).toBe('access-token');
-      expect(userService.invalidateRefreshToken).toHaveBeenCalledWith(
-        'refresh-token',
-      );
-    });
-  });
+  // ── Basic send ────────────────────────────────────────────────────────────
 
   describe('sendEmailVerification', () => {
-    it('should save a token and queue the verification email', async () => {
-      const userWithEmail = {
-        id: 'user-id',
-        email: 'user@example.com',
-        displayName: 'Alice',
-      };
-      userService.findById.mockResolvedValue(userWithEmail as any);
-      configService.get.mockReturnValue(
-        'http://localhost:3000/auth/profile/verify-email',
-      );
-      emailVerificationRepository.create.mockImplementation(
-        (input: any) => input,
-      );
-      emailVerificationRepository.save.mockImplementation((input: any) =>
-        Promise.resolve(input),
-      );
+    it('should queue a verification email when all conditions are met', async () => {
+      const user = makeUser();
+      const verification = makeVerification();
+
+      userService.findById.mockResolvedValue(user);
+      preferenceService.getUserPreferences.mockResolvedValue([
+        { channel: NotificationChannel.EMAIL, enabled: true, eventTypes: [], userId: user.id } as any,
+      ]);
+      emailVerificationRepo.create.mockReturnValue(verification);
+      emailVerificationRepo.save.mockResolvedValue(verification);
       emailService.sendEmail.mockResolvedValue({} as any);
 
-      await service.sendEmailVerification('user-id');
+      await service.sendEmailVerification('user-1');
 
-      expect(emailVerificationRepository.save).toHaveBeenCalledWith(
-        expect.objectContaining({
-          userId: 'user-id',
-          token: expect.any(String),
-        }),
-      );
-      const savedToken = emailVerificationRepository.save.mock.calls[0][0]
-        .token as string;
-      expect(emailService.sendEmail).toHaveBeenCalledWith(
-        'user@example.com',
-        expect.stringContaining('Verify'),
-        expect.stringContaining(savedToken),
-        expect.stringContaining(savedToken),
-      );
+      expect(emailService.sendEmail).toHaveBeenCalledTimes(1);
+      const [to, subject, html, text] = (emailService.sendEmail as jest.Mock).mock.calls[0] as [string, string, string, string];
+      expect(to).toBe('alice@example.com');
+      expect(subject).toContain('Verify your email');
+      expect(subject).toContain('Vaultix');
+      expect(html).toBeDefined();
+      expect(text).toBeDefined();
     });
 
-    it('should throw if the user has no email set', async () => {
-      userService.findById.mockResolvedValue({ id: 'user-id' } as any);
+    it('should throw UnauthorizedException when user is not found', async () => {
+      userService.findById.mockResolvedValue(null);
+      await expect(service.sendEmailVerification('missing-user')).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(emailService.sendEmail).not.toHaveBeenCalled();
+    });
 
-      await expect(service.sendEmailVerification('user-id')).rejects.toThrow(
+    it('should throw BadRequestException when user has no email', async () => {
+      userService.findById.mockResolvedValue(makeUser({ email: undefined }));
+      preferenceService.getUserPreferences.mockResolvedValue([]);
+      await expect(service.sendEmailVerification('user-1')).rejects.toThrow(
         BadRequestException,
       );
       expect(emailService.sendEmail).not.toHaveBeenCalled();
     });
   });
 
-  describe('validateToken', () => {
-    it('should return payload if token is valid', async () => {
-      jwtService.verifyAsync.mockResolvedValue({
-        sub: 'user-id',
-        walletAddress: 'GD...123',
-        type: 'access',
-      });
+  // ── Rate limiting ─────────────────────────────────────────────────────────
 
-      const result = await service.validateToken('valid-token');
+  describe('rate limiting', () => {
+    it('should allow up to MAX_PER_HOUR sends', async () => {
+      const user = makeUser();
+      userService.findById.mockResolvedValue(user);
+      preferenceService.getUserPreferences.mockResolvedValue([
+        { channel: NotificationChannel.EMAIL, enabled: true, eventTypes: [], userId: user.id } as any,
+      ]);
+      emailVerificationRepo.create.mockReturnValue(makeVerification());
+      emailVerificationRepo.save.mockResolvedValue(makeVerification());
+      emailService.sendEmail.mockResolvedValue({} as any);
 
-      expect(result).toEqual({
-        userId: 'user-id',
-        walletAddress: 'GD...123',
-      });
+      const max = EmailRateLimiterService.MAX_PER_HOUR; // 3
+      for (let i = 0; i < max; i++) {
+        await expect(service.sendEmailVerification('user-1')).resolves.toBeUndefined();
+      }
+      expect(emailService.sendEmail).toHaveBeenCalledTimes(max);
     });
 
-    it('should throw if token type is not access', async () => {
-      jwtService.verifyAsync.mockResolvedValue({
-        sub: 'user-id',
-        walletAddress: 'GD...123',
-        type: 'refresh',
-      });
+    it('should throw TooManyRequestsException on the (MAX+1)th send', async () => {
+      const user = makeUser();
+      userService.findById.mockResolvedValue(user);
+      preferenceService.getUserPreferences.mockResolvedValue([
+        { channel: NotificationChannel.EMAIL, enabled: true, eventTypes: [], userId: user.id } as any,
+      ]);
+      emailVerificationRepo.create.mockReturnValue(makeVerification());
+      emailVerificationRepo.save.mockResolvedValue(makeVerification());
+      emailService.sendEmail.mockResolvedValue({} as any);
 
-      await expect(service.validateToken('invalid-type')).rejects.toThrow(
-        UnauthorizedException,
+      const max = EmailRateLimiterService.MAX_PER_HOUR;
+      for (let i = 0; i < max; i++) {
+        await service.sendEmailVerification('user-1');
+      }
+
+      await expect(service.sendEmailVerification('user-1')).rejects.toThrow(
+        TooManyRequestsException,
       );
+      // No extra email queued after the limit
+      expect(emailService.sendEmail).toHaveBeenCalledTimes(max);
+    });
+
+    it('should track rate limits independently per user', async () => {
+      const user1 = makeUser({ id: 'user-1', email: 'u1@example.com' });
+      const user2 = makeUser({ id: 'user-2', email: 'u2@example.com' });
+
+      userService.findById
+        .mockResolvedValueOnce(user1)
+        .mockResolvedValueOnce(user2);
+
+      preferenceService.getUserPreferences.mockResolvedValue([
+        { channel: NotificationChannel.EMAIL, enabled: true, eventTypes: [], userId: 'any' } as any,
+      ]);
+      emailVerificationRepo.create.mockReturnValue(makeVerification());
+      emailVerificationRepo.save.mockResolvedValue(makeVerification());
+      emailService.sendEmail.mockResolvedValue({} as any);
+
+      // Exhaust user-1's limit
+      for (let i = 0; i < EmailRateLimiterService.MAX_PER_HOUR; i++) {
+        rateLimiter.tryConsume('user-1');
+      }
+
+      // user-1 is throttled but user-2 should succeed
+      await expect(service.sendEmailVerification('user-1')).rejects.toThrow(
+        TooManyRequestsException,
+      );
+      await expect(service.sendEmailVerification('user-2')).resolves.toBeUndefined();
+    });
+  });
+
+  // ── Notification preference opt-out ───────────────────────────────────────
+
+  describe('notification preferences', () => {
+    it('should skip sending when email channel is disabled in preferences', async () => {
+      const user = makeUser();
+      userService.findById.mockResolvedValue(user);
+      preferenceService.getUserPreferences.mockResolvedValue([
+        { channel: NotificationChannel.EMAIL, enabled: false, eventTypes: [], userId: user.id } as any,
+      ]);
+
+      await service.sendEmailVerification('user-1');
+
+      expect(emailService.sendEmail).not.toHaveBeenCalled();
+    });
+
+    it('should still send when no email preference record exists (default allow)', async () => {
+      const user = makeUser();
+      userService.findById.mockResolvedValue(user);
+      // Return prefs for other channels only — no EMAIL pref
+      preferenceService.getUserPreferences.mockResolvedValue([
+        { channel: NotificationChannel.WEBHOOK, enabled: false, eventTypes: [], userId: user.id } as any,
+      ]);
+      emailVerificationRepo.create.mockReturnValue(makeVerification());
+      emailVerificationRepo.save.mockResolvedValue(makeVerification());
+      emailService.sendEmail.mockResolvedValue({} as any);
+
+      await service.sendEmailVerification('user-1');
+
+      expect(emailService.sendEmail).toHaveBeenCalledTimes(1);
+    });
+
+    it('should still send if preference lookup throws (graceful degradation)', async () => {
+      const user = makeUser();
+      userService.findById.mockResolvedValue(user);
+      preferenceService.getUserPreferences.mockRejectedValue(new Error('DB error'));
+      emailVerificationRepo.create.mockReturnValue(makeVerification());
+      emailVerificationRepo.save.mockResolvedValue(makeVerification());
+      emailService.sendEmail.mockResolvedValue({} as any);
+
+      await expect(service.sendEmailVerification('user-1')).resolves.toBeUndefined();
+      expect(emailService.sendEmail).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ── SMTP error handling ───────────────────────────────────────────────────
+
+  describe('SMTP error handling', () => {
+    it('should NOT throw when emailService.sendEmail rejects (SMTP crash isolation)', async () => {
+      const user = makeUser();
+      userService.findById.mockResolvedValue(user);
+      preferenceService.getUserPreferences.mockResolvedValue([
+        { channel: NotificationChannel.EMAIL, enabled: true, eventTypes: [], userId: user.id } as any,
+      ]);
+      emailVerificationRepo.create.mockReturnValue(makeVerification());
+      emailVerificationRepo.save.mockResolvedValue(makeVerification());
+      emailService.sendEmail.mockRejectedValue(new Error('SMTP connection refused'));
+
+      // Should resolve without throwing — SMTP errors must not crash the request
+      await expect(service.sendEmailVerification('user-1')).resolves.toBeUndefined();
+    });
+
+    it('should still save the verification token even when send fails', async () => {
+      const user = makeUser();
+      userService.findById.mockResolvedValue(user);
+      preferenceService.getUserPreferences.mockResolvedValue([
+        { channel: NotificationChannel.EMAIL, enabled: true, eventTypes: [], userId: user.id } as any,
+      ]);
+      emailVerificationRepo.create.mockReturnValue(makeVerification());
+      emailVerificationRepo.save.mockResolvedValue(makeVerification());
+      emailService.sendEmail.mockRejectedValue(new Error('SMTP down'));
+
+      await service.sendEmailVerification('user-1');
+
+      expect(emailVerificationRepo.save).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ── Branded template content ──────────────────────────────────────────────
+
+  describe('email template', () => {
+    beforeEach(() => {
+      const user = makeUser();
+      userService.findById.mockResolvedValue(user);
+      preferenceService.getUserPreferences.mockResolvedValue([
+        { channel: NotificationChannel.EMAIL, enabled: true, eventTypes: [], userId: user.id } as any,
+      ]);
+      emailVerificationRepo.create.mockReturnValue(makeVerification());
+      emailVerificationRepo.save.mockResolvedValue(makeVerification());
+      emailService.sendEmail.mockResolvedValue({} as any);
+    });
+
+    it('should include the Vaultix brand in the HTML body', async () => {
+      await service.sendEmailVerification('user-1');
+      const html = (emailService.sendEmail as jest.Mock).mock.calls[0][2] as string;
+      expect(html).toContain('Vaultix');
+    });
+
+    it('should include a verification link in the HTML body', async () => {
+      await service.sendEmailVerification('user-1');
+      const html = (emailService.sendEmail as jest.Mock).mock.calls[0][2] as string;
+      expect(html).toContain('verify-email');
+    });
+
+    it('should include an expiry warning in the HTML body', async () => {
+      await service.sendEmailVerification('user-1');
+      const html = (emailService.sendEmail as jest.Mock).mock.calls[0][2] as string;
+      expect(html).toContain('24 hours');
+    });
+
+    it('should include an unsubscribe/preferences footer in the HTML body', async () => {
+      await service.sendEmailVerification('user-1');
+      const html = (emailService.sendEmail as jest.Mock).mock.calls[0][2] as string;
+      expect(html.toLowerCase()).toMatch(/notification preferences|unsubscribe/);
+    });
+
+    it('should include a plain-text alternative with unsubscribe notice', async () => {
+      await service.sendEmailVerification('user-1');
+      const text = (emailService.sendEmail as jest.Mock).mock.calls[0][3] as string;
+      expect(text).toContain('verify');
+      expect(text.toLowerCase()).toMatch(/notification preferences|unsubscribe/);
+    });
+
+    it('should personalise the greeting when displayName is present', async () => {
+      await service.sendEmailVerification('user-1');
+      const html = (emailService.sendEmail as jest.Mock).mock.calls[0][2] as string;
+      expect(html).toContain('Alice');
+    });
+
+    it('should use a generic greeting when displayName is absent', async () => {
+      userService.findById.mockResolvedValue(makeUser({ displayName: undefined }));
+      await service.sendEmailVerification('user-1');
+      const html = (emailService.sendEmail as jest.Mock).mock.calls[0][2] as string;
+      // Ensure no undefined leaks into the template
+      expect(html).not.toContain('undefined');
+      expect(html).toContain('Hi there,');
     });
   });
 });

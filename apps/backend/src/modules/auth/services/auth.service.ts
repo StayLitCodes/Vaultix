@@ -5,6 +5,7 @@ import {
   Logger,
   UnauthorizedException,
   BadRequestException,
+  TooManyRequestsException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -17,8 +18,65 @@ import { EmailVerification } from '../../user/entities/email-verification.entity
 import { UpdateProfileDto } from '../dto/profile.dto';
 import { IpfsService } from '../../ipfs/ipfs.service';
 import { EmailService } from '../../../email/email.service';
+import { EmailRateLimiterService } from '../../../email/email-rate-limiter.service';
 import { PreferenceService } from '../../../notifications/preference.service';
+import { NotificationChannel } from '../../../notifications/enums/notification-event.enum';
 import { validateJwtSecret } from './jwt-validation.util';
+
+// ---------------------------------------------------------------------------
+// Branded HTML wrapper for verification emails
+// ---------------------------------------------------------------------------
+
+/**
+ * Wraps the given HTML body in the Vaultix branded email shell
+ * (header + content + unsubscribe footer).
+ */
+function wrapVerificationEmail(bodyHtml: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+</head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:'Segoe UI',Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+    <tr>
+      <td align="center" style="padding:32px 16px;">
+        <table width="600" cellpadding="0" cellspacing="0" role="presentation"
+               style="background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+          <!-- Header -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#1e40af 0%,#1d4ed8 100%);padding:24px 32px;">
+              <h1 style="margin:0;font-size:24px;font-weight:700;color:#ffffff;letter-spacing:-0.5px;">
+                🔒 Vaultix
+              </h1>
+              <p style="margin:4px 0 0;font-size:12px;color:#bfdbfe;">
+                Secure Blockchain Escrow
+              </p>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:32px 32px 24px;">
+              ${bodyHtml}
+            </td>
+          </tr>
+          <!-- Unsubscribe footer -->
+          <tr>
+            <td style="padding:12px 24px;text-align:center;border-top:1px solid #e5e7eb;">
+              <p style="font-size:12px;color:#9ca3af;margin:0;">
+                You received this email because you requested email verification on Vaultix.<br/>
+                Log in to your account to manage your notification preferences.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}
 
 // Stellar SDK types for signature verification
 interface StellarKeypair {
@@ -46,6 +104,7 @@ export class AuthService {
     private emailVerificationRepository: Repository<EmailVerification>,
     private ipfsService: IpfsService,
     private emailService: EmailService,
+    private emailRateLimiter: EmailRateLimiterService,
     @Inject(forwardRef(() => PreferenceService))
     private preferenceService: PreferenceService,
   ) {}
@@ -218,6 +277,33 @@ export class AuthService {
       throw new BadRequestException('No email set for user');
     }
 
+    // ── Respect user's notification preferences (email opt-out) ──────────
+    try {
+      const prefs = await this.preferenceService.getUserPreferences(userId);
+      const emailPref = prefs.find(
+        (p) => p.channel === NotificationChannel.EMAIL,
+      );
+      if (emailPref && !emailPref.enabled) {
+        this.logger.log(
+          `Skipping verification email for user ${userId}: email channel disabled in preferences.`,
+        );
+        return;
+      }
+    } catch (error) {
+      // Never block the verification flow on preference lookup failure
+      this.logger.warn(
+        `Could not read notification preferences for user ${userId}: ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    // ── Rate limit: max 3 verification emails per hour per user ──────────
+    if (!this.emailRateLimiter.tryConsume(userId)) {
+      throw new TooManyRequestsException(
+        'Too many verification emails requested. Please wait before trying again.',
+      );
+    }
+
     // Generate token
     const token = crypto.randomUUID();
     const expiresAt = new Date();
@@ -231,18 +317,25 @@ export class AuthService {
     });
     await this.emailVerificationRepository.save(emailVerification);
 
-    // Queue the verification email for async delivery (retried on failure)
     const verificationUrl = this.buildVerificationUrl(token);
-    await this.emailService.sendEmail(
-      user.email,
-      'Verify your email address - Vaultix',
-      this.buildVerificationEmailHtml(user, verificationUrl),
-      `Hi${user.displayName ? ` ${user.displayName}` : ''},\n\n` +
-        `Please verify your email address by opening the link below:\n\n` +
-        `${verificationUrl}\n\n` +
-        `This link expires in 24 hours. If you did not request this, you can ignore this email.`,
-    );
-    this.logger.log(`Verification email queued for user ${userId}`);
+
+    // ── Queue the verification email (SMTP errors caught, request not crashed) ──
+    try {
+      await this.emailService.sendEmail(
+        user.email,
+        'Verify your email address – Vaultix',
+        this.buildVerificationEmailHtml(user, verificationUrl),
+        this.buildVerificationEmailText(user, verificationUrl),
+      );
+      this.logger.log(`Verification email queued for user ${userId}`);
+    } catch (error) {
+      // Log the error but do NOT rethrow — the token is already saved, so the
+      // outbox can retry delivery. The HTTP request should still succeed.
+      this.logger.error(
+        `Failed to queue verification email for user ${userId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
   }
 
   private buildVerificationUrl(token: string): string {
@@ -253,18 +346,50 @@ export class AuthService {
     return `${baseUrl}?token=${encodeURIComponent(token)}`;
   }
 
+  private buildVerificationEmailText(
+    user: User,
+    verificationUrl: string,
+  ): string {
+    const name = user.displayName ?? 'there';
+    return (
+      `Hi ${name},\n\n` +
+      `Please verify your email address to finish setting up your Vaultix account.\n\n` +
+      `Verify here: ${verificationUrl}\n\n` +
+      `This link expires in 24 hours.\n\n` +
+      `If you did not request this, you can safely ignore this email.\n\n` +
+      `---\n` +
+      `Vaultix – Secure Blockchain Escrow\n` +
+      `To manage your notification preferences, log in to your account.`
+    );
+  }
+
   private buildVerificationEmailHtml(
     user: User,
     verificationUrl: string,
   ): string {
-    const greeting = user.displayName ? `Hi ${user.displayName},` : 'Hi,';
-    return (
-      `<p>${greeting}</p>` +
-      `<p>Please verify your email address to finish setting up your Vaultix account.</p>` +
-      `<p><a href="${verificationUrl}">Verify email address</a></p>` +
-      `<p>Or copy and paste this link into your browser:<br/>${verificationUrl}</p>` +
-      `<p><small>This link expires in 24 hours. If you did not request this, you can ignore this email.</small></p>`
-    );
+    const greeting = user.displayName ? `Hi ${user.displayName},` : 'Hi there,';
+    const bodyHtml =
+      `<p style="font-size:15px;line-height:1.6;color:#374151;">${greeting}</p>` +
+      `<p style="font-size:15px;line-height:1.6;color:#374151;">` +
+      `Please verify your email address to finish setting up your Vaultix account.` +
+      `</p>` +
+      `<p style="margin:24px 0;">` +
+      `<a href="${verificationUrl}"` +
+      ` style="display:inline-block;background:#1d4ed8;color:#ffffff;` +
+      `padding:12px 28px;border-radius:6px;text-decoration:none;font-weight:600;font-size:15px;">` +
+      `Verify email address` +
+      `</a>` +
+      `</p>` +
+      `<p style="font-size:13px;color:#6b7280;">` +
+      `Or copy and paste this link into your browser:<br/>` +
+      `<a href="${verificationUrl}" style="color:#2563eb;word-break:break-all;">${verificationUrl}</a>` +
+      `</p>` +
+      `<p style="font-size:13px;color:#9ca3af;margin-top:24px;">` +
+      `⏱ This link expires in <strong>24 hours</strong>. ` +
+      `If you did not request this, you can safely ignore this email.` +
+      `</p>`;
+
+    return wrapVerificationEmail(bodyHtml);
   }
 
   async verifyEmail(token: string): Promise<void> {
