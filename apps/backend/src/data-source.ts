@@ -2,6 +2,7 @@ import { DataSource } from 'typeorm';
 import { config } from 'dotenv';
 import { User } from './modules/user/entities/user.entity';
 import { RefreshToken } from './modules/user/entities/refresh-token.entity';
+import { EmailVerification } from './modules/user/entities/email-verification.entity';
 import { Escrow } from './modules/escrow/entities/escrow.entity';
 import { Party } from './modules/escrow/entities/party.entity';
 import { Condition } from './modules/escrow/entities/condition.entity';
@@ -20,28 +21,64 @@ import { EmailOutbox } from './email/entities/email-outbox.entity';
 
 config(); // Load .env file
 
-export default new DataSource({
-  type: 'sqlite',
-  database: process.env.DATABASE_PATH || './data/vaultix.db',
-  entities: [
-    User,
-    RefreshToken,
-    Escrow,
-    Party,
-    Condition,
-    EscrowEvent,
-    Dispute,
-    Notification,
-    NotificationPreference,
-    ApiKey,
-    AdminAuditLog,
-    Webhook,
-    WebhookDelivery,
-    WebhookDeadLetter,
-    StellarEvent,
-    AllowedAsset,
-    EmailOutbox,
-  ],
-  migrations: ['./src/migrations/*.ts'],
-  synchronize: false,
-});
+const isPostgres = process.env.DATABASE_DRIVER === 'postgres';
+
+export default new DataSource(
+  isPostgres
+    ? {
+        type: 'postgres',
+        url: process.env.DATABASE_URL,
+        entities: [
+          User,
+          RefreshToken,
+          EmailVerification,
+          Escrow,
+          Party,
+          Condition,
+          EscrowEvent,
+          Dispute,
+          Notification,
+          NotificationPreference,
+          ApiKey,
+          AdminAuditLog,
+          Webhook,
+          WebhookDelivery,
+          WebhookDeadLetter,
+          StellarEvent,
+          AllowedAsset,
+          EmailOutbox,
+        ],
+        migrations: ['./src/migrations/*.ts'],
+        synchronize: false,
+        extra: {
+          max: 20,
+          idleTimeoutMillis: 30000,
+        },
+      }
+    : {
+        type: 'sqlite',
+        database: process.env.DATABASE_PATH || './data/vaultix.db',
+        entities: [
+          User,
+          RefreshToken,
+          EmailVerification,
+          Escrow,
+          Party,
+          Condition,
+          EscrowEvent,
+          Dispute,
+          Notification,
+          NotificationPreference,
+          ApiKey,
+          AdminAuditLog,
+          Webhook,
+          WebhookDelivery,
+          WebhookDeadLetter,
+          StellarEvent,
+          AllowedAsset,
+          EmailOutbox,
+        ],
+        migrations: ['./src/migrations/*.ts'],
+        synchronize: false,
+      },
+);

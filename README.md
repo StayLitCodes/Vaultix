@@ -126,7 +126,8 @@ Before you begin, ensure you have the following installed:
    Edit `apps/backend/.env` with your configuration:
    ```env
    # Database Configuration
-   DATABASE_PATH=./data/vaultix.db  # SQLite path (or use DATABASE_URL for PostgreSQL)
+   DATABASE_DRIVER=sqlite
+   DATABASE_PATH=./data/vaultix.db  # SQLite path (For PostgreSQL, set DATABASE_DRIVER=postgres and use DATABASE_URL)
    
    # JWT Configuration
    JWT_SECRET=your-super-secret-jwt-key-change-in-production
@@ -220,9 +221,17 @@ taskkill /PID <PID> /F
 ```
 
 **Database connection errors**:
-- Ensure PostgreSQL is running: `pg_ctl status` or check Docker container
+- Ensure PostgreSQL is running: `pg_ctl status` or check Docker container (if using PostgreSQL)
+- Verify `DATABASE_DRIVER` is correctly set to `sqlite` or `postgres`
 - Verify `DATABASE_URL` or `DATABASE_PATH` in `.env`
-- Run migrations: `cd apps/backend && pnpm typeorm migration:run`
+- Run migrations: `cd apps/backend && pnpm run migration:run`
+
+**Migrating SQLite to PostgreSQL**:
+If you wish to migrate an existing SQLite database to PostgreSQL, use the provided migration script:
+```bash
+cd apps/backend
+pnpm run db:migrate:postgres
+```
 
 **TypeScript/Linting errors**:
 ```bash
@@ -262,12 +271,15 @@ cargo build --target wasm32v1-none --release
 ```
 
 ### Environment Setup
-1. Set up PostgreSQL: Create `vaultix_db` and run migrations:
-   ```
-   npx prisma migrate dev --name init
+1. Set up PostgreSQL (Recommended for Production) or SQLite (Default for Local Development):
+   For PostgreSQL, create `vaultix_db` and run migrations:
+   ```bash
+   cd apps/backend
+   pnpm run migration:run
    ```
 2. Copy `.env.example` to `.env` and configure:
-   ```
+   ```env
+   DATABASE_DRIVER="postgres" # or "sqlite"
    DATABASE_URL="postgresql://username:password@localhost:5432/vaultix_db"
    JWT_SECRET="your-super-secret-jwt-key"
    STELLAR_NETWORK="testnet"  # "mainnet" for production
