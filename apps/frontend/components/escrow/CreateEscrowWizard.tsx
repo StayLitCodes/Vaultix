@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useForm, FormProvider } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createEscrowSchema, CreateEscrowFormData } from '@/lib/escrow-schema';
@@ -12,11 +13,20 @@ import TermsStep from './create/TermsStep';
 import MilestonesStep from './create/MilestonesStep';
 import ConditionsStep from './create/ConditionsStep';
 import ReviewStep from './create/ReviewStep';
-import { CheckCircle2, ChevronRight, ChevronLeft, Loader2, AlertCircle, Save } from 'lucide-react';
+import {
+  CheckCircle2,
+  ChevronRight,
+  ChevronLeft,
+  Loader2,
+  AlertCircle,
+  Save,
+  X,
+} from 'lucide-react';
 import { WalletServiceFactory, WalletType } from '@/app/services/wallet';
 import { useTemplates } from '@/hooks/useTemplates';
 import { formDataToTemplateData } from '@/lib/templates';
 import { useToast } from '@/hooks/useToast';
+import { useWizardDraft, WizardDraft } from '@/hooks/useWizardDraft';
 
 const STEPS = [
   { id: 'template', title: 'Template', shortTitle: 'Template', fields: [] },
@@ -28,8 +38,44 @@ const STEPS = [
   { id: 'review', title: 'Review', shortTitle: 'Review', fields: [] },
 ];
 
+const DRAFT_STORAGE_KEY = 'create_escrow_wizard_draft';
+
+function parseStepFromUrl(): number {
+  if (typeof window === 'undefined') return 0;
+  const params = new URLSearchParams(window.location.search);
+  const step = parseInt(params.get('step') || '0', 10);
+  return isNaN(step) ? 0 : Math.max(0, Math.min(step, STEPS.length - 1));
+}
+
+function updateUrlStep(step: number) {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (step === 0) {
+    url.searchParams.delete('step');
+  } else {
+    url.searchParams.set('step', String(step));
+  }
+  window.history.pushState({ step }, '', url.toString());
+}
+
+function convertDatesToStrings(data: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...data };
+  if (result.deadline instanceof Date) {
+    result.deadline = result.deadline.toISOString();
+  }
+  return result;
+}
+
+function convertStringsToDates(data: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...data };
+  if (typeof result.deadline === 'string') {
+    result.deadline = new Date(result.deadline);
+  }
+  return result;
+}
+
 export default function CreateEscrowWizard() {
-  const [currentStep, setCurrentStep] = useState(0);
+  const [currentStep, setCurrentStep] = useState(() => parseStepFromUrl());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -37,9 +83,31 @@ export default function CreateEscrowWizard() {
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [templateDescription, setTemplateDescription] = useState('');
+  const [showDiscardModal, setShowDiscardModal] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<(() => void) | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const { addCustomTemplate } = useTemplates();
   const { success } = useToast();
+  const router = useRouter();
+
+  const {
+    draft,
+    showResumePrompt,
+    setShowResumePrompt,
+    draftSavedAt,
+    hasUnsavedChanges,
+    setHasUnsavedChanges,
+    saveDraft,
+    debouncedSaveDraft,
+    clearDraft,
+    discardDraft,
+    loadDraft,
+    checkExpiredOnMount,
+  } = useWizardDraft<CreateEscrowFormData>();
+
+  const isPopStateRef = useRef(false);
+  const isNavigatingRef = useRef(false);
 
   const methods = useForm<CreateEscrowFormData>({
     resolver: zodResolver(createEscrowSchema),
@@ -49,40 +117,132 @@ export default function CreateEscrowWizard() {
 
   const { trigger, handleSubmit, reset, watch } = methods;
 
-  const handleTemplateSelect = (formData: Partial<CreateEscrowFormData>) => {
-    reset({
-      asset: 'XLM',
-      milestones: [],
-      conditions: [],
-      ...formData,
-    });
-  };
+  const watchedValues = watch();
+
+  useEffect(() => {
+    checkExpiredOnMount();
+    setIsInitialized(true);
+  }, [checkExpiredOnMount]);
+
+  useEffect(() => {
+    if (!isInitialized) return;
+    debouncedSaveDraft(currentStep, watchedValues, selectedTemplateId);
+  }, [currentStep, watchedValues, selectedTemplateId, debouncedSaveDraft, isInitialized]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      isPopStateRef.current = true;
+      const step = parseStepFromUrl();
+      setCurrentStep(step);
+      setTimeout(() => {
+        isPopStateRef.current = false;
+      }, 0);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges && currentStep > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges, currentStep]);
+
+  const navigateToStep = useCallback(
+    (step: number) => {
+      if (isNavigatingRef.current) return;
+      isNavigatingRef.current = true;
+      setCurrentStep(step);
+      if (!isPopStateRef.current) {
+        updateUrlStep(step);
+      }
+      setSubmitError(null);
+      setTimeout(() => {
+        isNavigatingRef.current = false;
+      }, 0);
+    },
+    []
+  );
 
   const nextStep = async () => {
     if (currentStep === 0) {
-      setCurrentStep((prev) => prev + 1);
+      navigateToStep(1);
       return;
     }
-    const fields = STEPS[currentStep].fields as any[];
+    const fields = STEPS[currentStep].fields as string[];
     const isValid = await trigger(fields);
     if (isValid) {
-      setCurrentStep((prev) => Math.min(prev + 1, STEPS.length - 1));
-      setSubmitError(null);
+      navigateToStep(Math.min(currentStep + 1, STEPS.length - 1));
     }
   };
 
   const prevStep = () => {
-    setCurrentStep((prev) => Math.max(prev - 1, 0));
-    setSubmitError(null);
+    if (currentStep > 0) {
+      window.history.back();
+    }
+  };
+
+  const handleResume = () => {
+    setShowResumePrompt(false);
+    if (draft) {
+      const restoredData = convertStringsToDates(draft.formData);
+      reset(restoredData as CreateEscrowFormData);
+      setSelectedTemplateId(draft.selectedTemplateId);
+      navigateToStep(draft.currentStep);
+    }
+  };
+
+  const handleDiscardResume = () => {
+    discardDraft();
+    setShowResumePrompt(false);
+  };
+
+  const handleManualSave = () => {
+    saveDraft(currentStep, watchedValues, selectedTemplateId);
+    success('Draft saved successfully!');
+  };
+
+  const handleDiscardConfirm = () => {
+    if (pendingNavigation) {
+      pendingNavigation();
+      setPendingNavigation(null);
+    }
+    setShowDiscardModal(false);
+    clearDraft();
+  };
+
+  const handleDiscardCancel = () => {
+    setPendingNavigation(null);
+    setShowDiscardModal(false);
+  };
+
+  const tryNavigateAway = (callback: () => void) => {
+    if (hasUnsavedChanges && currentStep > 0) {
+      setPendingNavigation(() => callback);
+      setShowDiscardModal(true);
+    } else {
+      callback();
+    }
+  };
+
+  const handleCancel = () => {
+    tryNavigateAway(() => router.push('/dashboard'));
   };
 
   const onSubmit = async (data: CreateEscrowFormData) => {
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      // Use centralized WalletServiceFactory instead of direct @stellar/freighter-api imports
       const walletService = WalletServiceFactory.getService(WalletType.FREIGHTER);
-      
+
       const isInstalled = await walletService.isInstalled?.();
       if (!isInstalled) {
         throw new Error('Freighter wallet extension not detected. Please install Freighter.');
@@ -93,14 +253,23 @@ export default function CreateEscrowWizard() {
         throw new Error('Could not retrieve address from Freighter wallet.');
       }
 
-      // Mock smart contract escrow deployment handshake
       await new Promise((resolve) => setTimeout(resolve, 2000));
       setTxHash('7a8b9c...mock_hash...1d2e3f');
+      clearDraft();
     } catch (error: any) {
       setSubmitError(error.message || 'Failed to create escrow. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleTemplateSelect = (formData: Partial<CreateEscrowFormData>) => {
+    reset({
+      asset: 'XLM',
+      milestones: [],
+      conditions: [],
+      ...formData,
+    });
   };
 
   const handleSaveAsTemplate = () => {
@@ -117,6 +286,15 @@ export default function CreateEscrowWizard() {
     setTemplateDescription('');
   };
 
+  const formatTimestamp = (timestamp: number) => {
+    return new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+      hour12: true,
+    }).format(new Date(timestamp));
+  };
+
   if (txHash) {
     return (
       <div className="max-w-2xl mx-auto p-6 sm:p-8 bg-card border border-border rounded-xl shadow-sm text-center space-y-5">
@@ -124,7 +302,9 @@ export default function CreateEscrowWizard() {
           <CheckCircle2 className="h-14 w-14 text-emerald-500" />
         </div>
         <h2 className="text-xl sm:text-2xl font-bold">Escrow Created Successfully!</h2>
-        <p className="text-muted-foreground text-sm sm:text-base">Your escrow agreement has been deployed to the network.</p>
+        <p className="text-muted-foreground text-sm sm:text-base">
+          Your escrow agreement has been deployed to the network.
+        </p>
         <div className="bg-muted/50 border border-border p-4 rounded-lg break-all text-left">
           <p className="text-xs text-muted-foreground uppercase mb-1 font-mono">Transaction Hash</p>
           <p className="font-mono text-sm">{txHash}</p>
@@ -151,7 +331,9 @@ export default function CreateEscrowWizard() {
           <div className="space-y-4">
             <div className="space-y-3 text-left">
               <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Template Name</label>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">
+                  Template Name
+                </label>
                 <input
                   type="text"
                   value={templateName}
@@ -161,7 +343,9 @@ export default function CreateEscrowWizard() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Description (Optional)</label>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">
+                  Description (Optional)
+                </label>
                 <textarea
                   value={templateDescription}
                   onChange={(e) => setTemplateDescription(e.target.value)}
@@ -195,6 +379,35 @@ export default function CreateEscrowWizard() {
   return (
     <div className="max-w-4xl mx-auto">
       <div className="bg-card border border-border shadow-sm rounded-xl overflow-hidden">
+        {/* Draft indicator */}
+        <div className="px-4 sm:px-8 pt-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400">
+            {draftSavedAt && (
+              <>
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                <span>Draft saved at {formatTimestamp(draftSavedAt)}</span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleManualSave}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-border rounded-md hover:bg-muted transition-colors"
+            >
+              <Save className="h-3.5 w-3.5" />
+              Save draft
+            </button>
+          </div>
+        </div>
+
         {/* Progress bar */}
         <div className="px-4 sm:px-8 pt-6 pb-2 border-b border-border">
           <div className="flex items-center justify-between mb-3 sm:hidden">
@@ -219,7 +432,9 @@ export default function CreateEscrowWizard() {
                 <li key={step.id} className="relative flex-1">
                   {idx !== STEPS.length - 1 && (
                     <div className="absolute top-5 left-1/2 w-full flex items-center" aria-hidden="true">
-                      <div className={`h-0.5 w-full transition-colors duration-300 ${idx < currentStep ? 'bg-primary' : 'bg-border'}`} />
+                      <div
+                        className={`h-0.5 w-full transition-colors duration-300 ${idx < currentStep ? 'bg-primary' : 'bg-border'}`}
+                      />
                     </div>
                   )}
                   <div className="relative flex flex-col items-center">
@@ -229,14 +444,19 @@ export default function CreateEscrowWizard() {
                           <CheckCircle2 className="h-5 w-5" />
                         </div>
                       ) : idx === currentStep ? (
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-primary bg-card" aria-current="step">
+                        <div
+                          className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-primary bg-card"
+                          aria-current="step"
+                        >
                           <div className="h-3 w-3 rounded-full bg-primary" />
                         </div>
                       ) : (
                         <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-border bg-card" />
                       )}
                     </span>
-                    <span className={`absolute -bottom-6 w-max text-center text-xs font-medium ${idx <= currentStep ? 'text-primary' : 'text-muted-foreground'}`}>
+                    <span
+                      className={`absolute -bottom-6 w-max text-center text-xs font-medium ${idx <= currentStep ? 'text-primary' : 'text-muted-foreground'}`}
+                    >
                       {step.title}
                     </span>
                   </div>
@@ -290,9 +510,13 @@ export default function CreateEscrowWizard() {
                   className="min-h-[44px] flex items-center gap-1.5 px-5 py-2 border border-transparent rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:opacity-90 transition-colors disabled:opacity-50"
                 >
                   {isSubmitting ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</>
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Creating…
+                    </>
                   ) : (
-                    <><CheckCircle2 className="h-4 w-4" /> Create Escrow</>
+                    <>
+                      <CheckCircle2 className="h-4 w-4" /> Create Escrow
+                    </>
                   )}
                 </button>
               ) : (
@@ -309,6 +533,77 @@ export default function CreateEscrowWizard() {
           </form>
         </FormProvider>
       </div>
+
+      {/* Resume draft modal */}
+      {showResumePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-card border border-border rounded-xl shadow-lg p-6 max-w-md w-full mx-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Resume draft?</h3>
+              <button
+                onClick={handleDiscardResume}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              You have a saved draft from{' '}
+              {draftSavedAt ? formatTimestamp(draftSavedAt) : 'earlier'}. Would you like to resume where
+              you left off?
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={handleDiscardResume}
+                className="min-h-[44px] px-4 py-2 border border-border rounded-lg hover:bg-muted text-sm font-medium transition-colors"
+              >
+                Discard
+              </button>
+              <button
+                onClick={handleResume}
+                className="min-h-[44px] px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 text-sm font-medium transition-colors"
+              >
+                Resume
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Discard draft confirmation modal */}
+      {showDiscardModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-card border border-border rounded-xl shadow-lg p-6 max-w-md w-full mx-4 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Discard draft?</h3>
+              <button
+                onClick={handleDiscardCancel}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              You have unsaved changes in your draft. If you leave now, your progress will be lost.
+              Are you sure you want to discard your draft?
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={handleDiscardCancel}
+                className="min-h-[44px] px-4 py-2 border border-border rounded-lg hover:bg-muted text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDiscardConfirm}
+                className="min-h-[44px] px-4 py-2 bg-rose-600 text-white rounded-lg hover:opacity-90 text-sm font-medium transition-colors"
+              >
+                Discard draft
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
