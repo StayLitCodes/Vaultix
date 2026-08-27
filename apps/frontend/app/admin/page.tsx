@@ -1,10 +1,13 @@
 "use client";
 
+import { adminMetadata } from "@/lib/admin-metadata";
 import React, { useState, useEffect } from "react";
 import { Users, Shield, TrendingUp, Activity, ArrowUpRight, ArrowDownRight, BarChart3, Wallet, UserPlus, CheckCircle2 } from "lucide-react";
 import { AdminService } from "@/services/admin";
 import { IPlatformStats } from "@/types/admin";
 import { AdminOverviewSkeleton } from "@/components/ui/AdminOverviewSkeleton";
+
+export const metadata = adminMetadata;
 
 function StatCard({
   title,
