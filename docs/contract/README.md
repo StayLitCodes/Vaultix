@@ -5,33 +5,9 @@ The `VaultixEscrow` contract is a decentralized, milestone-based escrow system b
 
 ## Deployment Instructions
 
-### Environment Setup
-Ensure you have the Stellar CLI and correct Rust toolchain installed:
-```bash
-rustup target add wasm32v1-none
-cargo install --locked stellar-cli
-```
-
-### Build
-To build the smart contract into a `.wasm` file:
-```bash
-cargo build --target wasm32v1-none --release
-```
-Optimization (Optional but recommended):
-```bash
-stellar contract optimize --wasm target/wasm32v1-none/release/onchain.wasm
-```
-
-### Deploy
-Deploy the optimized `.wasm` file to the network:
-```bash
-stellar contract deploy --wasm target/wasm32v1-none/release/onchain.optimized.wasm --network testnet \
-    --source YOUR_ACCOUNT_SECRET
-```
-
-For an automated, CI-driven alternative to the manual steps above (including
-role initialization, a post-deploy smoke check, and a committed deployment
-registry), see [`DEPLOYMENT.md`](./DEPLOYMENT.md).
+For the complete production runbook including build, deployment, role
+initialization ordering, upgrade, and emergency pause/rollback procedures see
+[`DEPLOYMENT.md`](./DEPLOYMENT.md).
 
 ## Roles
 
