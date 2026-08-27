@@ -1,22 +1,35 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import ConnectWalletModal from '../ConnectWalletModal';
-import * as freighter from '@stellar/freighter-api';
+import { ConnectWalletModal } from '../ConnectWalletModal';
+import { useWallet } from '@/app/contexts/WalletContext';
 
-// Mock the external global freighter module bindings
-jest.mock('@stellar/freighter-api', () => ({
-  isAvailable: jest.fn(),
-  getPublicKey: jest.fn(),
+jest.mock('@/app/contexts/WalletContext', () => ({
+  useWallet: jest.fn(),
 }));
+
+const mockUseWallet = useWallet as jest.Mock;
 
 describe('ConnectWalletModal Handshake & Error Recovery Matrix', () => {
   const mockOnClose = jest.fn();
-  const mockOnSuccess = jest.fn();
+  const mockConnect = jest.fn();
+  const mockGetAvailableWallets = jest.fn();
+
+  const setWalletState = (overrides: Partial<ReturnType<typeof useWallet>> = {}) => {
+    mockUseWallet.mockReturnValue({
+      connect: mockConnect,
+      getAvailableWallets: mockGetAvailableWallets,
+      isConnecting: false,
+      error: null,
+      ...overrides,
+    });
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
     jest.useFakeTimers();
+    mockGetAvailableWallets.mockResolvedValue(['albedo']);
+    setWalletState();
   });
 
   afterEach(() => {
@@ -25,126 +38,105 @@ describe('ConnectWalletModal Handshake & Error Recovery Matrix', () => {
 
   // --- Core Lifecycle & Happy Path Tests ---
   it('does not render when isOpen is false', () => {
-    render(
-      <ConnectWalletModal isOpen={false} onClose={mockOnClose} onSuccess={mockOnSuccess} />
-    );
-    expect(screen.queryByText('Anchor Core Identity')).not.toBeInTheDocument();
+    render(<ConnectWalletModal isOpen={false} onClose={mockOnClose} />);
+    expect(screen.queryByText('Connect Wallet')).not.toBeInTheDocument();
   });
 
-  it('renders correctly when open', () => {
-    render(
-      <ConnectWalletModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />
-    );
-    expect(screen.getByText('Anchor Core Identity')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Connect Freighter Wallet/i })).toBeInTheDocument();
+  it('renders correctly when open', async () => {
+    render(<ConnectWalletModal isOpen={true} onClose={mockOnClose} />);
+    expect(screen.getByText('Connect Wallet')).toBeInTheDocument();
+    await waitFor(() => expect(mockGetAvailableWallets).toHaveBeenCalled());
+    expect(screen.getByText('Freighter')).toBeInTheDocument();
+    expect(screen.getByText('Albedo')).toBeInTheDocument();
+    expect(screen.getByText('Lobstr')).toBeInTheDocument();
   });
 
-  it('calls onSuccess and onClose when connection succeeds cleanly', async () => {
-    (freighter.isAvailable as jest.Mock).mockResolvedValue(true);
-    (freighter.getPublicKey as jest.Mock).mockResolvedValue('GB...VALID_STELLAR_ADDRESS');
+  it('calls onClose when connection succeeds cleanly', async () => {
+    mockConnect.mockResolvedValue(undefined);
 
-    render(
-      <ConnectWalletModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />
-    );
+    render(<ConnectWalletModal isOpen={true} onClose={mockOnClose} />);
+    await waitFor(() => expect(mockGetAvailableWallets).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByRole('button', { name: /Connect Freighter Wallet/i }));
+    fireEvent.click(screen.getByText('Albedo'));
 
     await waitFor(() => {
-      expect(mockOnSuccess).toHaveBeenCalledWith('GB...VALID_STELLAR_ADDRESS');
+      expect(mockConnect).toHaveBeenCalledWith('albedo');
       expect(mockOnClose).toHaveBeenCalled();
     });
   });
 
-  // --- Feature-Critical Error Scenario Tests (#394) ---
-  it('should render the download install link variant when freighter is not found', async () => {
-    (freighter.isAvailable as jest.Mock).mockResolvedValue(false);
+  // --- Feature-Critical Error Scenario Tests ---
+  it('should render the install link for a wallet that is not detected', async () => {
+    mockGetAvailableWallets.mockResolvedValue([]);
 
-    render(
-      <ConnectWalletModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />
-    );
+    render(<ConnectWalletModal isOpen={true} onClose={mockOnClose} />);
+    await waitFor(() => expect(mockGetAvailableWallets).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByRole('button', { name: /Connect Freighter Wallet/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText(/Freighter wallet extension was not detected/i)).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: /Install Freighter Extension/i })).toBeInTheDocument();
-    });
+    expect(screen.getAllByText('Install').length).toBeGreaterThan(0);
   });
 
-  it('should catch user context rejection events and display action retry configurations', async () => {
-    (freighter.isAvailable as jest.Mock).mockResolvedValue(true);
-    (freighter.getPublicKey as jest.Mock).mockRejectedValue(new Error('User rejected the transaction connection'));
+  it('should catch user rejection errors and display a retry action', async () => {
+    mockConnect.mockRejectedValue(new Error('User rejected the request'));
 
-    render(
-      <ConnectWalletModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />
-    );
+    render(<ConnectWalletModal isOpen={true} onClose={mockOnClose} />);
+    await waitFor(() => expect(mockGetAvailableWallets).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByRole('button', { name: /Connect Freighter Wallet/i }));
+    fireEvent.click(screen.getByText('Albedo'));
 
     await waitFor(() => {
       expect(screen.getByText(/Connection request was cancelled by the user/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Retry Connection Sequence/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Retry Handshake/i })).toBeInTheDocument();
     });
   });
 
-  it('should detect and throw accurate error UI wrappers when the extension public key is locked/empty', async () => {
-    (freighter.isAvailable as jest.Mock).mockResolvedValue(true);
-    (freighter.getPublicKey as jest.Mock).mockResolvedValue(''); // Empty token means wallet lock state
+  it('should show a locked-wallet message when the provider reports a locked error', async () => {
+    mockConnect.mockRejectedValue(new Error('Wallet is locked'));
 
-    render(
-      <ConnectWalletModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />
-    );
+    render(<ConnectWalletModal isOpen={true} onClose={mockOnClose} />);
+    await waitFor(() => expect(mockGetAvailableWallets).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByRole('button', { name: /Connect Freighter Wallet/i }));
+    fireEvent.click(screen.getByText('Albedo'));
 
     await waitFor(() => {
-      expect(screen.getByText(/Your Freighter wallet appears locked/i)).toBeInTheDocument();
+      expect(screen.getByText(/provider extension appears to be locked/i)).toBeInTheDocument();
     });
   });
 
-  it('should transition into failure state when connection exceeds the 30s timeout line', async () => {
-    (freighter.isAvailable as jest.Mock).mockResolvedValue(true);
-    // Unresolving promise to simulate an ongoing handshake hang
-    (freighter.getPublicKey as jest.Mock).mockReturnValue(new Promise(() => {}));
+  it('should transition into a timeout error after 30 seconds', async () => {
+    mockConnect.mockReturnValue(new Promise(() => {}));
+    setWalletState({ isConnecting: true });
 
-    render(
-      <ConnectWalletModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />
-    );
+    render(<ConnectWalletModal isOpen={true} onClose={mockOnClose} />);
+    await waitFor(() => expect(mockGetAvailableWallets).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByRole('button', { name: /Connect Freighter Wallet/i }));
-    
-    // Fast forward mock timers past 30 seconds
+    fireEvent.click(screen.getByText('Albedo'));
+
     jest.advanceTimersByTime(31000);
 
     await waitFor(() => {
-      expect(screen.getByText(/Connection request timed out after 30 seconds/i)).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Retry Connection Sequence/i })).toBeInTheDocument();
+      expect(screen.getByText(/Connection handshake timed out after 30 seconds/i)).toBeInTheDocument();
     });
   });
 
   // --- Button Protection Locks & Modal Close ---
-  it('should show spinner state and disable double clicks during active connection runs', async () => {
-    (freighter.isAvailable as jest.Mock).mockResolvedValue(true);
-    (freighter.getPublicKey as jest.Mock).mockReturnValue(new Promise(() => {})); // remains loading
+  it('should show a spinner and disable other actions while connecting', async () => {
+    mockConnect.mockReturnValue(new Promise(() => {}));
+    setWalletState({ isConnecting: true });
 
-    render(
-      <ConnectWalletModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />
-    );
+    render(<ConnectWalletModal isOpen={true} onClose={mockOnClose} />);
+    await waitFor(() => expect(mockGetAvailableWallets).toHaveBeenCalled());
 
-    const connectButton = screen.getByRole('button', { name: /Connect Freighter Wallet/i });
-    fireEvent.click(connectButton);
+    fireEvent.click(screen.getByText('Albedo'));
 
-    expect(screen.getByText(/Approving Handshake.../i)).toBeInTheDocument();
-    expect(connectButton).toBeDisabled();
+    expect(screen.getByText(/Linking.../i)).toBeInTheDocument();
+    expect(screen.getByLabelText('Close Modal')).toBeDisabled();
   });
 
-  it('calls onClose when close navigation X button is clicked', () => {
-    render(
-      <ConnectWalletModal isOpen={true} onClose={mockOnClose} onSuccess={mockOnSuccess} />
-    );
-    
-    const closeBtn = screen.getByRole('button', { name: /close modal/i });
-    fireEvent.click(closeBtn);
+  it('calls onClose when the close button is clicked', async () => {
+    render(<ConnectWalletModal isOpen={true} onClose={mockOnClose} />);
+    await waitFor(() => expect(mockGetAvailableWallets).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByLabelText('Close Modal'));
     expect(mockOnClose).toHaveBeenCalled();
   });
 });
