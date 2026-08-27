@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useForm, FormProvider } from 'react-hook-form';
+import { useForm, FormProvider, Path } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createEscrowSchema, CreateEscrowFormData } from '@/lib/escrow-schema';
 import TemplateSelector from './create/TemplateSelector';
@@ -177,7 +177,7 @@ export default function CreateEscrowWizard() {
       navigateToStep(1);
       return;
     }
-    const fields = STEPS[currentStep].fields as string[];
+    const fields = STEPS[currentStep].fields as Path<CreateEscrowFormData>[];
     const isValid = await trigger(fields);
     if (isValid) {
       navigateToStep(Math.min(currentStep + 1, STEPS.length - 1));
