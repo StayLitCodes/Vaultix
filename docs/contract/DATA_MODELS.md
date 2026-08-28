@@ -72,6 +72,16 @@ pub struct Milestone {
 }
 ```
 
+### `AdminProposal`
+Represents a pending two-step admin transfer (see "Admin Transfer (Two-Step
+Handshake)" in `README.md`).
+```rust
+pub struct AdminProposal {
+    pub new_admin: Address, // Address waiting to become admin
+    pub expires_at: u64,    // Ledger timestamp after which accept_admin() fails
+}
+```
+
 ### `EscrowStatus`
 Enumerates all the potential states an `Escrow` can be in:
 - `Created`: Initialized but unfunded.
@@ -101,6 +111,7 @@ Holds global configuration data required frequently.
 ### Persistent Storage
 Holds longer-term state, retaining data specifically for individual escrows and specific roles.
 - `admin` (`Symbol`): (`Address`) The contract admin.
+- `admprop` (`Symbol`): (`AdminProposal`) Pending two-step admin transfer created by `propose_admin`; expires (becomes un-acceptable) after `ADMIN_PROPOSAL_WINDOW_SECS` ledger seconds and is removed on a successful `accept_admin` or a `cancel_admin_proposal`.
 - `operator` (`Symbol`): (`Address`) The emergency operator.
 - `arbitrator` (`Symbol`): (`Address`) The dispute resolution arbitrator.
 - `("escrow", id: u64)`: (`Escrow`) Legacy escrow record format, migrated on access.

@@ -23,10 +23,7 @@ impl VaultixEscrow {
         // Emit ContractUpgraded event
         publish_event(
             &env,
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "ContractUpgraded"),
-            ),
+            event_topic(&env, "ContractUpgraded"),
             hash_bytes.clone(),
         );
 
@@ -175,6 +172,34 @@ pub struct RoleUpdatedEvent {
     pub had_old_address: bool,
     pub old_address: Address,
     pub new_address: Address,
+    pub timestamp: u64,
+}
+
+/// A pending admin-transfer proposal created by `propose_admin`.
+///
+/// `expires_at` is a ledger timestamp (`env.ledger().timestamp()`, in seconds)
+/// marking the end of the `ADMIN_PROPOSAL_WINDOW_SECS` acceptance window.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct AdminProposal {
+    pub new_admin: Address,
+    pub expires_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct AdminProposedEvent {
+    pub caller: Address,
+    pub new_admin: Address,
+    pub expires_at: u64,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct AdminProposalCancelledEvent {
+    pub caller: Address,
+    pub new_admin: Address,
     pub timestamp: u64,
 }
 
@@ -401,10 +426,20 @@ pub enum Error {
     InvalidMetadataHash = 30,
     UnsupportedEscrowVersion = 31,
     DisputeEvidenceNotFound = 32,
+    AdminProposalNotFound = 33,
+    AdminProposalExpired = 34,
+    InvalidAdminProposal = 35,
 }
 
 const DEFAULT_FEE_BPS: i128 = 50;
 const BPS_DENOMINATOR: i128 = 10000;
+/// Ledger-seconds window that a pending admin proposal remains acceptable.
+///
+/// A proposal created by `propose_admin` can only be accepted by the pending
+/// admin within this window; once it elapses the proposal expires and the
+/// current admin remains in force. See "Admin Transfer (Two-Step Handshake)"
+/// in `docs/contract/README.md` for the full flow.
+const ADMIN_PROPOSAL_WINDOW_SECS: u64 = 7 * 24 * 60 * 60; // 7 days
 const MAX_BATCH_SIZE: u32 = 20;
 const ESCROW_ENTRY_STORAGE_VERSION: i128 = 2;
 const EVENT_NAMESPACE: &str = "Vaultix";
@@ -690,19 +725,137 @@ impl VaultixEscrow {
         Ok(treasury)
     }
 
-    pub fn set_admin(env: Env, new_admin: Address) -> Result<(), Error> {
+    /// Propose a new admin as part of the two-step admin transfer handshake.
+    ///
+    /// Only the current admin may propose. The current admin stays in force
+    /// until the pending admin proves control of their key by calling
+    /// `accept_admin`. Proposing again replaces any existing pending proposal
+    /// and restarts its expiry window. Emits an `AdminProposed` event.
+    pub fn propose_admin(env: Env, new_admin: Address) -> Result<(), Error> {
         let current_admin = get_admin_internal(&env)?;
         current_admin.require_auth();
 
+        if new_admin == current_admin {
+            return Err(Error::InvalidAdminProposal);
+        }
+
         let timestamp = current_timestamp(&env);
+
+        let proposal = AdminProposal {
+            new_admin: new_admin.clone(),
+            expires_at: timestamp.saturating_add(ADMIN_PROPOSAL_WINDOW_SECS),
+        };
 
         env.storage()
             .persistent()
-            .set(&admin_storage_key(), &new_admin);
-        extend_roles_ttl(&env);
-        emit_role_updated(&env, Role::Admin, Some(current_admin), new_admin, timestamp);
+            .set(&admin_proposal_storage_key(), &proposal);
+        extend_admin_proposal_ttl(&env);
+
+        publish_event(
+            &env,
+            event_topic(&env, "AdminProposed"),
+            AdminProposedEvent {
+                caller: current_admin,
+                new_admin,
+                expires_at: proposal.expires_at,
+                timestamp,
+            },
+        );
 
         Ok(())
+    }
+
+    /// Complete a pending admin transfer.
+    ///
+    /// Only the pending admin themselves can accept; this proves control of the
+    /// key and immediately promotes them, emitting the existing `RoleUpdated`
+    /// event. A proposal can only be accepted within `ADMIN_PROPOSAL_WINDOW_SECS`
+    /// of being proposed; once that window passes the proposal is inert — it
+    /// can never be accepted — and the current admin remains in force until it
+    /// is withdrawn via `cancel_admin_proposal` or replaced by a new proposal.
+    pub fn accept_admin(env: Env) -> Result<(), Error> {
+        let proposal = load_admin_proposal(&env)?;
+        let timestamp = current_timestamp(&env);
+
+        if timestamp > proposal.expires_at {
+            // An expired proposal can never complete the handshake. (Storage
+            // writes are reverted when a contract returns an error, so the
+            // stale entry stays in place, inert, until the admin cancels it or
+            // proposes again.)
+            return Err(Error::AdminProposalExpired);
+        }
+
+        proposal.new_admin.require_auth();
+
+        let current_admin = get_admin_internal(&env)?;
+
+        env.storage()
+            .persistent()
+            .set(&admin_storage_key(), &proposal.new_admin);
+        env.storage()
+            .persistent()
+            .remove(&admin_proposal_storage_key());
+        extend_roles_ttl(&env);
+        emit_role_updated(
+            &env,
+            Role::Admin,
+            Some(current_admin),
+            proposal.new_admin,
+            timestamp,
+        );
+
+        Ok(())
+    }
+
+    /// Withdraw a pending admin proposal. Only the current admin may cancel.
+    /// Emits an `AdminProposalCancelled` event.
+    pub fn cancel_admin_proposal(env: Env) -> Result<(), Error> {
+        let current_admin = get_admin_internal(&env)?;
+        current_admin.require_auth();
+
+        let proposal = load_admin_proposal(&env)?;
+
+        env.storage()
+            .persistent()
+            .remove(&admin_proposal_storage_key());
+
+        publish_event(
+            &env,
+            event_topic(&env, "AdminProposalCancelled"),
+            AdminProposalCancelledEvent {
+                caller: current_admin,
+                new_admin: proposal.new_admin,
+                timestamp: current_timestamp(&env),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Returns the currently pending admin proposal, if any.
+    ///
+    /// The returned `expires_at` is a ledger timestamp; a proposal whose window
+    /// has elapsed can no longer be accepted.
+    pub fn get_pending_admin(env: Env) -> Option<AdminProposal> {
+        let proposal: Option<AdminProposal> = env
+            .storage()
+            .persistent()
+            .get(&admin_proposal_storage_key());
+        if proposal.is_some() {
+            extend_admin_proposal_ttl(&env);
+        }
+        proposal
+    }
+
+    /// BREAKING CHANGE (issue #570): two-step admin transfer.
+    ///
+    /// This no longer transfers the admin role immediately. It now delegates to
+    /// `propose_admin`, so the address is only stored as a *pending* proposal
+    /// and the current admin stays in force until that address proves control of
+    /// its key by calling `accept_admin`. Kept as a compatibility shim for
+    /// existing callers; new integrations should call `propose_admin` directly.
+    pub fn set_admin(env: Env, new_admin: Address) -> Result<(), Error> {
+        Self::propose_admin(env, new_admin)
     }
 
     pub fn set_operator(env: Env, new_operator: Address) -> Result<(), Error> {
@@ -949,12 +1102,8 @@ impl VaultixEscrow {
         // Emit event
         publish_event(
             &env,
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "MultisigConfigured"),
-                escrow_id,
-            ),
-            (threshold_amount, required_signatures),
+            event_topic(&env, "MultisigConfigured"),
+            (escrow_id, threshold_amount, required_signatures),
         );
 
         Ok(())
@@ -1279,12 +1428,8 @@ impl VaultixEscrow {
         // Emit event
         publish_event(
             &env,
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "SignatureCollected"),
-                escrow_id,
-            ),
-            signer,
+            event_topic(&env, "SignatureCollected"),
+            (escrow_id, signer),
         );
 
         Ok(())
@@ -2376,6 +2521,28 @@ fn ensure_not_paused(env: &Env) -> Result<(), Error> {
 
 fn admin_storage_key() -> Symbol {
     symbol_short!("admin")
+}
+
+fn admin_proposal_storage_key() -> Symbol {
+    symbol_short!("admprop")
+}
+
+fn extend_admin_proposal_ttl(env: &Env) {
+    let key = admin_proposal_storage_key();
+    if env.storage().persistent().has(&key) {
+        env.storage().persistent().extend_ttl(&key, 100, 2_000_000);
+    }
+}
+
+fn load_admin_proposal(env: &Env) -> Result<AdminProposal, Error> {
+    let key = admin_proposal_storage_key();
+    let proposal = env
+        .storage()
+        .persistent()
+        .get::<Symbol, AdminProposal>(&key)
+        .ok_or(Error::AdminProposalNotFound)?;
+    extend_admin_proposal_ttl(env);
+    Ok(proposal)
 }
 
 fn operator_storage_key() -> Symbol {

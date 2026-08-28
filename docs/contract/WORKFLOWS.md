@@ -88,3 +88,27 @@ sequenceDiagram
     C->>T: transfer(other_amount to Other)
     Note over C: Status: Resolved
 ```
+
+## 5. Admin Transfer (Two-Step)
+
+A single `set_admin` typo used to permanently lock out contract governance. The
+admin role now changes only through a propose/accept handshake: the current
+admin stages a pending proposal, and only the pending admin — by authenticating
+as themselves — can complete the transfer. A pending proposal expires after
+`ADMIN_PROPOSAL_WINDOW_SECS` (7 days); the current admin can withdraw it at any
+time with `cancel_admin_proposal`.
+
+```mermaid
+sequenceDiagram
+    participant A as Current Admin
+    participant C as VaultixEscrow
+    participant N as New Admin
+
+    A->>C: propose_admin(new_admin)
+    Note over C: Stores pending proposal + expiry window<br/>Admin role unchanged
+    A->>C: cancel_admin_proposal() (optional)
+    Note over C: Withdraws the pending proposal<br/>Admin role unchanged
+    N->>C: accept_admin()
+    Note over C: Requires auth from pending admin<br/>Emits RoleUpdated(Admin, old → new)
+    Note over C: Admin role transferred
+```

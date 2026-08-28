@@ -94,6 +94,23 @@ describe('NotificationService', () => {
       expect(repo.save).toHaveBeenCalled();
     });
 
+    it('should persist one record when multiple channels are enabled', async () => {
+      preferenceService.getUserPreferences.mockResolvedValue([
+        mockPref,
+        { ...mockPref, channel: NotificationChannel.WEBHOOK },
+      ] as any);
+      repo.create.mockReturnValue(mockNotification as any);
+
+      await service.handleEscrowEvent(
+        'u1',
+        NotificationEventType.ESCROW_CREATED,
+        { escrowId: 'e1' },
+        'ESCROW_CREATED:e1:actor:u1:1',
+      );
+
+      expect(repo.save).toHaveBeenCalledTimes(1);
+    });
+
     it('should skip if preference disabled', async () => {
       preferenceService.getUserPreferences.mockResolvedValue([
         { ...mockPref, enabled: false },

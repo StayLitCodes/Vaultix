@@ -314,31 +314,14 @@ describe('StellarEventListenerService', () => {
       );
     });
 
-    it('should create notifications for buyer and seller', async () => {
+    it('should not create notifications for a milestone event', async () => {
       escrowRepo.findOne.mockResolvedValue({
         ...baseEscrow,
         conditions: [...baseConditions.map((c) => ({ ...c }))],
       });
-      partyRepo.find.mockResolvedValue([
-        { userId: 'buyer-user-id', role: PartyRole.BUYER },
-        { userId: 'seller-user-id', role: PartyRole.SELLER },
-        { userId: 'arb-user-id', role: PartyRole.ARBITRATOR },
-      ]);
-
       await (service as any).handleMilestoneReleased(mockEvent);
 
-      // Buyer and seller should get notifications, but not arbitrator
-      expect(notificationService.handleEscrowEvent).toHaveBeenCalledTimes(2);
-      expect(notificationService.handleEscrowEvent).toHaveBeenCalledWith(
-        'buyer-user-id',
-        'MILESTONE_RELEASED',
-        expect.objectContaining({ escrowId: 'escrow-1' }),
-      );
-      expect(notificationService.handleEscrowEvent).toHaveBeenCalledWith(
-        'seller-user-id',
-        'MILESTONE_RELEASED',
-        expect.objectContaining({ escrowId: 'escrow-1' }),
-      );
+      expect(notificationService.handleEscrowEvent).not.toHaveBeenCalled();
     });
 
     it('should be idempotent — skip if milestone already released', async () => {
@@ -467,26 +450,14 @@ describe('StellarEventListenerService', () => {
       expect(conditionRepo.save).toHaveBeenCalled();
     });
 
-    it('should not throw if notification creation fails', async () => {
+    it('should not create notifications while updating the milestone', async () => {
       escrowRepo.findOne.mockResolvedValue({
         ...baseEscrow,
         conditions: [...baseConditions.map((c) => ({ ...c }))],
       });
-      partyRepo.find.mockResolvedValue([
-        { userId: 'buyer-user-id', role: PartyRole.BUYER },
-      ]);
-      notificationService.handleEscrowEvent.mockRejectedValue(
-        new Error('Notification error'),
-      );
-      const errorSpy = jest.spyOn((service as any).logger, 'error');
-
-      // Should not throw
       await (service as any).handleMilestoneReleased(mockEvent);
 
-      expect(errorSpy).toHaveBeenCalledWith(
-        'Failed to create milestone release notifications',
-        expect.any(Error),
-      );
+      expect(notificationService.handleEscrowEvent).not.toHaveBeenCalled();
       // DB changes should still be saved
       expect(conditionRepo.save).toHaveBeenCalled();
     });

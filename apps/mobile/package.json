@@ -11,7 +11,7 @@
     "test": "jest"
   },
   "dependencies": {
-    "@react-native-async-storage/async-storage": "1.23.1",
+    "@react-native-async-storage/async-storage": "^3.1.1",
     "@react-native-community/netinfo": "^11.4.1",
     "@react-navigation/native": "^6.1.18",
     "@stellar/stellar-sdk": "^13.3.0",
@@ -48,10 +48,7 @@
   },
   "jest": {
     "preset": "jest-expo",
-    "transformIgnorePatterns": [
-      "node_modules/(?!(\\.pnpm/[^/]+/node_modules/)?((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg))",
-      "/node_modules/(\\.pnpm/[^/]+/node_modules/)?react-native-reanimated/plugin/"
-    ]
+    "transformIgnorePatterns": []
   },
   "private": true
 }

@@ -140,6 +140,7 @@ fn test_role_rotation_requires_current_admin_auth() {
     client.initialize(&treasury, &Some(50));
     client.init(&admin, &operator, &arbitrator);
 
+    // Admin transfer is two-step: only the current admin can propose...
     let replacement_admin = Address::generate(&env);
     client.set_admin(&replacement_admin);
     assert_eq!(
@@ -157,6 +158,25 @@ fn test_role_rotation_requires_current_admin_auth() {
         )]
     );
 
+    // ...and only the pending admin can accept, which is what promotes them.
+    client.accept_admin();
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            replacement_admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    contract_id.clone(),
+                    Symbol::new(&env, "accept_admin"),
+                    ().into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            },
+        )]
+    );
+    assert_eq!(client.get_admin(), replacement_admin);
+
+    // Once promoted, the new admin is the one who rotates the other roles.
     let replacement_operator = Address::generate(&env);
     client.set_operator(&replacement_operator);
     assert_eq!(
@@ -233,7 +253,12 @@ fn test_role_rotation_updates_roles_and_emits_audit_events() {
     // Note: since soroban-sdk 21, `env.events().all()` only returns the events
     // of the most recent top-level invocation, so each rotation is asserted
     // immediately after its own call rather than against an accumulated log.
-    client.set_admin(&replacement_admin);
+    //
+    // Admin transfer is two-step: `propose_admin` only stages the handover and
+    // `accept_admin` (authorized by the pending admin) is what emits the
+    // existing RoleUpdated event.
+    client.propose_admin(&replacement_admin);
+    client.accept_admin();
     let events = all_events(&env);
     assert_eq!(events.len(), 1);
     assert_role_updated_event(
@@ -289,6 +314,332 @@ fn test_role_rotation_updates_roles_and_emits_audit_events() {
     assert_eq!(client.get_operator(), replacement_operator);
     assert_eq!(client.get_arbitrator(), replacement_arbitrator);
     assert_eq!(client.get_treasury(), replacement_treasury);
+}
+
+#[test]
+fn test_propose_admin_stores_pending_and_keeps_current_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(VaultixEscrow, ());
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+
+    client.initialize(&treasury, &Some(50));
+    client.init(&admin, &operator, &arbitrator);
+
+    let proposed_at = env.ledger().timestamp();
+    let replacement_admin = Address::generate(&env);
+    client.propose_admin(&replacement_admin);
+
+    // Proposing emits an AdminProposed event with the new admin and expiry.
+    // (Since soroban-sdk 21 the event buffer only holds the most recent
+    // invocation, so this must be captured before any further contract calls.)
+    let events = all_events(&env);
+    assert_eq!(events.len(), 1);
+    let event = events.get(0).unwrap();
+    assert_eq!(&event.0, &contract_id);
+
+    let expected_topics: soroban_sdk::Vec<Val> = (
+        Symbol::new(&env, "Vaultix"),
+        Symbol::new(&env, "v1"),
+        Symbol::new(&env, "AdminProposed"),
+    )
+        .into_val(&env);
+    assert_eq!(event.1, expected_topics);
+
+    let payload: AdminProposedEvent = event.2.clone().into_val(&env);
+    assert_eq!(
+        payload,
+        AdminProposedEvent {
+            caller: admin.clone(),
+            new_admin: replacement_admin.clone(),
+            expires_at: proposed_at + ADMIN_PROPOSAL_WINDOW_SECS,
+            timestamp: proposed_at,
+        }
+    );
+
+    // Only the current admin may propose.
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    contract_id.clone(),
+                    Symbol::new(&env, "propose_admin"),
+                    (&replacement_admin,).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            },
+        )]
+    );
+
+    // The current admin stays in force until the pending admin accepts.
+    assert_eq!(client.get_admin(), admin);
+    assert_eq!(
+        client.get_pending_admin(),
+        Some(AdminProposal {
+            new_admin: replacement_admin,
+            expires_at: proposed_at + ADMIN_PROPOSAL_WINDOW_SECS,
+        })
+    );
+}
+
+#[test]
+fn test_accept_admin_requires_pending_admin_auth() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(VaultixEscrow, ());
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+
+    client.initialize(&treasury, &Some(50));
+    client.init(&admin, &operator, &arbitrator);
+
+    // With no pending proposal there is nothing to accept.
+    let result = client.try_accept_admin();
+    assert_eq!(result, Err(Ok(Error::AdminProposalNotFound)));
+
+    let replacement_admin = Address::generate(&env);
+    client.propose_admin(&replacement_admin);
+
+    // accept_admin() must be authorized by the pending admin itself — never by
+    // the current admin — so a mistyped address can never be promoted.
+    client.accept_admin();
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            replacement_admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    contract_id.clone(),
+                    Symbol::new(&env, "accept_admin"),
+                    ().into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            },
+        )]
+    );
+
+    // The pending admin is promoted and the proposal is consumed.
+    assert_eq!(client.get_admin(), replacement_admin);
+    assert_eq!(client.get_pending_admin(), None);
+}
+
+#[test]
+fn test_cancel_admin_proposal_withdraws_pending() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(VaultixEscrow, ());
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+
+    client.initialize(&treasury, &Some(50));
+    client.init(&admin, &operator, &arbitrator);
+
+    // Cancelling with nothing pending is an error.
+    let result = client.try_cancel_admin_proposal();
+    assert_eq!(result, Err(Ok(Error::AdminProposalNotFound)));
+
+    let replacement_admin = Address::generate(&env);
+    client.propose_admin(&replacement_admin);
+    assert!(client.get_pending_admin().is_some());
+
+    // Only the current admin may cancel a pending proposal.
+    client.cancel_admin_proposal();
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    contract_id.clone(),
+                    Symbol::new(&env, "cancel_admin_proposal"),
+                    ().into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            },
+        )]
+    );
+
+    // Cancelling emits an AdminProposalCancelled event. (Captured before the
+    // read calls below clear the invocation-scoped event buffer.)
+    let events = all_events(&env);
+    assert_eq!(events.len(), 1);
+    let event = events.get(0).unwrap();
+    assert_eq!(&event.0, &contract_id);
+
+    let expected_topics: soroban_sdk::Vec<Val> = (
+        Symbol::new(&env, "Vaultix"),
+        Symbol::new(&env, "v1"),
+        Symbol::new(&env, "AdminProposalCancelled"),
+    )
+        .into_val(&env);
+    assert_eq!(event.1, expected_topics);
+
+    let payload: AdminProposalCancelledEvent = event.2.clone().into_val(&env);
+    assert_eq!(
+        payload,
+        AdminProposalCancelledEvent {
+            caller: admin.clone(),
+            new_admin: replacement_admin,
+            timestamp: env.ledger().timestamp(),
+        }
+    );
+
+    // The proposal is withdrawn and the admin never changed.
+    assert_eq!(client.get_pending_admin(), None);
+    assert_eq!(client.get_admin(), admin);
+}
+
+#[test]
+fn test_admin_proposal_expires_after_window() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(VaultixEscrow, ());
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+
+    client.initialize(&treasury, &Some(50));
+    client.init(&admin, &operator, &arbitrator);
+
+    let replacement_admin = Address::generate(&env);
+    client.propose_admin(&replacement_admin);
+    let expires_at = env.ledger().timestamp() + ADMIN_PROPOSAL_WINDOW_SECS;
+
+    // The proposal is still acceptable exactly at the end of the window.
+    env.ledger().with_mut(|ledger| {
+        ledger.timestamp = expires_at;
+    });
+    client.accept_admin();
+    assert_eq!(client.get_admin(), replacement_admin);
+
+    // A fresh proposal that outlives its window can no longer be accepted.
+    let second_admin = Address::generate(&env);
+    client.propose_admin(&second_admin);
+    let second_expires_at = expires_at + ADMIN_PROPOSAL_WINDOW_SECS;
+    env.ledger().with_mut(|ledger| {
+        ledger.timestamp = second_expires_at + 1;
+    });
+    let result = client.try_accept_admin();
+    assert_eq!(result, Err(Ok(Error::AdminProposalExpired)));
+
+    // The expired proposal is inert: it stays stored (so callers can see it
+    // lapsed) but can never be accepted, and the current admin is untouched.
+    assert_eq!(
+        client.get_pending_admin(),
+        Some(AdminProposal {
+            new_admin: second_admin,
+            expires_at: second_expires_at,
+        })
+    );
+    assert_eq!(client.get_admin(), replacement_admin);
+
+    // The current admin can withdraw the stale proposal at any time.
+    client.cancel_admin_proposal();
+    assert_eq!(client.get_pending_admin(), None);
+    assert_eq!(client.get_admin(), replacement_admin);
+}
+
+#[test]
+fn test_old_admin_retains_full_powers_until_acceptance() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(VaultixEscrow, ());
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let treasury = Address::generate(&env);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+
+    client.initialize(&treasury, &Some(50));
+    client.init(&admin, &operator, &arbitrator);
+
+    // While a proposal is pending, the current admin keeps every privilege.
+    let replacement_admin = Address::generate(&env);
+    client.propose_admin(&replacement_admin);
+    assert_eq!(client.get_admin(), admin);
+
+    let replacement_operator = Address::generate(&env);
+    client.set_operator(&replacement_operator);
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    contract_id.clone(),
+                    Symbol::new(&env, "set_operator"),
+                    (&replacement_operator,).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            },
+        )]
+    );
+    assert_eq!(client.get_operator(), replacement_operator);
+
+    let replacement_arbitrator = Address::generate(&env);
+    client.set_arbitrator(&replacement_arbitrator);
+    assert_eq!(client.get_arbitrator(), replacement_arbitrator);
+
+    let replacement_treasury = Address::generate(&env);
+    client.set_treasury(&replacement_treasury);
+    assert_eq!(client.get_treasury(), replacement_treasury);
+
+    // The pending admin has not been promoted.
+    assert_eq!(client.get_admin(), admin);
+    assert_eq!(
+        client.get_pending_admin(),
+        Some(AdminProposal {
+            new_admin: replacement_admin.clone(),
+            expires_at: env.ledger().timestamp() + ADMIN_PROPOSAL_WINDOW_SECS,
+        })
+    );
+
+    // Once the pending admin accepts, they hold the keys and the old admin
+    // no longer does.
+    client.accept_admin();
+    assert_eq!(client.get_admin(), replacement_admin);
+    assert_eq!(client.get_pending_admin(), None);
+
+    let next_operator = Address::generate(&env);
+    client.set_operator(&next_operator);
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            replacement_admin,
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    contract_id,
+                    Symbol::new(&env, "set_operator"),
+                    (&next_operator,).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            },
+        )]
+    );
 }
 
 #[test]
@@ -3442,6 +3793,7 @@ fn test_configure_multisig_threshold() {
 
     // Configure multisig: threshold of 3000 and require 2 signatures
     client.configure_multisig(&escrow_id, &3000, &2);
+    assert_canonical_event_topics(&env, &all_events(&env), &contract_id, "MultisigConfigured");
 
     let escrow = client.get_escrow(&escrow_id);
     assert_eq!(escrow.threshold_amount, 3000);
@@ -3492,6 +3844,7 @@ fn test_collect_signature() {
 
     // Collect first signature
     client.collect_signature(&escrow_id, &depositor);
+    assert_canonical_event_topics(&env, &all_events(&env), &contract_id, "SignatureCollected");
 
     let escrow = client.get_escrow(&escrow_id);
     assert_eq!(escrow.collected_signatures.len(), 1);
@@ -4608,6 +4961,37 @@ fn test_event_topics_are_backwards_compatible() {
 
     client.complete_escrow(&escrow_id);
     assert_canonical_event_topics(&env, &all_events(&env), &contract_id, "EscrowCompleted");
+}
+
+/// Covers `ContractUpgraded`, the third event fixed by issue #569.
+/// Calls `VaultixEscrow::upgrade` directly via `env.as_contract(...)` and
+/// catches the resulting panic from the dummy (non-existent) Wasm hash, since
+/// only the topic on the already-published event needs verifying here.
+#[test]
+fn test_contract_upgraded_uses_canonical_topic() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(VaultixEscrow, ());
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    client.init(&admin, &operator, &arbitrator);
+
+    let new_wasm_hash = [7u8; 32];
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        env.as_contract(&contract_id, || {
+            let _ = VaultixEscrow::upgrade(env.clone(), new_wasm_hash);
+        });
+    }));
+    assert!(
+        result.is_err(),
+        "expected the dummy-wasm deploy step to panic"
+    );
+
+    assert_canonical_event_topics(&env, &all_events(&env), &contract_id, "ContractUpgraded");
 }
 
 /// Asserts that every event emitted by `contract_id` in `events` uses the

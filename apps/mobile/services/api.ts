@@ -7,7 +7,7 @@ import {
   ReleaseMilestonePayload,
 } from '../types/escrow';
 import { withRetry } from '../utils/retry';
-import { Notification, NotificationsResponse } from '../types/notification';
+import { NotificationsResponse } from '../types/notification';
 import { getAccessToken, getSecureAccessToken } from './session';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
@@ -186,11 +186,10 @@ export const disputeApi = {
     mimeType: string,
   ): Promise<{ cid: string; url: string }> => {
     const formData = new FormData();
-    formData.append('file', {
-      uri: fileUri,
-      name: fileName,
-      type: mimeType,
-    } as any);
+    /* React Native's FormData accepts { uri, name, type } but TS types don't reflect it */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fileBlob = { uri: fileUri, name: fileName, type: mimeType } as any;
+    formData.append('file', fileBlob);
 
     const { data } = await api.post<{ cid: string; url: string }>(
       `/api/escrows/${escrowId}/evidence`,
