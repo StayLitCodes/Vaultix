@@ -27,7 +27,7 @@ export class NotificationService {
     ];
   }
 
-  static async markAsRead(id: string): Promise<boolean> {
+  static async markAsRead(_id: string): Promise<boolean> {
     // API call stub
     return true;
   }

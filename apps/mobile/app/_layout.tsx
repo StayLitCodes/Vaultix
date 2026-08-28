@@ -1,6 +1,8 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ToastProvider } from '../components/Toast';
+import { hydrateSession } from '../services/session';
 
 import { AppState, AppStateStatus } from 'react-native';
 import { useBiometricLock } from '../hooks/useBiometricLock';
@@ -14,6 +16,12 @@ export default function RootLayout() {
   const { needsUpdate, forceUpdate, latestVersion, updateUrl, isLoading } = useAppVersion();
   const appState = useRef(AppState.currentState);
   const [updateDismissed, setUpdateDismissed] = useState(false);
+
+  // #550 – read the persisted JWT back out of SecureStore before any route
+  // guard runs, so a cold start into a deep link keeps the user signed in.
+  useEffect(() => {
+    hydrateSession();
+  }, []);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
@@ -43,53 +51,55 @@ export default function RootLayout() {
     !isLoading && needsUpdate && !forceUpdate && isUnlocked && !updateDismissed;
 
   return (
-    <ToastProvider>
-      {/* Force update gate — renders over everything including biometric lock */}
-      <UpdatePromptModal
-        visible={showForceUpdate}
-        forceUpdate={true}
-        latestVersion={latestVersion}
-        updateUrl={updateUrl}
-        onDismiss={() => {}}
-      />
-
-      {/* Biometric lock gate */}
-      {!showForceUpdate && !isUnlocked && (
-        <MobileLockScreen
-          onUnlock={authenticate}
-          onDisableFallback={disableBiometric}
+    <SafeAreaProvider>
+      <ToastProvider>
+        {/* Force update gate — renders over everything including biometric lock */}
+        <UpdatePromptModal
+          visible={showForceUpdate}
+          forceUpdate={true}
+          latestVersion={latestVersion}
+          updateUrl={updateUrl}
+          onDismiss={() => {}}
         />
-      )}
 
-      {/* Soft update prompt — shown after unlock, dismissible */}
-      <UpdatePromptModal
-        visible={showSoftUpdate}
-        forceUpdate={false}
-        latestVersion={latestVersion}
-        updateUrl={updateUrl}
-        onDismiss={() => setUpdateDismissed(true)}
-      />
+        {/* Biometric lock gate */}
+        {!showForceUpdate && !isUnlocked && (
+          <MobileLockScreen
+            onUnlock={authenticate}
+            onDisableFallback={disableBiometric}
+          />
+        )}
 
-      <StatusBar style="auto" />
-      <Stack
-        screenOptions={{
-          headerStyle: { backgroundColor: '#1a1a2e' },
-          headerTintColor: '#fff',
-          headerTitleStyle: { fontWeight: 'bold' },
-        }}
-      >
-        {/* Welcome / Connect Wallet */}
-        <Stack.Screen name="index" options={{ headerShown: false }} />
+        {/* Soft update prompt — shown after unlock, dismissible */}
+        <UpdatePromptModal
+          visible={showSoftUpdate}
+          forceUpdate={false}
+          latestVersion={latestVersion}
+          updateUrl={updateUrl}
+          onDismiss={() => setUpdateDismissed(true)}
+        />
 
-        {/* Tab screens (dashboard + notifications) – rendered via (tabs)/_layout */}
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <StatusBar style="auto" />
+        <Stack
+          screenOptions={{
+            headerStyle: { backgroundColor: '#1a1a2e' },
+            headerTintColor: '#fff',
+            headerTitleStyle: { fontWeight: 'bold' },
+          }}
+        >
+          {/* Welcome / Connect Wallet */}
+          <Stack.Screen name="index" options={{ headerShown: false }} />
 
-        {/* Full-screen detail screens */}
-        <Stack.Screen name="escrow/[id]" options={{ title: 'Escrow Detail' }} />
-        <Stack.Screen name="invite/[token]" options={{ title: 'Accept Invitation' }} />
-        <Stack.Screen name="escrow/create" options={{ title: 'Create Escrow' }} />
-        <Stack.Screen name="escrow/release" options={{ title: 'Release Milestone' }} />
-      </Stack>
-    </ToastProvider>
+          {/* Tab screens (dashboard + notifications + settings) – rendered via (tabs)/_layout */}
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+
+          {/* Full-screen detail screens */}
+          <Stack.Screen name="escrow/[id]" options={{ title: 'Escrow Detail' }} />
+          <Stack.Screen name="invite/[token]" options={{ title: 'Accept Invitation' }} />
+          <Stack.Screen name="escrow/create" options={{ title: 'Create Escrow' }} />
+          <Stack.Screen name="escrow/release" options={{ title: 'Release Milestone' }} />
+        </Stack>
+      </ToastProvider>
+    </SafeAreaProvider>
   );
 }

@@ -237,7 +237,7 @@ fn test_store_rejects_corrupt_escrow_state() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, VaultixEscrow);
+    let contract_id = env.register(VaultixEscrow, ());
     let client = VaultixEscrowClient::new(&env, &contract_id);
 
     let treasury = Address::generate(&env);
@@ -247,7 +247,9 @@ fn test_store_rejects_corrupt_escrow_state() {
     let recipient = Address::generate(&env);
     let admin = Address::generate(&env);
 
-    let token_address = env.register_stellar_asset_contract(admin.clone());
+    let token_address = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
     let token_client = soroban_sdk::token::Client::new(&env, &token_address);
     token_admin.mint(&depositor, &10_000);
@@ -282,7 +284,7 @@ fn test_release_milestone_maintains_invariants_end_to_end() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, VaultixEscrow);
+    let contract_id = env.register(VaultixEscrow, ());
     let client = VaultixEscrowClient::new(&env, &contract_id);
 
     let treasury = Address::generate(&env);
@@ -292,7 +294,9 @@ fn test_release_milestone_maintains_invariants_end_to_end() {
     let recipient = Address::generate(&env);
     let admin = Address::generate(&env);
 
-    let token_address = env.register_stellar_asset_contract(admin.clone());
+    let token_address = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
     let token_client = soroban_sdk::token::Client::new(&env, &token_address);
     token_admin.mint(&depositor, &10_000);
@@ -331,7 +335,7 @@ fn test_invalid_status_transition_blocked_at_runtime() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, VaultixEscrow);
+    let contract_id = env.register(VaultixEscrow, ());
     let client = VaultixEscrowClient::new(&env, &contract_id);
 
     let treasury = Address::generate(&env);
@@ -373,7 +377,7 @@ fn test_release_milestone_rejects_corrupt_released_accounting() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, VaultixEscrow);
+    let contract_id = env.register(VaultixEscrow, ());
     let client = VaultixEscrowClient::new(&env, &contract_id);
 
     let treasury = Address::generate(&env);
@@ -383,7 +387,9 @@ fn test_release_milestone_rejects_corrupt_released_accounting() {
     let recipient = Address::generate(&env);
     let admin = Address::generate(&env);
 
-    let token_address = env.register_stellar_asset_contract(admin.clone());
+    let token_address = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
     let token_client = soroban_sdk::token::Client::new(&env, &token_address);
     token_admin.mint(&depositor, &10_000);
@@ -418,7 +424,7 @@ fn test_invalid_status_transition_rejected_at_persistence() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, VaultixEscrow);
+    let contract_id = env.register(VaultixEscrow, ());
     let client = VaultixEscrowClient::new(&env, &contract_id);
 
     let treasury = Address::generate(&env);
@@ -428,7 +434,9 @@ fn test_invalid_status_transition_rejected_at_persistence() {
     let recipient = Address::generate(&env);
     let admin = Address::generate(&env);
 
-    let token_address = env.register_stellar_asset_contract(admin.clone());
+    let token_address = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     let token_admin = soroban_sdk::token::StellarAssetClient::new(&env, &token_address);
     let token_client = soroban_sdk::token::Client::new(&env, &token_address);
     token_admin.mint(&depositor, &10_000);

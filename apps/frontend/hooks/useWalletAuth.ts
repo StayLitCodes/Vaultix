@@ -1,4 +1,7 @@
-import { useState } from 'react';
+import { useState } from "react";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
+const API_VERSION_PREFIX = "/v1";
 
 export interface WalletAuthState {
   loading: boolean;
@@ -23,27 +26,43 @@ export const useWalletAuth = () => {
     setState({ loading: true, error: null, token: null });
     try {
       // Step 1: get challenge
-      const challengeRes = await fetch(`/api/auth/challenge?publicKey=${publicKey}`);
-      if (!challengeRes.ok) throw new Error('Failed to fetch challenge');
+      const challengeRes = await fetch(
+        `${API_URL}${API_VERSION_PREFIX}/auth/challenge?publicKey=${publicKey}`,
+      );
+      if (!challengeRes.ok) throw new Error("Failed to fetch challenge");
       const { challenge } = await challengeRes.json();
 
       // Step 2: sign challenge with wallet
-      const { signedMessage } = await (window as any).freighter.signMessage(challenge, {
-        address: publicKey,
-      });
+      const { signedMessage } = await (window as any).freighter.signMessage(
+        challenge,
+        {
+          address: publicKey,
+        },
+      );
 
       // Step 3: verify and get token
-      const verifyRes = await fetch('/api/auth/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ publicKey, challenge, signature: signedMessage }),
-      });
-      if (!verifyRes.ok) throw new Error('Authentication failed');
+      const verifyRes = await fetch(
+        `${API_URL}${API_VERSION_PREFIX}/auth/verify`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            publicKey,
+            challenge,
+            signature: signedMessage,
+          }),
+        },
+      );
+      if (!verifyRes.ok) throw new Error("Authentication failed");
       const { token } = await verifyRes.json();
       setState({ loading: false, error: null, token });
       return true;
     } catch (err: any) {
-      setState({ loading: false, error: err.message ?? 'Unknown error', token: null });
+      setState({
+        loading: false,
+        error: err.message ?? "Unknown error",
+        token: null,
+      });
       return false;
     }
   };

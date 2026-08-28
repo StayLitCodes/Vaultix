@@ -12,6 +12,7 @@ interface UseEscrowsParams {
   maxAmount?: string;
   fromDate?: string;
   toDate?: string;
+  walletAddress?: string;
 }
 
 export const useEscrows = (params: UseEscrowsParams = {}) => {

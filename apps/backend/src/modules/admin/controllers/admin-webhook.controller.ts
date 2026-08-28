@@ -39,6 +39,33 @@ export class AdminWebhookController {
     return this.webhookService.manualRetry(deliveryId);
   }
 
+  @Get('dead-letter')
+  async getDeadLetters(
+    @Query('page') page = '1',
+    @Query('limit') limit = '20',
+    @Query('webhookId') webhookId?: string,
+  ) {
+    const parsedPage = Number.parseInt(page, 10);
+    const parsedLimit = Number.parseInt(limit, 10);
+
+    return this.webhookService.getDeadLetters({
+      page: Number.isNaN(parsedPage) ? 1 : parsedPage,
+      limit: Number.isNaN(parsedLimit) ? 20 : parsedLimit,
+      webhookId,
+    });
+  }
+
+  @Post('dead-letter/:deadLetterId/replay')
+  @HttpCode(HttpStatus.OK)
+  async replayDeadLetter(@Param('deadLetterId') deadLetterId: string) {
+    return this.webhookService.replayDeadLetter(deadLetterId);
+  }
+
+  @Get('metrics')
+  async getMetrics() {
+    return this.webhookService.getMetrics();
+  }
+
   @Get('health')
   async getHealthStats() {
     return this.webhookService.getHealthStats();

@@ -138,6 +138,7 @@ export interface IEscrowFilters {
   maxAmount?: string;
   fromDate?: string;
   toDate?: string;
+  walletAddress?: string;
 }
 
 export interface IEscrowEventResponse {

@@ -11,6 +11,7 @@ Thank you for your interest in contributing to Vaultix! This document provides g
 - [Coding Standards](#coding-standards)
 - [Testing](#testing)
 - [Documentation](#documentation)
+- [API Versioning Strategy](#api-versioning-strategy)
 - [Community](#community)
 
 ## Code of Conduct
@@ -68,6 +69,7 @@ chore/update-dependencies             # Maintenance tasks
 ```
 
 **Examples:**
+
 - `feat/add-dispute-resolution-modal`
 - `fix/wallet-connection-timeout`
 - `docs/contributing-guidelines`
@@ -75,6 +77,7 @@ chore/update-dependencies             # Maintenance tasks
 ### Making Changes
 
 1. **Create a branch**:
+
    ```bash
    git checkout -b feat/your-feature-name
    ```
@@ -84,6 +87,7 @@ chore/update-dependencies             # Maintenance tasks
 3. **Write tests**: Add tests for new functionality
 
 4. **Run checks locally**:
+
    ```bash
    pnpm turbo run lint test build
    ```
@@ -107,6 +111,7 @@ footer (optional)
 ```
 
 **Types:**
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation changes
@@ -163,27 +168,33 @@ When creating a PR, use this template:
 
 ```markdown
 ## Description
+
 Brief description of changes and what problem this solves
 
 ## Related Issue
+
 Closes #123
 
 ## Type of Change
+
 - [ ] Bug fix (non-breaking change which fixes an issue)
 - [ ] New feature (non-breaking change which adds functionality)
 - [ ] Breaking change (fix or feature that would cause existing functionality to change)
 - [ ] Documentation update
 
 ## Testing Done
+
 - [ ] Unit tests added/updated
 - [ ] E2E tests added/updated
 - [ ] Manually tested locally
 
 ## Screenshots (if UI changes)
+
 Before: [screenshot]
 After: [screenshot]
 
 ## Checklist
+
 - [ ] My code follows the project's coding standards
 - [ ] I have run lint and tests locally
 - [ ] I have updated documentation as needed
@@ -219,13 +230,13 @@ After: [screenshot]
 async createEscrow(data: CreateEscrowDto): Promise<Escrow> {
   // Validate input
   await this.validateEscrowData(data);
-  
+
   // Create escrow record
   const escrow = await this.escrowRepository.create(data);
-  
+
   // Emit event
   await this.eventEmitter.emit('escrow.created', escrow);
-  
+
   return escrow;
 }
 ```
@@ -268,6 +279,7 @@ pub fn create_escrow(
 Organize code logically following the existing structure:
 
 **Backend:**
+
 ```
 apps/backend/src/
 ├── modules/        # Feature modules (auth, escrow, stellar, etc.)
@@ -279,6 +291,7 @@ apps/backend/src/
 ```
 
 **Frontend:**
+
 ```
 apps/frontend/
 ├── app/            # Next.js app router pages
@@ -323,7 +336,7 @@ cd apps/onchain && cargo test
 **Backend Unit Test** (Jest):
 
 ```typescript
-describe('EscrowService', () => {
+describe("EscrowService", () => {
   let service: EscrowService;
 
   beforeEach(async () => {
@@ -334,26 +347,28 @@ describe('EscrowService', () => {
     service = module.get<EscrowService>(EscrowService);
   });
 
-  it('should create escrow with valid data', async () => {
+  it("should create escrow with valid data", async () => {
     const escrowData = {
       amount: 100,
-      recipient: 'test-address',
-      milestones: ['Milestone 1'],
+      recipient: "test-address",
+      milestones: ["Milestone 1"],
     };
-    
+
     const result = await service.create(escrowData);
-    
+
     expect(result).toBeDefined();
-    expect(result.status).toBe('pending');
+    expect(result.status).toBe("pending");
     expect(result.amount).toBe(100);
   });
 
-  it('should reject escrow with invalid amount', async () => {
-    const invalidData = { /* ... */ };
-    
-    await expect(service.create(invalidData))
-      .rejects
-      .toThrow(EscrowValidationError);
+  it("should reject escrow with invalid amount", async () => {
+    const invalidData = {
+      /* ... */
+    };
+
+    await expect(service.create(invalidData)).rejects.toThrow(
+      EscrowValidationError,
+    );
   });
 });
 ```
@@ -367,24 +382,24 @@ import { CreateEscrowForm } from '@/components/escrow/create-escrow-form';
 describe('CreateEscrowForm', () => {
   it('submits form with valid data', async () => {
     const mockSubmit = jest.fn();
-    
+
     render(<CreateEscrowForm onSubmit={mockSubmit} />);
-    
+
     // Fill form
     fireEvent.change(screen.getByLabelText(/amount/i), {
       target: { value: '100' }
     });
-    
+
     fireEvent.change(screen.getByLabelText(/recipient/i), {
       target: { value: 'GABC...DEF' }
     });
-    
+
     // Submit
     fireEvent.click(screen.getByText('Create Escrow'));
-    
+
     // Wait for submission
     await screen.findByText(/escrow created successfully/i);
-    
+
     expect(mockSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
         amount: 100,
@@ -395,10 +410,10 @@ describe('CreateEscrowForm', () => {
 
   it('shows validation errors for invalid input', async () => {
     render(<CreateEscrowForm onSubmit={jest.fn()} />);
-    
+
     // Submit empty form
     fireEvent.click(screen.getByText('Create Escrow'));
-    
+
     expect(await screen.findByText(/amount is required/i))
       .toBeInTheDocument();
   });
@@ -412,20 +427,20 @@ describe('CreateEscrowForm', () => {
 fn test_create_escrow() {
     let env = Env::default();
     env.mock_all_auths();
-    
+
     let contract_id = env.register_contract(None, VaultixEscrow);
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let amount = 1000_000_000; // 1 XLM in stroops
-    
+
     // Create escrow
     let escrow_id = VaultixEscrowClient::new(&env, &contract_id)
         .create_escrow(&depositor, &recipient, &amount);
-    
+
     // Verify escrow was created
     let escrow = VaultixEscrowClient::new(&env, &contract_id)
         .get_escrow(&escrow_id);
-    
+
     assert_eq!(escrow.depositor, depositor);
     assert_eq!(escrow.recipient, recipient);
     assert_eq!(escrow.amount, amount);
@@ -435,6 +450,7 @@ fn test_create_escrow() {
 ### Test Coverage Goals
 
 Aim for high coverage on critical paths:
+
 - ✅ Authentication flows (wallet connect, JWT)
 - ✅ Escrow creation and fund release
 - ✅ Milestone tracking and approval
@@ -450,13 +466,13 @@ Aim for high coverage on critical paths:
 ```typescript
 /**
  * Validates and processes escrow milestone completion
- * 
+ *
  * @param escrowId - The ID of the escrow to update
  * @param milestoneIndex - Index of the milestone to complete
  * @param proofData - Optional proof of milestone completion
- * 
+ *
  * @returns Updated escrow entity
- * 
+ *
  * @throws {NotFoundError} If escrow doesn't exist
  * @throws {InvalidStateError} If escrow is not in active state
  */
@@ -489,7 +505,7 @@ async completeMilestone(
 /// Returns `Error::Unauthorized` if caller is not authorized
 /// Returns `Error::InvalidState` if escrow conditions not met
 #[contractmethod]
-pub fn release_funds(e: &Env, escrow_id: u64, caller: Address) 
+pub fn release_funds(e: &Env, escrow_id: u64, caller: Address)
     -> Result<Bytes, Error> {
     // Implementation
 }
@@ -498,11 +514,112 @@ pub fn release_funds(e: &Env, escrow_id: u64, caller: Address)
 ### Updating README
 
 Update README.md when:
+
 - Adding new features or capabilities
 - Changing setup requirements or prerequisites
 - Modifying architecture or repository structure
 - Adding new configuration options
 - Updating deployment instructions
+
+## API Versioning Strategy
+
+Vaultix uses **URL-based API versioning** to ensure backward compatibility as the platform evolves.
+
+### Current Version
+
+The current stable API version is **v1**. All endpoints are prefixed with `/v1/`.
+
+```
+GET /v1/escrows
+POST /v1/auth/verify
+GET /v1/admin/users
+```
+
+### Version Lifecycle
+
+| Version | Status     | Sunset Date | Notes                               |
+| ------- | ---------- | ----------- | ----------------------------------- |
+| v1      | **Active** | -           | Current stable API                  |
+| v2      | Scaffold   | -           | Placeholder endpoints, not yet live |
+
+### Backward Compatibility
+
+Unversioned requests (e.g., `/escrows`, `/auth/verify`) are automatically rewritten to `/v1/...` by the version negotiation middleware. These unversioned endpoints return a `Sunset` header indicating the deprecation deadline:
+
+```
+Sunset: 2026-12-31T23:59:59.000Z
+Link: </v1/escrows>; rel="successor-version"
+X-API-Version: v1
+```
+
+**All API consumers should migrate to versioned URLs before the sunset date.**
+
+### Response Headers
+
+| Header          | Description                                  |
+| --------------- | -------------------------------------------- |
+| `X-API-Version` | The resolved API version (e.g., `v1`)        |
+| `Sunset`        | RFC 8594 sunset date for deprecated versions |
+| `Deprecation`   | Set to `true` when a version is deprecated   |
+| `Link`          | Points to the successor version URL          |
+
+### Adding a New Version
+
+1. **Create controllers** with explicit version:
+
+   ```typescript
+   @Controller({ path: 'escrows', version: '2' })
+   export class EscrowV2Controller { ... }
+   ```
+
+2. **Register in a module** and import in `AppModule`.
+
+3. **Update the version sunset map** in `api-version.middleware.ts`:
+
+   ```typescript
+   const API_VERSION_SUNSETS: Record<string, string | null> = {
+     v1: null, // active
+     v2: null, // active (new)
+   };
+   ```
+
+4. **Add to Swagger UI** version selector in `main.ts`.
+
+5. **Deprecate old versions** by setting a sunset date:
+   ```typescript
+   v1: '2027-06-30T23:59:59.000Z', // deprecated
+   ```
+
+### Version-Neutral Endpoints
+
+Some endpoints are version-neutral (accessible without a version prefix):
+
+- `/health` - Health check probes
+- `/api/docs` - Swagger UI
+
+Use `VERSION_NEUTRAL` in the controller decorator:
+
+```typescript
+@Controller({ path: 'health', version: VERSION_NEUTRAL })
+```
+
+### V2 Design Goals (Planned)
+
+- Cursor-based pagination (replacing offset-based)
+- Envelope responses: `{ data, meta, links }`
+- Standardized filtering query parameters
+- RFC 7807 Problem Details error format
+- HATEOAS links for related resources
+
+### Frontend Integration
+
+The frontend API client automatically prepends `/v1` to all requests:
+
+```typescript
+// lib/api-client.ts
+const API_VERSION_PREFIX = "/v1";
+const url = `${API_BASE_URL}${API_VERSION_PREFIX}${path}`;
+```
 
 ## Monorepo Tips
 
@@ -544,6 +661,7 @@ pnpm add axios
 ## Recognition
 
 Contributors will be recognized in:
+
 - README.md contributors section
 - Release notes
 - Annual contributor spotlight
@@ -551,6 +669,7 @@ Contributors will be recognized in:
 ## What We're Looking For
 
 **High Priority Contributions:**
+
 - ✅ Bug fixes (especially issues labeled `bug` or `priority: high`)
 - ✅ Test coverage improvements
 - ✅ Documentation enhancements
@@ -559,6 +678,7 @@ Contributors will be recognized in:
 - ✅ Security enhancements
 
 **Post-MVP Features** (discuss before implementing):
+
 - Multi-asset support (custom tokens, USDC)
 - Advanced analytics dashboard
 - Mobile applications

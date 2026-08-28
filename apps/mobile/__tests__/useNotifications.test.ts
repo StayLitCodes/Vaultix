@@ -1,6 +1,5 @@
 import { renderHook, act } from '@testing-library/react-native';
 import { useNotifications } from '../hooks/useNotifications';
-import { NotificationService } from '../services/NotificationService';
 
 describe('useNotifications', () => {
   it('loads and counts unread notifications', async () => {

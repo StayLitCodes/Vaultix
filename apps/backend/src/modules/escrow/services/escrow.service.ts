@@ -5,6 +5,7 @@ import {
   ForbiddenException,
   ConflictException,
   UnprocessableEntityException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository, SelectQueryBuilder } from 'typeorm';
@@ -47,6 +48,8 @@ import { NotificationEventType } from '../../../notifications/enums/notification
 
 @Injectable()
 export class EscrowService {
+  private readonly logger = new Logger(EscrowService.name);
+
   constructor(
     @InjectRepository(Escrow)
     private escrowRepository: Repository<Escrow>,
@@ -68,6 +71,21 @@ export class EscrowService {
     private readonly ipfsService: IpfsService,
     private readonly notificationService: NotificationService,
   ) {}
+
+  /**
+   * Generate a unique idempotency key for notification deduplication
+   * Format: eventType:escrowId:userId:timestampBucket
+   * Timestamp bucket is 5-minute window to handle near-simultaneous events
+   */
+  private generateIdempotencyKey(
+    eventType: NotificationEventType,
+    escrowId: string,
+    userId: string,
+    actorId: string,
+  ): string {
+    const timestampBucket = Math.floor(Date.now() / (5 * 60 * 1000)); // 5-minute bucket
+    return `${eventType}:${escrowId}:${actorId}:${userId}:${timestampBucket}`;
+  }
 
   async create(
     dto: CreateEscrowDto,
@@ -116,6 +134,12 @@ export class EscrowService {
               invitedBy: creatorId,
               email: invitedUser?.email ?? undefined,
             },
+            this.generateIdempotencyKey(
+              NotificationEventType.PARTY_INVITED,
+              savedEscrow.id,
+              partyDto.userId,
+              creatorId,
+            ),
           )
           .catch(() => undefined);
       }
@@ -143,6 +167,13 @@ export class EscrowService {
       // Dispatch webhook for escrow.created
       await this.webhookService.dispatchEvent('escrow.created', {
         escrowId: savedEscrow.id,
+      });
+
+      this.logger.log({
+        msg: 'Escrow created successfully',
+        userId: creatorId,
+        escrowId: savedEscrow.id,
+        escrowType: dto.type,
       });
 
       return await this.findOne(savedEscrow.id);
@@ -342,6 +373,13 @@ export class EscrowService {
       );
     }
 
+    if (query.walletAddress) {
+      qb.andWhere(
+        '(escrow.creatorId = :walletAddress OR party.userId = :walletAddress)',
+        { walletAddress: query.walletAddress },
+      );
+    }
+
     const sortOrder = query.sortOrder === SortOrder.ASC ? 'ASC' : 'DESC';
     qb.orderBy(`escrow.${query.sortBy || 'createdAt'}`, sortOrder);
 
@@ -531,6 +569,13 @@ export class EscrowService {
       );
 
     const fundedAt = new Date();
+
+    this.logger.log({
+      msg: 'Escrow funded successfully',
+      userId,
+      escrowId: id,
+      amount: dto.amount,
+    });
     await this.escrowRepository.update(id, {
       stellarTxHash,
       fundedAt,
@@ -544,6 +589,15 @@ export class EscrowService {
       { stellarTxHash },
       ipAddress,
     );
+
+    await this.notifyEscrowParticipants(
+      await this.findOne(id),
+      NotificationEventType.ESCROW_FUNDED,
+      { escrowId: id, stellarTxHash },
+      userId,
+      null,
+    );
+
     await this.webhookService.dispatchEvent('escrow.funded', {
       escrowId: id,
       stellarTxHash,
@@ -720,6 +774,13 @@ export class EscrowService {
       escrowId,
       conditionId,
       fulfilledBy: userId,
+    });
+
+    this.logger.log({
+      msg: 'Escrow condition fulfilled',
+      userId,
+      escrowId,
+      conditionId,
     });
 
     return condition;
@@ -971,6 +1032,25 @@ export class EscrowService {
       disputeId: savedDispute.id,
     });
 
+    // Notify the other escrow participants (fire-and-forget)
+    await this.notifyEscrowParticipants(
+      escrow,
+      NotificationEventType.DISPUTE_RAISED,
+      {
+        escrowId,
+        escrowTitle: escrow.title,
+        disputeId: savedDispute.id,
+      },
+      userId,
+    );
+
+    this.logger.log({
+      msg: 'Dispute filed successfully',
+      userId,
+      escrowId,
+      disputeId: savedDispute.id,
+    });
+
     return this.disputeRepository.findOne({
       where: { id: savedDispute.id },
       relations: ['filedBy'],
@@ -1072,10 +1152,74 @@ export class EscrowService {
       outcome: dto.outcome,
     });
 
+    // Notify the other escrow participants (fire-and-forget)
+    await this.notifyEscrowParticipants(
+      escrow,
+      NotificationEventType.DISPUTE_RESOLVED,
+      {
+        escrowId,
+        escrowTitle: escrow.title,
+        disputeId: resolved.id,
+        outcome: dto.outcome,
+      },
+      arbitratorUserId,
+    );
+
     return this.disputeRepository.findOne({
       where: { id: resolved.id },
       relations: ['filedBy', 'resolvedBy'],
     }) as Promise<Dispute>;
+  }
+
+  /**
+   * Dispatch a notification to every escrow participant
+   * (creator + parties), excluding the acting user. Failures must not
+   * block the dispute workflow.
+   */
+  private async notifyEscrowParticipants(
+    escrow: Escrow,
+    eventType: NotificationEventType,
+    payload: Record<string, unknown>,
+    actorId: string,
+    excludeUserId: string | null = actorId,
+  ): Promise<void> {
+    const recipientIds = new Set<string>();
+    if (escrow.creatorId) recipientIds.add(escrow.creatorId);
+    for (const party of escrow.parties ?? []) {
+      if (party.userId) recipientIds.add(party.userId);
+    }
+    if (excludeUserId) recipientIds.delete(excludeUserId);
+
+    if (eventType === NotificationEventType.DISPUTE_RAISED) {
+      const admins = await this.userRepository.find({
+        where: [{ role: UserRole.ADMIN }, { role: UserRole.SUPER_ADMIN }],
+      });
+      for (const admin of admins) {
+        if (admin.id !== excludeUserId) recipientIds.add(admin.id);
+      }
+    }
+
+    for (const recipientId of recipientIds) {
+      const recipient = await this.userRepository.findOne({
+        where: { id: recipientId },
+      });
+      await this.notificationService
+        .handleEscrowEvent(
+          recipientId,
+          eventType,
+          {
+            ...payload,
+            email: recipient?.email ?? undefined,
+          },
+          this.generateIdempotencyKey(
+            eventType,
+            escrow.id,
+            recipientId,
+            actorId,
+          ),
+        )
+        .catch(() => undefined);
+    }
   }
 
   async proposeMilestoneChange(
@@ -1249,6 +1393,12 @@ export class EscrowService {
             acceptedByUserId: userId,
             email: acceptedUser?.email ?? undefined,
           },
+          this.generateIdempotencyKey(
+            NotificationEventType.PARTY_ACCEPTED,
+            escrowId,
+            escrow.creatorId,
+            userId,
+          ),
         )
         .catch(() => undefined);
     }
@@ -1305,6 +1455,12 @@ export class EscrowService {
               rejectedByUserId: userId,
               email: rejectedUser?.email ?? undefined,
             },
+            this.generateIdempotencyKey(
+              NotificationEventType.PARTY_REJECTED,
+              escrowId,
+              escrow.creatorId,
+              userId,
+            ),
           )
           .catch(() => undefined);
       }
@@ -1517,6 +1673,18 @@ export class EscrowService {
       conditionId,
       amount: releaseAmount,
     });
+
+    await this.notifyEscrowParticipants(
+      escrow,
+      NotificationEventType.MILESTONE_RELEASED,
+      {
+        escrowId,
+        escrowTitle: escrow.title,
+        conditionId,
+        amount: releaseAmount,
+      },
+      userId,
+    );
 
     return this.findOne(escrowId);
   }

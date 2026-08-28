@@ -1,10 +1,19 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ApiKey } from './entities/api-key.entity';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
 import { UpdateApiKeyDto } from './dto/update-api-key.dto';
-import { generateApiKey, getKeyPrefix, hashKey, verifyKey } from './utils/api-key.util';
+import {
+  generateApiKey,
+  getKeyPrefix,
+  hashKey,
+  verifyKey,
+} from './utils/api-key.util';
 
 const MAX_ACTIVE_KEYS = 5;
 
@@ -57,14 +66,14 @@ export class ApiKeysService {
 
   async findByRawKey(rawKey: string): Promise<ApiKey | null> {
     const keys = await this.repo.find({ where: { isActive: true } });
-    
+
     for (const key of keys) {
       const isValid = await verifyKey(rawKey, key.keyHash);
       if (isValid) {
         return key;
       }
     }
-    
+
     return null;
   }
 

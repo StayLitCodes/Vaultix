@@ -1,4 +1,10 @@
-import { IsString, IsOptional, IsArray, IsEnum, IsBoolean } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsArray,
+  IsEnum,
+  IsBoolean,
+} from 'class-validator';
 import { ApiKeyScope } from '../entities/api-key.entity';
 
 export class UpdateApiKeyDto {

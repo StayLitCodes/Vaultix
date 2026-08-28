@@ -7,7 +7,7 @@ fn test_admin_upgrade_and_state_preservation() {
     env.mock_all_auths();
 
     // Deploy version A
-    let contract_id = env.register_contract(None, VaultixEscrow);
+    let contract_id = env.register(VaultixEscrow, ());
     let client = VaultixEscrowClient::new(&env, &contract_id);
 
     // Set admin
@@ -52,7 +52,7 @@ fn test_upgrade_rejects_non_admin() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register_contract(None, VaultixEscrow);
+    let contract_id = env.register(VaultixEscrow, ());
     let client = VaultixEscrowClient::new(&env, &contract_id);
 
     // Set admin

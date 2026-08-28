@@ -49,6 +49,6 @@ import { AdminKycController } from './controllers/admin-kyc.controller';
     AdminAuditLogService,
     AnalyticsService,
   ],
-  exports: [AdminService, ConsistencyCheckerService],
+  exports: [AdminService, ConsistencyCheckerService, AdminAuditLogService],
 })
 export class AdminModule {}

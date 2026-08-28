@@ -19,6 +19,7 @@ import { AssetService, IAllowedAsset } from '@/services/assets';
 import { useWallet } from '@/app/contexts/WalletContext';
 import { toast } from 'sonner';
 import * as StellarSdk from 'stellar-sdk';
+import { WalletServiceFactory, WalletType } from '@/app/services/wallet';
 
 interface AssetSelectorProps {
   selectedAsset: IAllowedAsset | null;
@@ -139,17 +140,16 @@ export default function AssetSelector({
 
       const xdr = transaction.toXDR();
 
-      // 3. Request user to sign via Freighter
-      toast.info('Please approve the trustline transaction in your Freighter wallet extension.');
-      
-      // Access freighter directly for signing
-      if (!window.freighter) {
+      // 3. Request user to sign via wallet service
+      toast.info('Please approve the trustline transaction in your wallet extension.');
+
+      const walletService = WalletServiceFactory.getService(WalletType.FREIGHTER);
+      const isInstalled = await walletService.isInstalled?.();
+      if (!isInstalled) {
         throw new Error('Freighter wallet extension is not installed.');
       }
-      const signedXdr = await window.freighter.signTransaction(xdr, {
-        network: wallet.network.toUpperCase(),
-        accountToSign: wallet.publicKey,
-      });
+
+      const signedXdr = await walletService.signTransaction(xdr);
 
       // 4. Submit signed transaction to Horizon
       toast.info('Submitting trustline transaction to Stellar blockchain...');

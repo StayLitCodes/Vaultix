@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { User, Copy, Check, Bell, Shield, Settings as SettingsIcon, ArrowRight, Loader2 } from "lucide-react";
+import { User, Copy, Check, Bell, Shield, Settings as SettingsIcon, ArrowRight, Loader2, DollarSign } from "lucide-react";
 import { useWallet } from "@/app/contexts/WalletContext";
 import ApiKeyManager from "@/components/settings/ApiKeyManager";
 import { useNotifications, UserPreferences } from "@/hooks/useNotifications";
+import { useCurrency } from "@/context/CurrencyContext";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -30,10 +31,10 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+    <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden text-foreground">
+      <div className="px-5 py-4 border-b border-border flex items-center gap-2">
         <Icon className="w-4 h-4 text-blue-500" />
-        <h2 className="font-semibold text-gray-800">{title}</h2>
+        <h2 className="font-semibold text-foreground">{title}</h2>
       </div>
       <div className="px-5 py-4">{children}</div>
     </div>
@@ -57,39 +58,39 @@ function ProfileSectionInner() {
   return (
     <div className="space-y-3">
       <div>
-        <p className="text-xs text-gray-500 mb-1">Connected wallet</p>
+        <p className="text-xs text-muted-foreground mb-1">Connected wallet</p>
         {wallet ? (
           <div className="flex items-center gap-2">
-            <code className="text-sm font-mono bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-lg break-all">
+            <code className="text-sm font-mono bg-muted text-foreground border border-border px-3 py-1.5 rounded-lg break-all">
               {wallet.publicKey}
             </code>
             <button
               onClick={handleCopy}
-              className="flex-shrink-0 p-1.5 rounded hover:bg-gray-100 transition-colors"
+              className="flex-shrink-0 p-1.5 rounded hover:bg-accent transition-colors"
               aria-label="Copy address"
             >
               {copied ? (
                 <Check className="w-4 h-4 text-green-500" />
               ) : (
-                <Copy className="w-4 h-4 text-gray-400" />
+                <Copy className="w-4 h-4 text-muted-foreground" />
               )}
             </button>
           </div>
         ) : (
-          <p className="text-sm text-gray-400 italic">No wallet connected</p>
+          <p className="text-sm text-muted-foreground italic">No wallet connected</p>
         )}
       </div>
       {wallet && (
-        <div className="flex gap-4 text-sm text-gray-500">
+        <div className="flex gap-4 text-sm text-muted-foreground">
           <span>
             Network:{" "}
-            <span className="font-medium text-gray-700 capitalize">
+            <span className="font-medium text-foreground capitalize">
               {wallet.network}
             </span>
           </span>
           <span>
             Provider:{" "}
-            <span className="font-medium text-gray-700 capitalize">
+            <span className="font-medium text-foreground capitalize">
               {wallet.walletType}
             </span>
           </span>
@@ -270,34 +271,34 @@ function NotificationPrefsSection() {
     <SectionCard title="Notification Preferences" icon={Bell}>
       <div className="space-y-4">
         {/* Sound toggle */}
-        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+        <div className="flex items-center justify-between border-b border-border pb-3">
           <div>
-            <span className="text-sm font-medium text-gray-700 block">Notification Sound</span>
-            <span className="text-xs text-gray-400">Play a chime when a new notification is received</span>
+            <span className="text-sm font-medium text-foreground block">Notification Sound</span>
+            <span className="text-xs text-muted-foreground">Play a chime when a new notification is received</span>
           </div>
           <Toggle checked={soundEnabled} onChange={handleToggleSound} />
         </div>
 
         {/* Status indicator */}
         {savingPreferences && (
-          <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg">
+          <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/50 px-3 py-1.5 rounded-lg">
             <Loader2 className="w-3 h-3 animate-spin" />
             Saving preferences…
           </div>
         )}
         {!savingPreferences && lastSaveSucceeded === true && (
-          <div className="flex items-center gap-2 text-xs text-green-600 bg-green-50 px-3 py-1.5 rounded-lg">
+          <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/50 px-3 py-1.5 rounded-lg">
             <Check className="w-3 h-3" />
             Preferences saved
           </div>
         )}
         {!savingPreferences && lastSaveSucceeded === false && (
-          <div className="flex items-center gap-2 text-xs text-red-600 bg-red-50 px-3 py-1.5 rounded-lg">
+          <div className="flex items-center gap-2 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/50 px-3 py-1.5 rounded-lg">
             <span className="font-medium">Failed to save</span>
           </div>
         )}
 
-        <div className="grid grid-cols-[1fr_auto_auto] gap-x-6 text-xs text-gray-400 font-medium uppercase tracking-wider px-1 pt-1">
+        <div className="grid grid-cols-[1fr_auto_auto] gap-x-6 text-xs text-muted-foreground font-medium uppercase tracking-wider px-1 pt-1">
           <span>Event</span>
           <span>Email</span>
           <span>In-app</span>
@@ -311,7 +312,7 @@ function NotificationPrefsSection() {
               key={eventType}
               className="grid grid-cols-[1fr_auto_auto] gap-x-6 items-center"
             >
-              <span className="text-sm text-gray-700">
+              <span className="text-sm text-foreground">
                 {EVENT_LABELS[eventType] || eventType}
               </span>
               <Toggle
@@ -338,23 +339,76 @@ function ApiKeysSection() {
   return <ApiKeyManager />;
 }
 
+// ── Currency Preferences Section ───────────────────────────────────────────
+
+function CurrencyPreferencesSection() {
+  const { currency, setCurrency, showFiat, setShowFiat } = useCurrency();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <SectionCard title="Currency Display" icon={DollarSign}>
+        <div className="text-sm text-muted-foreground italic">Loading…</div>
+      </SectionCard>
+    );
+  }
+
+  return (
+    <SectionCard title="Currency Display" icon={DollarSign}>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between border-b border-border pb-3">
+          <div>
+            <span className="text-sm font-medium text-foreground block">Show Fiat Equivalent</span>
+            <span className="text-xs text-muted-foreground">Display fiat equivalents alongside XLM amounts</span>
+          </div>
+          <Toggle checked={showFiat} onChange={() => setShowFiat(!showFiat)} />
+        </div>
+        
+        <div className="flex items-center justify-between pt-1">
+          <div>
+            <span className="text-sm font-medium text-foreground block">Preferred Currency</span>
+            <span className="text-xs text-muted-foreground">Choose your local currency for conversion</span>
+          </div>
+          <select
+            value={currency}
+            onChange={(e) => setCurrency(e.target.value as any)}
+            className="text-sm border border-border bg-background text-foreground rounded-lg px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
+            disabled={!showFiat}
+          >
+            <option value="usd">USD</option>
+            <option value="eur">EUR</option>
+            <option value="ngn">NGN</option>
+            <option value="kes">KES</option>
+            <option value="ghs">GHS</option>
+            <option value="zar">ZAR</option>
+          </select>
+        </div>
+      </div>
+    </SectionCard>
+  );
+}
+
 // ── Templates Link Section ─────────────────────────────────────────────────
 
 function TemplatesLinkSection() {
   return (
     <Link href="/settings/templates">
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden hover:border-blue-300 transition-colors">
+      <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden hover:border-blue-300 dark:hover:border-blue-700 transition-colors">
         <div className="px-5 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-50 rounded-lg">
-              <SettingsIcon className="w-4 h-4 text-blue-600" />
+            <div className="p-2 bg-blue-50 dark:bg-blue-950/50 rounded-lg">
+              <SettingsIcon className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-800">Manage Templates</h3>
-              <p className="text-xs text-gray-500">Create, edit, and delete your custom escrow templates</p>
+              <h3 className="font-semibold text-foreground">Manage Templates</h3>
+              <p className="text-xs text-muted-foreground">Create, edit, and delete your custom escrow templates</p>
             </div>
           </div>
-          <ArrowRight className="w-4 h-4 text-gray-400" />
+          <ArrowRight className="w-4 h-4 text-muted-foreground" />
         </div>
       </div>
     </Link>
@@ -365,15 +419,16 @@ function TemplatesLinkSection() {
 
 export default function SettingsPage() {
   return (
-    <div className="min-h-screen bg-gray-50 py-10 px-4">
+    <div className="min-h-screen bg-background text-foreground py-10 px-4">
       <div className="max-w-2xl mx-auto space-y-6">
         <div className="flex items-center gap-3 mb-2">
           <Shield className="w-6 h-6 text-blue-500" />
-          <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+          <h1 className="text-2xl font-bold text-foreground">Settings</h1>
         </div>
 
         <ProfileSection />
         <TemplatesLinkSection />
+        <CurrencyPreferencesSection />
         <NotificationPrefsSection />
         <ApiKeysSection />
       </div>

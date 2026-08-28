@@ -6,7 +6,7 @@ import {
   UpdateDateColumn,
   BeforeInsert,
 } from 'typeorm';
-import { v4 as uuidv4 } from 'uuid';
+import * as crypto from 'crypto';
 
 export enum ApiKeyScope {
   READ_ESCROWS = 'read:escrows',
@@ -23,7 +23,7 @@ export class ApiKey {
   @BeforeInsert()
   generateId() {
     if (!this.id) {
-      this.id = uuidv4();
+      this.id = crypto.randomUUID();
     }
   }
 

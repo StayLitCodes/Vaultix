@@ -70,10 +70,8 @@ fn validate_status_field_consistency(escrow: &EscrowEntryV2) -> Result<(), Error
     let status = escrow_status(escrow);
 
     match status {
-        EscrowStatus::Created | EscrowStatus::Cancelled => {
-            if escrow.total_released != 0 {
-                return Err(Error::InvalidEscrowStatus);
-            }
+        EscrowStatus::Created | EscrowStatus::Cancelled if escrow.total_released != 0 => {
+            return Err(Error::InvalidEscrowStatus);
         }
         EscrowStatus::Completed => {
             if escrow.total_released != escrow.total_amount {

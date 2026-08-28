@@ -11,8 +11,9 @@ export class ApiKeyScheduler {
   @Cron(CronExpression.EVERY_HOUR)
   async handleExpiredKeys() {
     try {
-      const deactivatedCount = await this.apiKeysService.deactivateExpiredKeys();
-      
+      const deactivatedCount =
+        await this.apiKeysService.deactivateExpiredKeys();
+
       if (deactivatedCount > 0) {
         this.logger.log(`Deactivated ${deactivatedCount} expired API keys`);
       }

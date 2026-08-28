@@ -200,7 +200,7 @@ pnpm dev
 
 # Terminal 3 - Watch onchain contracts (optional)
 cd apps/onchain
-cargo build --target wasm32-unknown-unknown --release
+cargo build --target wasm32v1-none --release
 ```
 
 ### Testing Your Setup
@@ -253,12 +253,12 @@ pnpm install
 ```bash
 # Update Rust toolchain
 rustup update
-rustup target add wasm32-unknown-unknown
+rustup target add wasm32v1-none
 
 # Rebuild contract
 cd apps/onchain
 cargo clean
-cargo build --target wasm32-unknown-unknown --release
+cargo build --target wasm32v1-none --release
 ```
 
 ### Environment Setup
@@ -430,6 +430,7 @@ Contributions welcome to bolster Vaultix's trust features!
   3. Commit: "feat: add milestone notifications".
   4. PR to `main`.
 - Monorepo tips: `pnpm turbo run build --filter=...`.
+- **Mobile app**: see [apps/mobile/README.md](apps/mobile/README.md) for Expo SDK 52 / React Native 0.76 prerequisites, `EXPO_PUBLIC_*` environment variables (matching `security/env.ts`), and `start`, `android`, `ios`, `lint`, `type-check`, and `test` commands.
 Follow [CONTRIBUTING.md](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License

@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/Providers";
 import Navbar from "@/components/layout/Navbar";
+import MobileNav from "@/components/layout/MobileNav";
+import { headers } from "next/headers";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({
@@ -21,9 +23,14 @@ export const viewport: Viewport = {
   maximumScale: 5,
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // Check headers to conditionally handle mobile nav on landing or public routes
+  const headersList = await headers();
+  const pathname = headersList.get("x-invoke-path") || "";
+  const isLandingPage = pathname === "/" || pathname === "/landing";
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -58,7 +65,10 @@ export default function RootLayout({
       >
         <Providers>
           <Navbar />
-          <main className="pt-16 min-w-0 overflow-x-hidden">{children}</main>
+          <main className={`pt-16 min-w-0 overflow-x-hidden ${!isLandingPage ? 'pb-20 md:pb-0' : ''}`}>
+            {children}
+          </main>
+          {!isLandingPage && <MobileNav />}
         </Providers>
       </body>
     </html>

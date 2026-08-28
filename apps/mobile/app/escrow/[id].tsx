@@ -3,7 +3,6 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,20 +13,16 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { escrowApi } from '../../services/api';
 import { requireAuth } from '../../services/auth';
 import { Escrow, Milestone, Party, EscrowEvent } from '../../types/escrow';
-<<<<<<< HEAD
 import { OfflineBanner } from '../../components/OfflineBanner';
 import { CopyButton } from '../../components/CopyButton';
 import { ShareButton, buildEscrowShareUrl } from '../../components/ShareButton';
 import { useNetworkStatus } from '../../hooks/useNetworkStatus';
 import { toFriendlyError, isOfflineError } from '../../utils/errors';
-=======
 import { useDisputes } from '../../hooks/useDisputes';
 import { RaiseDisputeModal } from '../../components/RaiseDisputeModal';
 import { DisputeDetailsCard } from '../../components/DisputeDetailsCard';
 import { ResolutionSummary } from '../../components/ResolutionSummary';
->>>>>>> d431ba40ce53cfcf510d9b702e2540ee53b1f9f1
 
-// Simulated current user role – in production this comes from auth context
 const CURRENT_USER_ROLE: 'depositor' | 'recipient' | 'arbitrator' = 'depositor';
 
 const STATUS_COLOR: Record<string, string> = {
@@ -58,13 +53,13 @@ function MilestoneRow({ milestone, canRelease, onRelease }: {
         <Text style={styles.milestoneAmount}>{milestone.amount} XLM</Text>
       </View>
       {released ? (
-        <View style={styles.releasedBadge}><Text style={styles.releasedText}>✓ Released</Text></View>
+        <View style={styles.releasedBadge}><Text style={styles.releasedText}>Released</Text></View>
       ) : canRelease ? (
         <TouchableOpacity
           style={styles.releaseBtn}
           onPress={() => onRelease(milestone.id)}
           accessibilityRole="button"
-          accessibilityLabel={`Release milestone ${milestone.title}`}
+          accessibilityLabel={`Release ${milestone.title}`}
         >
           <Text style={styles.releaseBtnText}>Release</Text>
         </TouchableOpacity>
@@ -126,14 +121,10 @@ export default function EscrowDetailScreen() {
   const router = useRouter();
   const [escrow, setEscrow] = useState<Escrow | null>(null);
   const [loading, setLoading] = useState(true);
-<<<<<<< HEAD
   const [error, setError] = useState<{ title: string; message: string } | null>(null);
   const { isOffline, markOffline, markOnline } = useNetworkStatus();
-=======
-  const [error, setError] = useState<string | null>(null);
   const [isDisputeModalVisible, setDisputeModalVisible] = useState(false);
   const { dispute, raiseDispute, hasActiveDispute, isSubmitting } = useDisputes();
->>>>>>> d431ba40ce53cfcf510d9b702e2540ee53b1f9f1
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -180,8 +171,7 @@ export default function EscrowDetailScreen() {
     );
   }
 
-  const statusColor = STATUS_COLOR[escrow.status] ?? '#aaa';
-  // Role-gated: only depositor can release milestones when escrow is funded/confirmed
+  const statusColor = STATUS_COLOR[escrow.status] || '#aaa';
   const canReleaseMilestones =
     CURRENT_USER_ROLE === 'depositor' &&
     ['funded', 'confirmed'].includes(escrow.status) &&
@@ -191,7 +181,6 @@ export default function EscrowDetailScreen() {
     <View style={styles.root}>
       <OfflineBanner visible={isOffline} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>{escrow.title}</Text>
         <View style={[styles.statusBadge, { backgroundColor: statusColor + '22', borderColor: statusColor }]}>
@@ -200,13 +189,11 @@ export default function EscrowDetailScreen() {
       </View>
       <Text style={styles.description}>{escrow.description}</Text>
 
-      {/* Share & Copy row */}
       <View style={styles.shareRow}>
         <CopyButton value={escrow.id} label="Copy Escrow ID" toastMessage="Escrow ID copied!" variant="ghost" />
         <ShareButton url={buildEscrowShareUrl(escrow.id)} label="Share Escrow" variant="primary" />
       </View>
 
-      {/* Amount & Deadline */}
       <View style={styles.metaRow}>
         <View style={styles.metaItem}>
           <Text style={styles.metaLabel}>Amount</Text>
@@ -225,7 +212,6 @@ export default function EscrowDetailScreen() {
         </Section>
       )}
 
-      {/* Milestones */}
       {escrow.milestones && escrow.milestones.length > 0 && (
         <Section title="Milestones">
           {escrow.milestones.map((m) => (
@@ -239,21 +225,18 @@ export default function EscrowDetailScreen() {
         </Section>
       )}
 
-      {/* Parties */}
       {escrow.parties && escrow.parties.length > 0 && (
         <Section title="Parties">
           {escrow.parties.map((p) => <PartyRow key={p.id} party={p} />)}
         </Section>
       )}
 
-      {/* Timeline */}
       {escrow.events && escrow.events.length > 0 && (
         <Section title="Activity Timeline">
           {escrow.events.map((e) => <TimelineItem key={e.id} event={e} />)}
         </Section>
       )}
 
-      {/* Role-gated actions */}
       <Section title="Actions">
         {escrow.status === 'disputed' && CURRENT_USER_ROLE === 'arbitrator' && (
           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#ef476f' }]}>
@@ -266,7 +249,7 @@ export default function EscrowDetailScreen() {
           </TouchableOpacity>
         )}
         {['funded', 'confirmed'].includes(escrow.status) && CURRENT_USER_ROLE === 'depositor' && !hasActiveDispute && (
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.actionBtn, { backgroundColor: '#ef476f22', borderWidth: 1, borderColor: '#ef476f' }]}
             onPress={() => setDisputeModalVisible(true)}
           >
@@ -277,10 +260,6 @@ export default function EscrowDetailScreen() {
           <Text style={styles.noActions}>No actions available for this status.</Text>
         )}
       </Section>
-<<<<<<< HEAD
-      </ScrollView>
-    </View>
-=======
 
       <RaiseDisputeModal
         visible={isDisputeModalVisible}
@@ -292,9 +271,10 @@ export default function EscrowDetailScreen() {
           }
         }}
         isSubmitting={isSubmitting}
+        escrowId={escrow.id}
       />
-    </ScrollView>
->>>>>>> d431ba40ce53cfcf510d9b702e2540ee53b1f9f1
+      </ScrollView>
+    </View>
   );
 }
 
@@ -313,41 +293,40 @@ const styles = StyleSheet.create({
   metaLabel: { color: '#888', fontSize: 11, marginBottom: 4 },
   metaValue: { color: '#fff', fontWeight: '600', fontSize: 15 },
   section: { marginTop: 20 },
-  sectionTitle: { color: '#6c63ff', fontWeight: '700', fontSize: 13, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 },
-  milestoneRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e1e30', borderRadius: 10, padding: 12, marginBottom: 8 },
-  milestoneInfo: { flex: 1 },
-  milestoneTitle: { color: '#fff', fontWeight: '500', fontSize: 14 },
-  milestoneAmount: { color: '#6c63ff', fontSize: 13, marginTop: 2 },
-  releaseBtn: { backgroundColor: '#6c63ff', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 },
-  releaseBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
-  releasedBadge: { backgroundColor: '#06d6a022', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  sectionTitle: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 10 },
+  milestoneRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#1e1e30', borderRadius: 10, padding: 12, marginBottom: 8 },
+  milestoneInfo: { flex: 1, marginRight: 8 },
+  milestoneTitle: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  milestoneAmount: { color: '#888', fontSize: 12, marginTop: 2 },
+  releasedBadge: { backgroundColor: '#06d6a022', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
   releasedText: { color: '#06d6a0', fontSize: 12, fontWeight: '600' },
-  pendingBadge: { backgroundColor: '#2d2d44', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
-  pendingText: { color: '#888', fontSize: 12 },
+  releaseBtn: { backgroundColor: '#6c63ff', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  releaseBtnText: { color: '#fff', fontWeight: '600', fontSize: 13 },
+  pendingBadge: { backgroundColor: '#2d2d44', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
+  pendingText: { color: '#aaa', fontSize: 12 },
   partyRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e1e30', borderRadius: 10, padding: 12, marginBottom: 8 },
-  partyInfo: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 4 },
-  partyRole: { color: '#6c63ff', fontWeight: '700', fontSize: 11, width: 80 },
-  partyAddress: { color: '#ccc', fontSize: 12, flex: 1 },
-  partyStatus: { color: '#888', fontSize: 11, marginLeft: 8 },
-  shareRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, gap: 8 },
-  timelineItem: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12 },
-  timelineDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#6c63ff', marginTop: 4, marginRight: 12 },
+  partyInfo: { flex: 1, marginRight: 8 },
+  partyRole: { color: '#6c63ff', fontWeight: '700', fontSize: 12 },
+  partyAddress: { color: '#fff', fontSize: 14, marginTop: 2 },
+  partyStatus: { color: '#888', fontSize: 12, marginTop: 2 },
+  timelineItem: { flexDirection: 'row', marginBottom: 10 },
+  timelineDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#6c63ff', marginTop: 5, marginRight: 10 },
   timelineContent: { flex: 1 },
-  timelineEvent: { color: '#fff', fontSize: 13, fontWeight: '500' },
-  timelineDate: { color: '#888', fontSize: 11, marginTop: 2 },
-  actionBtn: { borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 10 },
-  actionBtnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  noActions: { color: '#888', fontSize: 13, textAlign: 'center', paddingVertical: 8 },
+  timelineEvent: { color: '#fff', fontSize: 14, fontWeight: '500' },
+  timelineDate: { color: '#777', fontSize: 12, marginTop: 2 },
+  skeletonHeader: { height: 22, backgroundColor: '#2d2d44', borderRadius: 4, marginBottom: 12, width: '60%' },
+  skeletonLine: { height: 12, backgroundColor: '#2d2d44', borderRadius: 4, marginBottom: 8, width: '90%' },
+  skeletonRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  skeletonBox: { flex: 1, height: 70, backgroundColor: '#1e1e30', borderRadius: 10 },
+  skeletonSection: { height: 16, backgroundColor: '#2d2d44', borderRadius: 4, marginVertical: 16, width: '40%' },
+  skeletonCard: { height: 90, backgroundColor: '#1e1e30', borderRadius: 10, marginBottom: 12 },
   errorEmoji: { fontSize: 36, marginBottom: 8 },
   errorTitle: { color: '#ef476f', fontSize: 16, fontWeight: '700', marginBottom: 6, textAlign: 'center' },
   errorMessage: { color: '#aaa', fontSize: 13, textAlign: 'center', lineHeight: 18, marginBottom: 16 },
-  retryBtn: { backgroundColor: '#6c63ff', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 12 },
+  retryBtn: { backgroundColor: '#6c63ff', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10 },
   retryText: { color: '#fff', fontWeight: '600' },
-  // Skeleton styles
-  skeletonHeader: { height: 24, backgroundColor: '#2d2d44', borderRadius: 6, marginBottom: 12, width: '70%' },
-  skeletonLine: { height: 14, backgroundColor: '#2d2d44', borderRadius: 4, marginBottom: 8, width: '90%' },
-  skeletonRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
-  skeletonBox: { flex: 1, height: 60, backgroundColor: '#2d2d44', borderRadius: 10 },
-  skeletonSection: { height: 14, backgroundColor: '#2d2d44', borderRadius: 4, marginTop: 20, marginBottom: 12, width: '40%' },
-  skeletonCard: { height: 48, backgroundColor: '#2d2d44', borderRadius: 10, marginBottom: 8 },
+  shareRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  actionBtn: { borderRadius: 10, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  actionBtnText: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  noActions: { color: '#777', fontSize: 14, textAlign: 'center', marginTop: 8 },
 });

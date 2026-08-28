@@ -236,6 +236,7 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ className = '' }) =
                             onClick={(e) => handleDismissItem(e, notification.id)}
                             className="opacity-0 group-hover:opacity-100 p-1 text-gray-500 hover:text-white rounded transition-all cursor-pointer flex-shrink-0"
                             title="Dismiss notification"
+                            aria-label="Dismiss notification"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>

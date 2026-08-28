@@ -7,9 +7,17 @@ import {
   ReleaseMilestonePayload,
 } from '../types/escrow';
 import { withRetry } from '../utils/retry';
-import { Notification, NotificationsResponse } from '../types/notification';
+import { NotificationsResponse } from '../types/notification';
+import { getAccessToken, getSecureAccessToken } from './session';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
+
+/**
+ * The Nest auth module is URI-versioned (`app.enableVersioning`), so its routes
+ * live under `/v1/auth/...` rather than the `/api/...` prefix the escrow routes
+ * use. Overridable for local gateways/proxies.
+ */
+const AUTH_PATH_PREFIX = process.env.EXPO_PUBLIC_AUTH_PATH_PREFIX ?? '/v1/auth';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -17,15 +25,58 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Attach JWT token to every request
-api.interceptors.request.use((config) => {
-  // Token would come from secure storage in production
-  const token = (global as Record<string, unknown>).__authToken as string | undefined;
+// Attach the SecureStore-backed JWT to every request (#549/#550)
+// Async-safe: reads the persisted token from SecureStore if the in-memory
+// session is empty (e.g. a request fires before hydration finishes).
+api.interceptors.request.use(async (config) => {
+  let token = getAccessToken();
+  if (!token) {
+    token = await getSecureAccessToken();
+  }
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
+
+export interface ChallengeResponse {
+  /** Raw nonce, echoed for debugging — `message` is what must be signed. */
+  nonce: string;
+  /** Exact string the wallet must sign. */
+  message: string;
+}
+
+export interface VerifyResponse {
+  accessToken: string;
+  refreshToken: string;
+}
+
+export const authApi = {
+  /** #550 - step 1: ask the backend for a nonce/challenge for this address. */
+  requestChallenge: async (walletAddress: string): Promise<ChallengeResponse> => {
+    const { data } = await api.post<ChallengeResponse>(`${AUTH_PATH_PREFIX}/challenge`, {
+      walletAddress,
+    });
+    return data;
+  },
+
+  /** #550 - step 3: exchange the signature for a JWT pair. */
+  verifySignature: async (publicKey: string, signature: string): Promise<VerifyResponse> => {
+    const { data } = await api.post<VerifyResponse>(`${AUTH_PATH_PREFIX}/verify`, {
+      publicKey,
+      signature,
+    });
+    return data;
+  },
+
+  /** Exchange a refresh token for a fresh JWT pair. */
+  refresh: async (refreshToken: string): Promise<VerifyResponse> => {
+    const { data } = await api.post<VerifyResponse>(`${AUTH_PATH_PREFIX}/refresh`, {
+      refreshToken,
+    });
+    return data;
+  },
+};
 
 export const escrowApi = {
   /** #314 – list escrows with status filter + pagination (auto-retry on testnet failures) */
@@ -135,11 +186,10 @@ export const disputeApi = {
     mimeType: string,
   ): Promise<{ cid: string; url: string }> => {
     const formData = new FormData();
-    formData.append('file', {
-      uri: fileUri,
-      name: fileName,
-      type: mimeType,
-    } as any);
+    /* React Native's FormData accepts { uri, name, type } but TS types don't reflect it */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fileBlob = { uri: fileUri, name: fileName, type: mimeType } as any;
+    formData.append('file', fileBlob);
 
     const { data } = await api.post<{ cid: string; url: string }>(
       `/api/escrows/${escrowId}/evidence`,

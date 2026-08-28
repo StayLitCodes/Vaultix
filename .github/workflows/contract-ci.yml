@@ -28,7 +28,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          targets: wasm32-unknown-unknown
+          # soroban-sdk 27 rejects wasm32-unknown-unknown on Rust 1.82+
+          # (reference-types / multi-value); wasm32v1-none is the supported target.
+          targets: wasm32v1-none
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2

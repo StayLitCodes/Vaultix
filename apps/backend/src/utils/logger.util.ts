@@ -1,4 +1,24 @@
 import { Logger } from '@nestjs/common';
+import { AsyncLocalStorage } from 'async_hooks';
+
+export interface RequestContext {
+  correlationId: string;
+  userId?: string;
+}
+
+const asyncLocalStorage = new AsyncLocalStorage<RequestContext>();
+
+export function runWithContext<T>(context: RequestContext, fn: () => T): T {
+  return asyncLocalStorage.run(context, fn);
+}
+
+export function getCurrentContext(): RequestContext | undefined {
+  return asyncLocalStorage.getStore();
+}
+
+export function getCorrelationId(): string | undefined {
+  return asyncLocalStorage.getStore()?.correlationId;
+}
 
 export interface LogContext {
   correlationId?: string;
@@ -18,7 +38,7 @@ export class CorrelationLogger {
   }
 
   private format(message: string, ctx?: LogContext): string {
-    const cid = ctx?.correlationId ?? generateId();
+    const cid = ctx?.correlationId ?? getCorrelationId() ?? generateId();
     const meta = ctx ? { ...ctx, correlationId: cid } : { correlationId: cid };
     return `[cid:${cid}] ${message} | ${JSON.stringify(meta)}`;
   }

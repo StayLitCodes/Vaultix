@@ -10,9 +10,18 @@ import { ApiKeyScheduler } from './api-key.scheduler';
 import { AuthModule } from '../modules/auth/auth.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ApiKey]), AuthModule, ScheduleModule.forRoot()],
+  imports: [
+    TypeOrmModule.forFeature([ApiKey]),
+    AuthModule,
+    ScheduleModule.forRoot(),
+  ],
   controllers: [ApiKeyController],
-  providers: [ApiKeysService, ApiRateLimitService, ApiKeyGuard, ApiKeyScheduler],
+  providers: [
+    ApiKeysService,
+    ApiRateLimitService,
+    ApiKeyGuard,
+    ApiKeyScheduler,
+  ],
   exports: [ApiKeysService, ApiRateLimitService, ApiKeyGuard],
 })
 export class ApiKeyModule {}

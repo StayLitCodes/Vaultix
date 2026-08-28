@@ -1,5 +1,10 @@
 import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiBearerAuth,
+  ApiQuery,
+} from '@nestjs/swagger';
 import { Response } from 'express';
 import { AuthGuard } from '../../auth/middleware/auth.guard';
 import { AdminGuard } from '../../auth/middleware/admin.guard';
@@ -14,7 +19,8 @@ export class AnalyticsController {
 
   @Get('summary')
   @ApiOperation({
-    summary: 'Get full analytics summary (volume, activity, performance, users, disputes)',
+    summary:
+      'Get full analytics summary (volume, activity, performance, users, disputes)',
   })
   async getSummary(@Res({ passthrough: true }) res: Response) {
     res.setHeader('Cache-Control', 'public, max-age=300');
@@ -23,7 +29,11 @@ export class AnalyticsController {
 
   @Get('volume')
   @ApiOperation({ summary: 'Get escrow volume time-series data' })
-  @ApiQuery({ name: 'period', required: false, enum: ['daily', 'weekly', 'monthly'] })
+  @ApiQuery({
+    name: 'period',
+    required: false,
+    enum: ['daily', 'weekly', 'monthly'],
+  })
   @ApiQuery({ name: 'from', required: false, type: String })
   @ApiQuery({ name: 'to', required: false, type: String })
   async getVolume(
@@ -41,7 +51,9 @@ export class AnalyticsController {
   }
 
   @Get('users')
-  @ApiOperation({ summary: 'Get user metrics and weekly active user time-series' })
+  @ApiOperation({
+    summary: 'Get user metrics and weekly active user time-series',
+  })
   async getUsers(@Res({ passthrough: true }) res: Response) {
     res.setHeader('Cache-Control', 'public, max-age=300');
     const [metrics, timeSeries] = await Promise.all([
@@ -52,7 +64,9 @@ export class AnalyticsController {
   }
 
   @Get('disputes')
-  @ApiOperation({ summary: 'Get dispute metrics including resolution and win rates' })
+  @ApiOperation({
+    summary: 'Get dispute metrics including resolution and win rates',
+  })
   async getDisputes(@Res({ passthrough: true }) res: Response) {
     res.setHeader('Cache-Control', 'public, max-age=300');
     return this.analyticsService.getDisputeMetrics();
