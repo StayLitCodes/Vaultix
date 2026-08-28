@@ -11,5 +11,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-      - run: npm ci 2>/dev/null || npm install
-      - run: npm test 2>/dev/null || echo "Tests completed"
+      - run: npm install -g pnpm
+      - run: pnpm install --frozen-lockfile
+        working-directory: apps/mobile
+      - run: pnpm test
+        working-directory: apps/mobile
