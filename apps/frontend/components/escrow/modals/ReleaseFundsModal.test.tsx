@@ -3,6 +3,10 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import ReleaseFundsModal from "./ReleaseFundsModal";
 import { IEscrowExtended } from "@/types/escrow";
 
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ push: jest.fn() }),
+}));
+
 // Mock TransactionTracker to simplify tests
 jest.mock("@/components/stellar/TransactionTracker", () => {
   return () => <div data-testid="transaction-tracker">Transaction Tracker Mock</div>;

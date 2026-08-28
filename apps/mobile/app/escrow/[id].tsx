@@ -3,7 +3,6 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -24,7 +23,6 @@ import { RaiseDisputeModal } from '../../components/RaiseDisputeModal';
 import { DisputeDetailsCard } from '../../components/DisputeDetailsCard';
 import { ResolutionSummary } from '../../components/ResolutionSummary';
 
-// Simulated current user role – in production this comes from auth context
 const CURRENT_USER_ROLE: 'depositor' | 'recipient' | 'arbitrator' = 'depositor';
 
 const STATUS_COLOR: Record<string, string> = {
@@ -55,13 +53,13 @@ function MilestoneRow({ milestone, canRelease, onRelease }: {
         <Text style={styles.milestoneAmount}>{milestone.amount} XLM</Text>
       </View>
       {released ? (
-        <View style={styles.releasedBadge}><Text style={styles.releasedText}>✐ Released</Text></View>
+        <View style={styles.releasedBadge}><Text style={styles.releasedText}>Released</Text></View>
       ) : canRelease ? (
         <TouchableOpacity
           style={styles.releaseBtn}
           onPress={() => onRelease(milestone.id)}
           accessibilityRole="button"
-          accessibilityLabel={`release milestone ${milestone.title}`}
+          accessibilityLabel={`Release ${milestone.title}`}
         >
           <Text style={styles.releaseBtnText}>Release</Text>
         </TouchableOpacity>
@@ -174,7 +172,6 @@ export default function EscrowDetailScreen() {
   }
 
   const statusColor = STATUS_COLOR[escrow.status] || '#aaa';
-  // Role-gated: only depositor can release milestones when escrow is funded/confirmed
   const canReleaseMilestones =
     CURRENT_USER_ROLE === 'depositor' &&
     ['funded', 'confirmed'].includes(escrow.status) &&
@@ -184,7 +181,6 @@ export default function EscrowDetailScreen() {
     <View style={styles.root}>
       <OfflineBanner visible={isOffline} />
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>{escrow.title}</Text>
         <View style={[styles.statusBadge, { backgroundColor: statusColor + '22', borderColor: statusColor }]}>
@@ -193,13 +189,11 @@ export default function EscrowDetailScreen() {
       </View>
       <Text style={styles.description}>{escrow.description}</Text>
 
-      {/* Share & Copy row */}
       <View style={styles.shareRow}>
         <CopyButton value={escrow.id} label="Copy Escrow ID" toastMessage="Escrow ID copied!" variant="ghost" />
         <ShareButton url={buildEscrowShareUrl(escrow.id)} label="Share Escrow" variant="primary" />
       </View>
 
-      {/* Amount & Deadline */}
       <View style={styles.metaRow}>
         <View style={styles.metaItem}>
           <Text style={styles.metaLabel}>Amount</Text>
@@ -218,7 +212,6 @@ export default function EscrowDetailScreen() {
         </Section>
       )}
 
-      {/* Milestones */}
       {escrow.milestones && escrow.milestones.length > 0 && (
         <Section title="Milestones">
           {escrow.milestones.map((m) => (
@@ -232,21 +225,18 @@ export default function EscrowDetailScreen() {
         </Section>
       )}
 
-      {/* Parties */}
       {escrow.parties && escrow.parties.length > 0 && (
         <Section title="Parties">
           {escrow.parties.map((p) => <PartyRow key={p.id} party={p} />)}
         </Section>
       )}
 
-      {/* Timeline */}
       {escrow.events && escrow.events.length > 0 && (
         <Section title="Activity Timeline">
           {escrow.events.map((e) => <TimelineItem key={e.id} event={e} />)}
         </Section>
       )}
 
-      {/* Role-gated actions */}
       <Section title="Actions">
         {escrow.status === 'disputed' && CURRENT_USER_ROLE === 'arbitrator' && (
           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#ef476f' }]}>
@@ -259,7 +249,7 @@ export default function EscrowDetailScreen() {
           </TouchableOpacity>
         )}
         {['funded', 'confirmed'].includes(escrow.status) && CURRENT_USER_ROLE === 'depositor' && !hasActiveDispute && (
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.actionBtn, { backgroundColor: '#ef476f22', borderWidth: 1, borderColor: '#ef476f' }]}
             onPress={() => setDisputeModalVisible(true)}
           >
@@ -272,7 +262,6 @@ export default function EscrowDetailScreen() {
       </Section>
 
       <RaiseDisputeModal
-        escrowId={escrow.id}
         visible={isDisputeModalVisible}
         onClose={() => setDisputeModalVisible(false)}
         onSubmit={async (reason, description) => {
@@ -282,6 +271,7 @@ export default function EscrowDetailScreen() {
           }
         }}
         isSubmitting={isSubmitting}
+        escrowId={escrow.id}
       />
       </ScrollView>
     </View>

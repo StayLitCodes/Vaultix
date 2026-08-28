@@ -1,7 +1,7 @@
 /**
  * #316 – Mobile Create Escrow: multi-step form with contract constraint validation
  * Steps: 1) Parties  2) Milestones  3) Deadline  4) Review & Submit
- * Validates: milestone totals == total amount, 1-–10 milestones, deadline in future
+ * Validates: milestone totals == total amount, 1-10 milestones, deadline in future
  */
 import React, { useEffect, useState } from 'react';
 import {
@@ -20,6 +20,8 @@ import { useRouter } from 'expo-router';
 import { escrowApi } from '../../services/api';
 import { toFriendlyError } from '../../utils/errors';
 import { requireAuth } from '../../services/auth';
+import * as StellarSdk from '@stellar/stellar-sdk';
+import { getLocalWalletAddress } from '../../services/wallet';
 
 const MAX_MILESTONES = 10;
 const MIN_MILESTONES = 1;
@@ -36,7 +38,7 @@ interface FormState {
   description: string;
   totalAmount: string;
   asset: string;
-  deadline: string; // ISO date string YYYY-MM-DD
+  deadline: string;
   milestones: MilestoneInput[];
 }
 
@@ -112,13 +114,32 @@ export default function CreateEscrowScreen() {
     update('milestones', form.milestones.filter((_, i) => i !== index));
   };
 
-  // --- Validation per step ---
-  const validateStep1 = (): boolean => {
+  const validateStep1 = async (): Promise<boolean> => {
     const e: Partial<Record<string, string>> = {};
     if (!form.title.trim()) e.title = 'Title is required';
-    if (!form.counterpartyAddress.trim()) e.counterpartyAddress = 'Recipient address is required';
-    if (!form.totalAmount || isNaN(Number(form.totalAmount)) || Number(form.totalAmount) <= 0)
+    const addr = form.counterpartyAddress.trim();
+    if (!addr) {
+      e.counterpartyAddress = 'Recipient address is required';
+    } else if (!StellarSdk.StrKey.isValidEd25519PublicKey(addr)) {
+      e.counterpartyAddress = 'Invalid Stellar address format';
+    } else {
+      const ownAddress = await getLocalWalletAddress();
+      if (ownAddress && addr === ownAddress) {
+        e.counterpartyAddress = 'You cannot escrow with yourself';
+      }
+    }
+    const amountStr = form.totalAmount;
+    if (!amountStr || isNaN(Number(amountStr)) || Number(amountStr) <= 0) {
       e.totalAmount = 'Enter a valid amount greater than 0';
+    } else {
+      const amount = Number(amountStr);
+      const stroops = Math.round(amount * 10_000_000);
+      if (stroops > Number.MAX_SAFE_INTEGER) {
+        e.totalAmount = 'Amount is too large';
+      } else if (amount !== stroops / 10_000_000) {
+        e.totalAmount = 'Amount cannot have more than 7 decimal places';
+      }
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -128,8 +149,9 @@ export default function CreateEscrowScreen() {
     const total = Number(form.totalAmount);
     const milestoneSum = form.milestones.reduce((s, m) => s + Number(m.amount || 0), 0);
 
-    if (form.milestones.length < MIN_MILESTONES || form.milestones.length > MAX_MILESTONES)
+    if (form.milestones.length < MIN_MILESTONES || form.milestones.length > MAX_MILESTONES) {
       e.milestones = `Must have ${MIN_MILESTONES}–${MAX_MILESTONES} milestones`;
+    }
 
     form.milestones.forEach((m, i) => {
       if (!m.title.trim()) e[`_title_${i}`] = 'Title required';
@@ -137,7 +159,6 @@ export default function CreateEscrowScreen() {
         e[`_amount_${i}`] = 'Valid amount required';
     });
 
-    // Contract constraint: milestone totals must equal total amount
     if (Math.abs(milestoneSum - total) > 0.0001)
       e.milestoneTotal = `Milestone amounts (${milestoneSum}) must equal total (${total})`;
 
@@ -157,8 +178,11 @@ export default function CreateEscrowScreen() {
     return Object.keys(e).length === 0;
   };
 
-  const handleNext = () => {
-    const valid = step === 1 ? validateStep1() : step === 2 ? validateStep2() : validateStep3();
+  const handleNext = async () => {
+    let valid: boolean;
+    if (step === 1) { valid = await validateStep1(); }
+    else if (step === 2) { valid = validateStep2(); }
+    else { valid = validateStep3(); }
     if (valid) setStep((s) => s + 1);
   };
 
@@ -180,7 +204,7 @@ export default function CreateEscrowScreen() {
       });
       Alert.alert('Success', 'Escrow created!', [
         { text: 'View', onPress: () => router.replace({ pathname: '/escrow/[id]', params: { id: created.id } }) },
-        { text: 'Dashboard', onPress: () => router.replace('/dashboard') },
+        { text: 'Dashboard', onPress: () => router.replace('/(tabs)/dashboard') },
       ]);
     } catch (err) {
       const friendly = toFriendlyError(err);
@@ -198,7 +222,6 @@ export default function CreateEscrowScreen() {
         <StepIndicator current={step} total={4} />
         <Text style={styles.stepLabel}>Step {step} of 4</Text>
 
-        {/* Step 1: Parties & Amount */}
         {step === 1 && (
           <View>
             <Text style={styles.stepTitle}>Parties & Amount</Text>
@@ -209,7 +232,6 @@ export default function CreateEscrowScreen() {
           </View>
         )}
 
-        {/* Step 2: Milestones */}
         {step === 2 && (
           <View>
             <Text style={styles.stepTitle}>Milestones</Text>
@@ -240,7 +262,6 @@ export default function CreateEscrowScreen() {
           </View>
         )}
 
-        {/* Step 3: Deadline */}
         {step === 3 && (
           <View>
             <Text style={styles.stepTitle}>Deadline</Text>
@@ -255,14 +276,13 @@ export default function CreateEscrowScreen() {
           </View>
         )}
 
-        {/* Step 4: Review */}
         {step === 4 && (
           <View>
             <Text style={styles.stepTitle}>Review & Submit</Text>
             <View style={styles.reviewCard}>
               <ReviewRow label="Title" value={form.title} />
               <ReviewRow label="Recipient" value={form.counterpartyAddress} />
-              <ReviewRow label="Amount" value={`${form.totalAmount} {form.asset}`} />
+              <ReviewRow label="Amount" value={`${form.totalAmount} ${form.asset}`} />
               <ReviewRow label="Deadline" value={form.deadline} />
               <ReviewRow label="Milestones" value={`${form.milestones.length} milestone(s)`} />
             </View>
@@ -270,7 +290,6 @@ export default function CreateEscrowScreen() {
           </View>
         )}
 
-        {/* Navigation */}
         <View style={styles.navRow}>
           {step > 1 && (
             <TouchableOpacity style={styles.backBtn} onPress={() => setStep((s) => s - 1)}>
@@ -313,14 +332,7 @@ const styles = StyleSheet.create({
   hint: { color: '#888', fontSize: 12, marginBottom: 8 },
   field: { marginBottom: 16 },
   label: { color: '#aaa', fontSize: 13, marginBottom: 6 },
-  input: {
-    backgroundColor: '#1e1e30',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: '#fff',
-    fontSize: 15,
-  },
+  input: { backgroundColor: '#1e1e30', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, color: '#fff', fontSize: 15 },
   inputMulti: { minHeight: 80, textAlignVertical: 'top' },
   inputError: { borderWidth: 1, borderColor: '#ef476f' },
   errorText: { color: '#ef476f', fontSize: 12, marginTop: 4 },
@@ -341,3 +353,4 @@ const styles = StyleSheet.create({
   reviewLabel: { color: '#888', fontSize: 13 },
   reviewValue: { color: '#fff', fontSize: 13, fontWeight: '500', maxWidth: '60%' },
 });
+

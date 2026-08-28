@@ -16,7 +16,8 @@ const WebSocketContext = createContext<WebSocketContextType>({
   connectionError: null,
 });
 
-export const useGlobalWebSocket = () => useContext(WebSocketContext);
+export const useWebSocket = () => useContext(WebSocketContext);
+export const useGlobalWebSocket = useWebSocket;
 
 export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -25,12 +26,14 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const WEBSOCKET_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3000';
+    const token = localStorage.getItem('vaultix_token') || localStorage.getItem('authToken');
     
-    const socketInstance = io(WEBSOCKET_URL, {
+    const socketInstance = io(`${WEBSOCKET_URL.replace(/\/$/, '')}/escrow`, {
       transports: ['websocket'],
+      auth: { token },
       autoConnect: true,
       reconnection: true,
-      reconnectionAttempts: Infinity,
+      reconnectionAttempts: 10,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 30000,
       randomizationFactor: 0.5,

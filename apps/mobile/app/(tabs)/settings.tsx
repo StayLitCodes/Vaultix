@@ -3,12 +3,14 @@
  * Registered in `app/(tabs)/_layout.tsx` — before that it was unreachable and
  * the biometric lock shipped in #333 could never be turned on.
  */
-import React from 'react';
-import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, Clipboard, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import * as LocalAuthentication from 'expo-local-authentication';
 import { useBiometricLock } from '../../hooks/useBiometricLock';
 import { useSession } from '../../hooks/useSession';
 import { CopyButton } from '../../components/CopyButton';
+import { revealWalletSeed, importWalletFromSeed, removeWallet } from '../../services/wallet';
 
 function truncateAddress(address: string): string {
   if (address.length <= 14) return address;
@@ -44,6 +46,82 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: async () => {
             await signOut();
+            router.replace('/');
+          },
+        },
+      ],
+    );
+  };
+
+  // --- Wallet management state ---
+  const [seedVisible, setSeedVisible] = useState(false);
+  const [seedValue, setSeedValue] = useState<string | null>(null);
+  const [importSeed, setImportSeed] = useState('');
+
+  const handleRevealSeed = async () => {
+    try {
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const isEnrolled = await LocalAuthentication.isEnrolledAsync();
+      if (hasHardware && isEnrolled) {
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: 'Authenticate to reveal your secret seed',
+          cancelLabel: 'Cancel',
+        });
+        if (!result.success) return;
+      }
+      const seed = await revealWalletSeed();
+      setSeedValue(seed);
+      setSeedVisible(true);
+    } catch {
+      Alert.alert('Error', 'Could not reveal seed. No wallet found.');
+    }
+  };
+
+  const handleCopySeed = () => {
+    if (seedValue) {
+      Clipboard.setString(seedValue);
+      Alert.alert('Copied', 'Seed copied to clipboard. Remember to clear it after backup.');
+    }
+  };
+
+  const handleImportWallet = () => {
+    if (!importSeed.trim()) {
+      Alert.alert('Error', 'Please enter a secret seed.');
+      return;
+    }
+    Alert.alert(
+      'Import Wallet',
+      'This will replace your current wallet. You will need to sign in again. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Import',
+          onPress: async () => {
+            try {
+              await importWalletFromSeed(importSeed.trim());
+              setImportSeed('');
+              Alert.alert('Success', 'Wallet imported. Please sign in again.');
+              router.replace('/');
+            } catch {
+              Alert.alert('Invalid Seed', 'The secret seed you entered is not valid.');
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleRemoveWallet = () => {
+    Alert.alert(
+      'Remove Wallet',
+      'This will permanently remove your wallet from this device. You will need to create or import a wallet to continue. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            await removeWallet();
             router.replace('/');
           },
         },
@@ -99,6 +177,56 @@ export default function SettingsScreen() {
           </>
         )}
       </View>
+
+      {/* --- Seed Backup / Import / Remove --- */}
+      {isAuthenticated && walletAddress && (
+        <>
+          <Text style={styles.sectionTitle}>Seed Management</Text>
+          <View style={styles.card}>
+            {!seedVisible ? (
+              <TouchableOpacity style={styles.primaryBtn} onPress={handleRevealSeed}>
+                <Text style={styles.primaryBtnText}>Reveal Secret Seed</Text>
+              </TouchableOpacity>
+            ) : (
+              <View>
+                <Text style={styles.seedWarning}>
+                  ⚠️ Never share this seed with anyone. It grants full control over your funds.
+                </Text>
+                <View style={styles.seedContainer}>
+                  <Text style={styles.seedValue} selectable>{seedValue}</Text>
+                </View>
+                <CopyButton value={seedValue ?? ''} label="Copy Seed" toastMessage="Seed copied" />
+                <TouchableOpacity onPress={() => { setSeedVisible(false); setSeedValue(null); }} style={styles.secondaryBtn}>
+                  <Text style={styles.secondaryBtnText}>Hide Seed</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          <Text style={styles.sectionTitle}>Import Wallet</Text>
+          <View style={styles.card}>
+            <TextInput
+              style={styles.input}
+              value={importSeed}
+              onChangeText={setImportSeed}
+              placeholder="Enter Stellar secret seed (S...)"
+              placeholderTextColor="#64748B"
+              autoCapitalize="none"
+              secureTextEntry
+            />
+            <TouchableOpacity style={styles.primaryBtn} onPress={handleImportWallet}>
+              <Text style={styles.primaryBtnText}>Import</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.sectionTitle}>Danger Zone</Text>
+          <View style={styles.card}>
+            <TouchableOpacity style={styles.dangerBtn} onPress={handleRemoveWallet}>
+              <Text style={styles.dangerBtnText}>Remove Wallet</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
 
       {/* --- Security (#333 / #552) --- */}
       <Text style={styles.sectionTitle}>Security</Text>
@@ -192,4 +320,38 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   dangerBtnText: { color: '#ef476f', fontWeight: '700', fontSize: 15 },
+  secondaryBtn: {
+    borderWidth: 1,
+    borderColor: '#64748B',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  secondaryBtnText: { color: '#94A3B8', fontWeight: '600', fontSize: 15 },
+  input: {
+    backgroundColor: '#0F172A',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: '#FFFFFF',
+    fontSize: 15,
+    marginBottom: 12,
+  },
+  seedWarning: {
+    color: '#F59E0B',
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  seedContainer: {
+    backgroundColor: '#0F172A',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  seedValue: {
+    color: '#FFFFFF',
+    fontFamily: 'monospace',
+    fontSize: 13,
+  },
 });
