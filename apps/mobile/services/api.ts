@@ -9,8 +9,10 @@ import {
 import { withRetry } from '../utils/retry';
 import { NotificationsResponse } from '../types/notification';
 import { getAccessToken, getSecureAccessToken } from './session';
+import { envConfig } from '../security/env';
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
+// Single source of truth: envConfig.apiUrl from security/env.ts (Issue #557)
+const API_BASE_URL = envConfig.apiUrl;
 
 /**
  * The Nest auth module is URI-versioned (`app.enableVersioning`), so its routes

@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ToastProvider } from '../components/Toast';
 import { hydrateSession } from '../services/session';
+import { validateEnv } from '../security/env';
 
 import { AppState, AppStateStatus } from 'react-native';
 import { useBiometricLock } from '../hooks/useBiometricLock';
@@ -10,6 +11,10 @@ import { useAppVersion } from '../hooks/useAppVersion';
 import { MobileLockScreen } from '../components/MobileLockScreen';
 import { UpdatePromptModal } from '../components/UpdatePromptModal';
 import { useEffect, useRef, useState } from 'react';
+
+// #557 – validate environment configuration at app start.
+// Surfaces a visible console warning in development when config is missing.
+validateEnv();
 
 export default function RootLayout() {
   const { isEnabled, isUnlocked, authenticate, lock, disableBiometric } = useBiometricLock();

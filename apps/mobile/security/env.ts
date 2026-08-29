@@ -12,7 +12,8 @@ const configs: Record<Environment, EnvConfig> = {
   dev: {
     environment: 'dev',
     apiUrl: process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000',
-    rpcUrl: process.env.EXPO_PUBLIC_RPC_URL || 'http://127.0.0.1:8545',
+    // Soroban RPC runs on port 8000 (soroban-rpc standalone) — not 8545 (EVM).
+    rpcUrl: process.env.EXPO_PUBLIC_RPC_URL || 'http://127.0.0.1:8000',
   },
   testnet: {
     environment: 'testnet',
@@ -28,8 +29,42 @@ const configs: Record<Environment, EnvConfig> = {
 
 export const envConfig = configs[ENV];
 
+/**
+ * Validates that required environment variables are set.
+ * In development, surfaces a visible console warning when config is missing
+ * or still pointing at a localhost default (which may indicate the developer
+ * hasn't configured their local backend/rpc yet).
+ *
+ * Issue #557: Called at app start from app/_layout.tsx.
+ */
 export const validateEnv = () => {
-  if (!envConfig.apiUrl || !envConfig.rpcUrl) {
-    console.warn('Missing required environment variables for', ENV);
+  const warnings: string[] = [];
+
+  if (!envConfig.apiUrl) {
+    warnings.push('EXPO_PUBLIC_API_URL is not set');
+  }
+
+  if (!envConfig.rpcUrl) {
+    warnings.push('EXPO_PUBLIC_RPC_URL is not set');
+  }
+
+  if (ENV === 'dev') {
+    if (envConfig.apiUrl === 'http://localhost:3000') {
+      warnings.push(
+        'EXPO_PUBLIC_API_URL is using the default localhost URL — set it explicitly in .env if your backend runs elsewhere',
+      );
+    }
+    if (envConfig.rpcUrl === 'http://127.0.0.1:8000') {
+      warnings.push(
+        'EXPO_PUBLIC_RPC_URL is using the default local Soroban RPC URL — set it explicitly in .env if your RPC runs elsewhere',
+      );
+    }
+  }
+
+  if (warnings.length > 0) {
+    console.warn(
+      `[env] Environment configuration warnings for "${ENV}":\n` +
+        warnings.map((w) => `  • ${w}`).join('\n'),
+    );
   }
 };
