@@ -121,3 +121,12 @@ Holds longer-term state, retaining data specifically for individual escrows and 
 - `("escfee", escrow_id: u64)`: (`i128`) An escrow-specific fee BPS override.
 - `("dispev", escrow_id: u64)`: (`BytesN<32>`) Evidence digest recorded by `raise_dispute`, written only for disputed escrows and given the same TTL as the escrow entry.
 - `("disprev", escrow_id: u64)`: (`BytesN<32>`) Optional resolution evidence digest recorded by the arbitrator in `resolve_dispute`.
+
+---
+
+## Related Documentation
+
+- [Status Mapping](../STATUS_MAPPING.md) — Cross-layer status mapping (contract ↔ backend ↔ frontend ↔ mobile)
+- [Contract Events](./EVENTS.md) — Contract event schema reference
+- [Errors](./ERRORS.md) — Contract error codes
+- [Workflows](./WORKFLOWS.md) — Escrow lifecycle workflows
