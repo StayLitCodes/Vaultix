@@ -21,7 +21,7 @@ const API_BASE_URL = envConfig.apiUrl;
  */
 const AUTH_PATH_PREFIX = process.env.EXPO_PUBLIC_AUTH_PATH_PREFIX ?? '/v1/auth';
 
-const api = axios.create({
+export const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
