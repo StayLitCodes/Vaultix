@@ -149,3 +149,15 @@ threshold_amount, required_signatures)`, and `SignatureCollected` data is now
 **This is a breaking event-schema change for these three events only.**
 Off-chain indexers filtering on the old topic shapes for these three events
 must be updated in step with this contract upgrade.
+
+For the full event schema reference — topic conventions, payload structures,
+field types, state transition graph, and schema version bump strategy — see
+[`EVENTS.md`](./EVENTS.md).
+
+## Related Documentation
+
+- [Data Models](./DATA_MODELS.md) — Escrow, Milestone, and other contract types
+- [Errors](./ERRORS.md) — Contract error codes
+- [Events](./EVENTS.md) — Contract event schema reference
+- [Workflows](./WORKFLOWS.md) — Escrow lifecycle workflows
+- [Deployment](./DEPLOYMENT.md) — Contract deployment and upgrade guide
