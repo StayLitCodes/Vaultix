@@ -55,8 +55,12 @@ pub fn validate_escrow_invariants(escrow: &EscrowEntryV2) -> Result<(), Error> {
 /// while still rejecting funding drift in actual partial-payment flows.
 pub fn validate_partial_settlement_accounting(escrow: &EscrowEntryV2) -> Result<(), Error> {
     let status = escrow_status(escrow);
-    if matches!(status, EscrowStatus::Created | EscrowStatus::Cancelled) {
+    if matches!(status, EscrowStatus::Created | EscrowStatus::Cancelled | EscrowStatus::Resolved) {
         return Ok(());
+    }
+
+    if escrow.total_released > escrow.funded_amount {
+        return Err(Error::InvalidMilestoneAmount);
     }
 
     let effective_funded = core::cmp::max(escrow.funded_amount, escrow.total_released);
