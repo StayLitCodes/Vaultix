@@ -1,12 +1,20 @@
-import { IsString, IsOptional, IsDateString, MaxLength } from 'class-validator';
+import {
+  IsString,
+  IsNotEmpty,
+  IsOptional,
+  IsDateString,
+  MaxLength,
+} from 'class-validator';
 
 export class UpdateEscrowDto {
   @IsString()
+  @IsNotEmpty()
   @IsOptional()
   @MaxLength(255)
   title?: string;
 
   @IsString()
+  @IsNotEmpty()
   @IsOptional()
   @MaxLength(2000)
   description?: string;

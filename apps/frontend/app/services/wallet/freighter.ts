@@ -1,9 +1,15 @@
-// Update the import - use the correct way to access freighter
-declare global {
-  interface Window {
-    freighter?: any;
-  }
-}
+/**
+ * @file freighter.ts
+ * @description Centralized Freighter wallet service leveraging the official `@stellar/freighter-api` package.
+ */
+
+import { 
+  isConnected as freighterIsConnected, 
+  getAddress as freighterGetAddress, 
+  signTransaction as freighterSignTransaction,
+  requestAccess as freighterRequestAccess,
+  getNetwork as freighterGetNetwork
+} from '@stellar/freighter-api';
 
 export interface FreighterWallet {
   isConnected: () => Promise<boolean>;
@@ -17,6 +23,10 @@ export class FreighterService {
 
   private constructor() {}
 
+  /**
+   * Retrieves the singleton instance of the FreighterService.
+   * @returns {FreighterService} The singleton service instance.
+   */
   public static getInstance(): FreighterService {
     if (!FreighterService.instance) {
       FreighterService.instance = new FreighterService();
@@ -24,68 +34,104 @@ export class FreighterService {
     return FreighterService.instance;
   }
 
-  private async getFreighter(): Promise<any> {
-    // Check if freighter is available
-    if (typeof window === 'undefined') {
-      throw new Error('Window is not defined');
-    }
-    
-    // Freighter injects itself into the window object
-    if (!window.freighter) {
-      throw new Error('Freighter wallet is not installed');
-    }
-    
-    return window.freighter;
-  }
-
+  /**
+   * Checks if the Freighter wallet extension is installed and accessible.
+   * @returns {Promise<boolean>} True if connected/available.
+   */
   async isInstalled(): Promise<boolean> {
     try {
       if (typeof window === 'undefined') return false;
-      return !!window.freighter;
+      const response = await freighterIsConnected();
+      
+      if (typeof response === 'object' && response !== null && 'isConnected' in response) {
+        return Boolean((response as any).isConnected);
+      }
+      return Boolean(response);
     } catch (error) {
       return false;
     }
   }
 
+  /**
+   * Requests access to the Freighter wallet and retrieves the user's public address.
+   * @returns {Promise<string>} The public key address.
+   */
   async connect(): Promise<string> {
     try {
-      const freighter = await this.getFreighter();
+      const connected = await this.isInstalled();
+      if (!connected) {
+        await freighterRequestAccess();
+      }
       
-      // Enable freighter
-      await freighter.enable();
-      
-      // Get public key
-      const publicKey = await freighter.getPublicKey();
+      const response = await freighterGetAddress();
+      let publicKey = '';
+
+      if (typeof response === 'object' && response !== null && 'address' in response) {
+        publicKey = String((response as any).address || '');
+      } else {
+        publicKey = String(response || '');
+      }
+
+      if (!publicKey) {
+        throw new Error('No public key returned from Freighter wallet.');
+      }
       
       return publicKey;
     } catch (error: any) {
-      throw new Error(`Failed to connect to Freighter: ${error.message}`);
+      throw new Error(`Failed to connect to Freighter: ${error.message || error}`);
     }
   }
 
+  /**
+   * Retrieves the current Stellar network from Freighter.
+   * @returns {Promise<string>} The lowercase network identifier.
+   */
   async getNetwork(): Promise<string> {
     try {
-      const freighter = await this.getFreighter();
-      const network = await freighter.getNetwork();
-      return network.toLowerCase(); // Convert to lowercase for consistency
+      const response = await freighterGetNetwork();
+      let networkStr = '';
+
+      if (typeof response === 'object' && response !== null) {
+        networkStr = String((response as any).network || (response as any).id || '');
+      } else {
+        networkStr = String(response || '');
+      }
+
+      return (networkStr || 'testnet').toLowerCase();
     } catch (error) {
       throw new Error('Failed to get network from Freighter');
     }
   }
 
+  /**
+   * Signs a transaction XDR string using Freighter.
+   * @param {string} xdr - The transaction XDR payload.
+   * @returns {Promise<string>} Signed transaction XDR.
+   */
   async signTransaction(xdr: string): Promise<string> {
     try {
-      const freighter = await this.getFreighter();
       const network = await this.getNetwork();
-      
-      const signedXdr = await freighter.signTransaction(xdr, {
-        network,
-        accountToSign: await freighter.getPublicKey(),
-      });
-      
-      return signedXdr;
+      const addressResp = await freighterGetAddress();
+      let publicKey = '';
+
+      if (typeof addressResp === 'object' && addressResp !== null && 'address' in addressResp) {
+        publicKey = String((addressResp as any).address || '');
+      } else {
+        publicKey = String(addressResp || '');
+      }
+
+      // Cast options parameter as any to prevent strict package signature mismatches
+      const signedResponse = await freighterSignTransaction(xdr, {
+        network: network.toUpperCase().includes('PUBLIC') ? 'PUBLIC' : 'TESTNET',
+        accountToSign: publicKey,
+      } as any);
+
+      if (typeof signedResponse === 'object' && signedResponse !== null && 'signedTxXdr' in signedResponse) {
+        return String((signedResponse as any).signedTxXdr);
+      }
+      return String(signedResponse);
     } catch (error: any) {
-      throw new Error(`Failed to sign transaction: ${error.message}`);
+      throw new Error(`Failed to sign transaction: ${error.message || error}`);
     }
   }
 }

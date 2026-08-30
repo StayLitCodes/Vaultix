@@ -3,14 +3,18 @@ extern crate std;
 
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation, Events, Ledger},
+    testutils::{
+        Address as _, AuthorizedFunction, AuthorizedInvocation, EnvTestConfig, Events, Ledger,
+    },
     token, vec, Address, Env, IntoVal, Val,
 };
 
 /// Helper function to create and initialize a test token
 /// Returns admin client for minting and the token address
 fn create_test_token<'a>(env: &Env, admin: &Address) -> (token::StellarAssetClient<'a>, Address) {
-    let token_address = env.register_stellar_asset_contract(admin.clone());
+    let token_address = env
+        .register_stellar_asset_contract_v2(admin.clone())
+        .address();
     let token_admin_client = token::StellarAssetClient::new(env, &token_address);
     (token_admin_client, token_address)
 }
@@ -27,6 +31,45 @@ fn create_token_contract<'a>(
 
 fn valid_metadata_hash(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &[7u8; 32])
+}
+
+fn valid_evidence_hash(env: &Env) -> BytesN<32> {
+    BytesN::from_array(env, &[9u8; 32])
+}
+
+fn zero_hash(env: &Env) -> BytesN<32> {
+    BytesN::from_array(env, &[0u8; 32])
+}
+
+/// soroban-sdk 21+ changed `Env::events().all()` to return the opaque
+/// `testutils::ContractEvents` (XDR-backed) instead of the
+/// `Vec<(Address, Vec<Val>, Val)>` that SDK 20 returned. This helper restores
+/// the old shape so the existing assertions keep working unchanged.
+fn all_events(env: &Env) -> soroban_sdk::Vec<(Address, soroban_sdk::Vec<Val>, Val)> {
+    use soroban_sdk::xdr::{ContractEventBody, ScAddress, ScVal};
+    use soroban_sdk::TryFromVal;
+
+    let captured = env.events().all();
+    let mut out = soroban_sdk::Vec::new(env);
+    for event in captured.events() {
+        let contract_id = event
+            .contract_id
+            .clone()
+            .expect("contract event without contract id");
+        let address_val =
+            Val::try_from_val(env, &ScVal::Address(ScAddress::Contract(contract_id))).unwrap();
+        let address = Address::try_from_val(env, &address_val).unwrap();
+
+        let ContractEventBody::V0(body) = &event.body;
+        let mut topics = soroban_sdk::Vec::new(env);
+        for topic in body.topics.iter() {
+            topics.push_back(Val::try_from_val(env, topic).unwrap());
+        }
+        let data = Val::try_from_val(env, &body.data).unwrap();
+
+        out.push_back((address, topics, data));
+    }
+    out
 }
 
 fn assert_role_updated_event(
@@ -61,22 +104,49 @@ fn assert_role_updated_event(
     );
 }
 
+fn create_test_contract_full<'a>(
+    env: &Env,
+    admin: &Address,
+    operator: &Address,
+    arbitrator: &Address,
+    treasury: &Address,
+    fee_bps: Option<i128>,
+) -> (VaultixEscrowClient<'a>, Address) {
+    let contract_id = env.register(
+        VaultixEscrow,
+        (admin, operator, arbitrator, treasury, fee_bps),
+    );
+    let client = VaultixEscrowClient::new(env, &contract_id);
+    (client, contract_id)
+}
+
+#[allow(dead_code)]
+fn create_test_contract<'a>(
+    env: &Env,
+    admin: &Address,
+    treasury: &Address,
+    fee_bps: Option<i128>,
+) -> (VaultixEscrowClient<'a>, Address) {
+    let operator = Address::generate(env);
+    let arbitrator = Address::generate(env);
+    create_test_contract_full(env, admin, &operator, &arbitrator, treasury, fee_bps)
+}
+
 #[test]
-fn test_initialize_fails_when_treasury_already_initialized() {
+fn test_is_initialized_returns_true_after_constructor() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    let replacement_treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
-    client.initialize(&treasury, &Some(50));
-
-    let result = client.try_initialize(&replacement_treasury, &Some(75));
-    assert_eq!(result, Err(Ok(Error::AlreadyInitialized)));
-
+    assert!(client.is_initialized());
+    assert_eq!(client.get_admin(), admin);
+    assert_eq!(client.get_operator(), operator);
+    assert_eq!(client.get_arbitrator(), arbitrator);
     assert_eq!(client.get_treasury(), treasury);
     assert_eq!(client.get_config(), (treasury, 50));
 }
@@ -85,18 +155,14 @@ fn test_initialize_fails_when_treasury_already_initialized() {
 fn test_role_rotation_requires_current_admin_auth() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
-    let treasury = Address::generate(&env);
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
-    client.initialize(&treasury, &Some(50));
-    client.init(&admin, &operator, &arbitrator);
-
+    // Admin transfer is two-step: only the current admin can propose...
     let replacement_admin = Address::generate(&env);
     client.set_admin(&replacement_admin);
     assert_eq!(
@@ -114,6 +180,25 @@ fn test_role_rotation_requires_current_admin_auth() {
         )]
     );
 
+    // ...and only the pending admin can accept, which is what promotes them.
+    client.accept_admin();
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            replacement_admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    contract_id.clone(),
+                    Symbol::new(&env, "accept_admin"),
+                    ().into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            },
+        )]
+    );
+    assert_eq!(client.get_admin(), replacement_admin);
+
+    // Once promoted, the new admin is the one who rotates the other roles.
     let replacement_operator = Address::generate(&env);
     client.set_operator(&replacement_operator);
     assert_eq!(
@@ -170,73 +255,382 @@ fn test_role_rotation_requires_current_admin_auth() {
 fn test_role_rotation_updates_roles_and_emits_audit_events() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
-    let treasury = Address::generate(&env);
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     let arbitrator = Address::generate(&env);
-
-    client.initialize(&treasury, &Some(50));
-    client.init(&admin, &operator, &arbitrator);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let replacement_admin = Address::generate(&env);
     let replacement_operator = Address::generate(&env);
     let replacement_arbitrator = Address::generate(&env);
     let replacement_treasury = Address::generate(&env);
 
-    let events_before = env.events().all().len();
-
-    client.set_admin(&replacement_admin);
-    client.set_operator(&replacement_operator);
-    client.set_arbitrator(&replacement_arbitrator);
-    client.set_treasury(&replacement_treasury);
-
-    assert_eq!(client.get_admin(), replacement_admin);
-    assert_eq!(client.get_operator(), replacement_operator);
-    assert_eq!(client.get_arbitrator(), replacement_arbitrator);
-    assert_eq!(client.get_treasury(), replacement_treasury);
-
-    let events = env.events().all();
-    assert_eq!(events.len(), events_before + 4);
-
+    // Note: since soroban-sdk 21, `env.events().all()` only returns the events
+    // of the most recent top-level invocation, so each rotation is asserted
+    // immediately after its own call rather than against an accumulated log.
+    //
+    // Admin transfer is two-step: `propose_admin` only stages the handover and
+    // `accept_admin` (authorized by the pending admin) is what emits the
+    // existing RoleUpdated event.
+    client.propose_admin(&replacement_admin);
+    client.accept_admin();
+    let events = all_events(&env);
+    assert_eq!(events.len(), 1);
     assert_role_updated_event(
         &env,
         &contract_id,
-        &events.get(events_before).unwrap(),
+        &events.get(0).unwrap(),
         Role::Admin,
         true,
         &admin,
         &replacement_admin,
     );
+
+    client.set_operator(&replacement_operator);
+    let events = all_events(&env);
+    assert_eq!(events.len(), 1);
     assert_role_updated_event(
         &env,
         &contract_id,
-        &events.get(events_before + 1).unwrap(),
+        &events.get(0).unwrap(),
         Role::Operator,
         true,
         &operator,
         &replacement_operator,
     );
+
+    client.set_arbitrator(&replacement_arbitrator);
+    let events = all_events(&env);
+    assert_eq!(events.len(), 1);
     assert_role_updated_event(
         &env,
         &contract_id,
-        &events.get(events_before + 2).unwrap(),
+        &events.get(0).unwrap(),
         Role::Arbitrator,
         true,
         &arbitrator,
         &replacement_arbitrator,
     );
+
+    client.set_treasury(&replacement_treasury);
+    let events = all_events(&env);
+    assert_eq!(events.len(), 1);
     assert_role_updated_event(
         &env,
         &contract_id,
-        &events.get(events_before + 3).unwrap(),
+        &events.get(0).unwrap(),
         Role::Treasury,
         true,
         &treasury,
         &replacement_treasury,
+    );
+
+    assert_eq!(client.get_admin(), replacement_admin);
+    assert_eq!(client.get_operator(), replacement_operator);
+    assert_eq!(client.get_arbitrator(), replacement_arbitrator);
+    assert_eq!(client.get_treasury(), replacement_treasury);
+}
+
+#[test]
+fn test_propose_admin_stores_pending_and_keeps_current_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    let proposed_at = env.ledger().timestamp();
+    let replacement_admin = Address::generate(&env);
+    client.propose_admin(&replacement_admin);
+
+    // Proposing emits an AdminProposed event with the new admin and expiry.
+    // (Since soroban-sdk 21 the event buffer only holds the most recent
+    // invocation, so this must be captured before any further contract calls.)
+    let events = all_events(&env);
+    assert_eq!(events.len(), 1);
+    let event = events.get(0).unwrap();
+    assert_eq!(&event.0, &contract_id);
+
+    let expected_topics: soroban_sdk::Vec<Val> = (
+        Symbol::new(&env, "Vaultix"),
+        Symbol::new(&env, "v1"),
+        Symbol::new(&env, "AdminProposed"),
+    )
+        .into_val(&env);
+    assert_eq!(event.1, expected_topics);
+
+    let payload: AdminProposedEvent = event.2.clone().into_val(&env);
+    assert_eq!(
+        payload,
+        AdminProposedEvent {
+            caller: admin.clone(),
+            new_admin: replacement_admin.clone(),
+            expires_at: proposed_at + ADMIN_PROPOSAL_WINDOW_SECS,
+            timestamp: proposed_at,
+        }
+    );
+
+    // Only the current admin may propose.
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    contract_id.clone(),
+                    Symbol::new(&env, "propose_admin"),
+                    (&replacement_admin,).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            },
+        )]
+    );
+
+    // The current admin stays in force until the pending admin accepts.
+    assert_eq!(client.get_admin(), admin);
+    assert_eq!(
+        client.get_pending_admin(),
+        Some(AdminProposal {
+            new_admin: replacement_admin,
+            expires_at: proposed_at + ADMIN_PROPOSAL_WINDOW_SECS,
+        })
+    );
+}
+
+#[test]
+fn test_accept_admin_requires_pending_admin_auth() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    // With no pending proposal there is nothing to accept.
+    let result = client.try_accept_admin();
+    assert_eq!(result, Err(Ok(Error::AdminProposalNotFound)));
+
+    let replacement_admin = Address::generate(&env);
+    client.propose_admin(&replacement_admin);
+
+    // accept_admin() must be authorized by the pending admin itself — never by
+    // the current admin — so a mistyped address can never be promoted.
+    client.accept_admin();
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            replacement_admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    contract_id.clone(),
+                    Symbol::new(&env, "accept_admin"),
+                    ().into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            },
+        )]
+    );
+
+    // The pending admin is promoted and the proposal is consumed.
+    assert_eq!(client.get_admin(), replacement_admin);
+    assert_eq!(client.get_pending_admin(), None);
+}
+
+#[test]
+fn test_cancel_admin_proposal_withdraws_pending() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    // Cancelling with nothing pending is an error.
+    let result = client.try_cancel_admin_proposal();
+    assert_eq!(result, Err(Ok(Error::AdminProposalNotFound)));
+
+    let replacement_admin = Address::generate(&env);
+    client.propose_admin(&replacement_admin);
+    assert!(client.get_pending_admin().is_some());
+
+    // Only the current admin may cancel a pending proposal.
+    client.cancel_admin_proposal();
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    contract_id.clone(),
+                    Symbol::new(&env, "cancel_admin_proposal"),
+                    ().into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            },
+        )]
+    );
+
+    // Cancelling emits an AdminProposalCancelled event. (Captured before the
+    // read calls below clear the invocation-scoped event buffer.)
+    let events = all_events(&env);
+    assert_eq!(events.len(), 1);
+    let event = events.get(0).unwrap();
+    assert_eq!(&event.0, &contract_id);
+
+    let expected_topics: soroban_sdk::Vec<Val> = (
+        Symbol::new(&env, "Vaultix"),
+        Symbol::new(&env, "v1"),
+        Symbol::new(&env, "AdminProposalCancelled"),
+    )
+        .into_val(&env);
+    assert_eq!(event.1, expected_topics);
+
+    let payload: AdminProposalCancelledEvent = event.2.clone().into_val(&env);
+    assert_eq!(
+        payload,
+        AdminProposalCancelledEvent {
+            caller: admin.clone(),
+            new_admin: replacement_admin,
+            timestamp: env.ledger().timestamp(),
+        }
+    );
+
+    // The proposal is withdrawn and the admin never changed.
+    assert_eq!(client.get_pending_admin(), None);
+    assert_eq!(client.get_admin(), admin);
+}
+
+#[test]
+fn test_admin_proposal_expires_after_window() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    let replacement_admin = Address::generate(&env);
+    client.propose_admin(&replacement_admin);
+    let expires_at = env.ledger().timestamp() + ADMIN_PROPOSAL_WINDOW_SECS;
+
+    // The proposal is still acceptable exactly at the end of the window.
+    env.ledger().with_mut(|ledger| {
+        ledger.timestamp = expires_at;
+    });
+    client.accept_admin();
+    assert_eq!(client.get_admin(), replacement_admin);
+
+    // A fresh proposal that outlives its window can no longer be accepted.
+    let second_admin = Address::generate(&env);
+    client.propose_admin(&second_admin);
+    let second_expires_at = expires_at + ADMIN_PROPOSAL_WINDOW_SECS;
+    env.ledger().with_mut(|ledger| {
+        ledger.timestamp = second_expires_at + 1;
+    });
+    let result = client.try_accept_admin();
+    assert_eq!(result, Err(Ok(Error::AdminProposalExpired)));
+
+    // The expired proposal is inert: it stays stored (so callers can see it
+    // lapsed) but can never be accepted, and the current admin is untouched.
+    assert_eq!(
+        client.get_pending_admin(),
+        Some(AdminProposal {
+            new_admin: second_admin,
+            expires_at: second_expires_at,
+        })
+    );
+    assert_eq!(client.get_admin(), replacement_admin);
+
+    // The current admin can withdraw the stale proposal at any time.
+    client.cancel_admin_proposal();
+    assert_eq!(client.get_pending_admin(), None);
+    assert_eq!(client.get_admin(), replacement_admin);
+}
+
+#[test]
+fn test_old_admin_retains_full_powers_until_acceptance() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    // While a proposal is pending, the current admin keeps every privilege.
+    let replacement_admin = Address::generate(&env);
+    client.propose_admin(&replacement_admin);
+    assert_eq!(client.get_admin(), admin);
+
+    let replacement_operator = Address::generate(&env);
+    client.set_operator(&replacement_operator);
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            admin.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    contract_id.clone(),
+                    Symbol::new(&env, "set_operator"),
+                    (&replacement_operator,).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            },
+        )]
+    );
+    assert_eq!(client.get_operator(), replacement_operator);
+
+    let replacement_arbitrator = Address::generate(&env);
+    client.set_arbitrator(&replacement_arbitrator);
+    assert_eq!(client.get_arbitrator(), replacement_arbitrator);
+
+    let replacement_treasury = Address::generate(&env);
+    client.set_treasury(&replacement_treasury);
+    assert_eq!(client.get_treasury(), replacement_treasury);
+
+    // The pending admin has not been promoted.
+    assert_eq!(client.get_admin(), admin);
+    assert_eq!(
+        client.get_pending_admin(),
+        Some(AdminProposal {
+            new_admin: replacement_admin.clone(),
+            expires_at: env.ledger().timestamp() + ADMIN_PROPOSAL_WINDOW_SECS,
+        })
+    );
+
+    // Once the pending admin accepts, they hold the keys and the old admin
+    // no longer does.
+    client.accept_admin();
+    assert_eq!(client.get_admin(), replacement_admin);
+    assert_eq!(client.get_pending_admin(), None);
+
+    let next_operator = Address::generate(&env);
+    client.set_operator(&next_operator);
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            replacement_admin,
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    contract_id,
+                    Symbol::new(&env, "set_operator"),
+                    (&next_operator,).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            },
+        )]
     );
 }
 
@@ -244,23 +638,18 @@ fn test_role_rotation_updates_roles_and_emits_audit_events() {
 fn test_create_escrow_fails_when_paused() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
-    let treasury = Address::generate(&env);
-    client.initialize(&treasury, &None);
-
-    let depositor = Address::generate(&env);
-    let recipient = Address::generate(&env);
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, None);
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
     let escrow_id = 1_000u64;
 
     // 1. Initialize roles FIRST
-    client.init(&admin, &operator, &arbitrator);
-
     // 2. NOW pause the contract (using the operator we just initialized)
     client.set_paused(&true);
 
@@ -294,19 +683,15 @@ fn test_create_escrow_fails_when_paused() {
 fn test_deposit_funds_fails_when_paused() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
-    let treasury = Address::generate(&env);
-    client.initialize(&treasury, &None);
-
-    let depositor = Address::generate(&env);
-    let recipient = Address::generate(&env);
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     let arbitrator = Address::generate(&env);
-    client.init(&admin, &operator, &arbitrator);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, None);
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
     let escrow_id = 1_001u64;
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -343,13 +728,15 @@ fn test_deposit_funds_fails_when_paused() {
 fn test_create_and_get_escrow() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 1u64;
 
     // Setup token
@@ -387,6 +774,10 @@ fn test_create_and_get_escrow() {
         &valid_metadata_hash(&env),
     );
 
+    // Captured before any further invocation: since soroban-sdk 21,
+    // `env.events().all()` only reports the last top-level invocation.
+    let events = all_events(&env);
+
     let escrow = client.get_escrow(&escrow_id);
     assert_eq!(escrow.depositor, depositor);
     assert_eq!(escrow.recipient, recipient);
@@ -397,7 +788,6 @@ fn test_create_and_get_escrow() {
     assert_eq!(escrow.milestones.len(), 3);
 
     // Verify canonical create event schema
-    let events = env.events().all();
     let event = events.last().unwrap();
     assert_eq!(event.0, contract_id);
 
@@ -438,13 +828,15 @@ fn test_create_and_get_escrow() {
 fn test_create_escrow_rejects_zero_metadata_hash() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
 
@@ -474,9 +866,12 @@ fn test_create_escrow_rejects_zero_metadata_hash() {
 fn test_create_escrows_batch_rejects_zero_metadata_hash() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
@@ -511,9 +906,12 @@ fn test_create_escrows_batch_rejects_zero_metadata_hash() {
 fn test_create_escrows_batch_and_get() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient_1 = Address::generate(&env);
@@ -571,6 +969,10 @@ fn test_create_escrows_batch_and_get() {
 
     client.create_escrows_batch(&requests);
 
+    // Captured before any further invocation: since soroban-sdk 21,
+    // `env.events().all()` only reports the last top-level invocation.
+    let events = all_events(&env);
+
     let escrow_1 = client.get_escrow(&escrow_id_1);
     assert_eq!(escrow_1.depositor, depositor);
     assert_eq!(escrow_1.recipient, recipient_1);
@@ -589,7 +991,6 @@ fn test_create_escrows_batch_and_get() {
     assert_eq!(escrow_2.status, EscrowStatus::Created);
     assert_eq!(escrow_2.deadline, deadline_2);
 
-    let events = env.events().all();
     let event = events.last().unwrap();
     assert_eq!(event.0, contract_id);
 
@@ -641,9 +1042,12 @@ fn test_create_escrows_batch_and_get() {
 fn test_create_escrows_batch_is_atomic() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient_1 = Address::generate(&env);
@@ -688,7 +1092,7 @@ fn test_create_escrows_batch_is_atomic() {
     let get_result = client.try_get_escrow(&escrow_id);
     assert_eq!(get_result, Err(Ok(Error::EscrowNotFound)));
 
-    let events = env.events().all();
+    let events = all_events(&env);
     assert_eq!(events.len(), 0);
 }
 
@@ -696,13 +1100,15 @@ fn test_create_escrows_batch_is_atomic() {
 fn test_deposit_funds() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 2u64;
 
     // Setup token - get admin client for minting
@@ -756,19 +1162,18 @@ fn test_deposit_funds() {
 fn test_release_milestone_with_tokens() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 3u64;
 
     // Initialize treasury (fee-free for test)
-    let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(0));
-
     // Setup token
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
 
@@ -833,13 +1238,15 @@ fn test_release_milestone_with_tokens() {
 fn test_dispute_blocks_release() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 9u64;
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -867,7 +1274,7 @@ fn test_dispute_blocks_release() {
     token_client.approve(&depositor, &contract_id, &1000, &200);
     client.deposit_funds(&escrow_id);
 
-    client.raise_dispute(&escrow_id, &depositor);
+    client.raise_dispute(&escrow_id, &depositor, &valid_evidence_hash(&env));
 
     let escrow = client.get_escrow(&escrow_id);
     assert_eq!(escrow.status, EscrowStatus::Disputed);
@@ -879,17 +1286,16 @@ fn test_dispute_blocks_release() {
 fn test_complete_escrow_with_all_releases() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
-    let treasury = Address::generate(&env);
     let escrow_id = 4u64;
-
-    client.initialize(&treasury, &Some(0));
 
     // Setup token
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -941,13 +1347,15 @@ fn test_complete_escrow_with_all_releases() {
 fn test_cancel_escrow_with_refund() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 5u64;
 
     // Setup token
@@ -995,13 +1403,15 @@ fn test_cancel_escrow_with_refund() {
 fn test_cancel_unfunded_escrow() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 6u64;
 
     let (_, token_address) = create_test_token(&env, &admin);
@@ -1037,21 +1447,19 @@ fn test_cancel_unfunded_escrow() {
 fn test_admin_resolves_dispute_to_recipient() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let escrow_id = 10u64;
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10000);
-
-    client.init(&admin, &operator, &arbitrator);
 
     let milestones = vec![
         &env,
@@ -1080,9 +1488,9 @@ fn test_admin_resolves_dispute_to_recipient() {
     token_client.approve(&depositor, &contract_id, &10000, &200);
     client.deposit_funds(&escrow_id);
 
-    client.raise_dispute(&escrow_id, &recipient);
+    client.raise_dispute(&escrow_id, &recipient, &valid_evidence_hash(&env));
 
-    client.resolve_dispute(&escrow_id, &recipient, &None);
+    client.resolve_dispute(&escrow_id, &recipient, &None, &None);
 
     let escrow = client.get_escrow(&escrow_id);
     assert_eq!(escrow.status, EscrowStatus::Resolved);
@@ -1102,21 +1510,19 @@ fn test_admin_resolves_dispute_to_recipient() {
 fn test_admin_resolves_dispute_to_depositor() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let escrow_id = 11u64;
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &5000);
-
-    client.init(&admin, &operator, &arbitrator);
 
     let milestones = vec![
         &env,
@@ -1145,9 +1551,9 @@ fn test_admin_resolves_dispute_to_depositor() {
     token_client.approve(&depositor, &contract_id, &5000, &200);
     client.deposit_funds(&escrow_id);
 
-    client.raise_dispute(&escrow_id, &depositor);
+    client.raise_dispute(&escrow_id, &depositor, &valid_evidence_hash(&env));
 
-    client.resolve_dispute(&escrow_id, &depositor, &None);
+    client.resolve_dispute(&escrow_id, &depositor, &None, &None);
 
     let escrow = client.get_escrow(&escrow_id);
     assert_eq!(escrow.status, EscrowStatus::Resolved);
@@ -1167,16 +1573,18 @@ fn test_admin_resolves_dispute_to_depositor() {
 fn test_raise_dispute_happy_path() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 20u64;
 
-    let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &1000);
 
     let milestones = vec![
@@ -1202,10 +1610,14 @@ fn test_raise_dispute_happy_path() {
         &1706400000u64,
         &valid_metadata_hash(&env),
     );
+    token_client.approve(&depositor, &contract_id, &1000, &200);
+    client.deposit_funds(&escrow_id);
 
-    let events_before = env.events().all().len();
+    client.raise_dispute(&escrow_id, &depositor, &valid_evidence_hash(&env));
 
-    client.raise_dispute(&escrow_id, &depositor);
+    // Captured before any further invocation: since soroban-sdk 21,
+    // `env.events().all()` only reports the last top-level invocation.
+    let events = all_events(&env);
 
     let escrow = client.get_escrow(&escrow_id);
     assert_eq!(escrow.status, EscrowStatus::Disputed);
@@ -1216,8 +1628,7 @@ fn test_raise_dispute_happy_path() {
         .all(|m| m.status == MilestoneStatus::Disputed || m.status == MilestoneStatus::Released));
 
     // Verify DisputeRaised event
-    let events = env.events().all();
-    assert!(events.len() > events_before);
+    assert!(!events.is_empty());
     let event = events.last().unwrap();
     let expected_topics: soroban_sdk::Vec<soroban_sdk::Val> = (
         Symbol::new(&env, "Vaultix"),
@@ -1235,6 +1646,7 @@ fn test_raise_dispute_happy_path() {
             raised_by: depositor,
             depositor: escrow.depositor,
             recipient: escrow.recipient,
+            evidence_hash: valid_evidence_hash(&env),
             status: EscrowStatus::Disputed,
             total_amount: 1000,
             total_released: 0,
@@ -1244,22 +1656,270 @@ fn test_raise_dispute_happy_path() {
     );
 }
 
+/// Sets up a funded, disputable escrow and returns its client/parties.
+/// Shared by the dispute-evidence tests below.
+fn setup_disputable_escrow<'a>(
+    env: &Env,
+    escrow_id: u64,
+    amount: i128,
+) -> (VaultixEscrowClient<'a>, Address, Address, Address) {
+    let admin = Address::generate(env);
+    let operator = Address::generate(env);
+    let arbitrator = Address::generate(env);
+    let treasury = Address::generate(env);
+    let (client, contract_id) =
+        create_test_contract_full(env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    let depositor = Address::generate(env);
+    let recipient = Address::generate(env);
+
+    let (token_client, token_admin, token_address) = create_token_contract(env, &admin);
+    token_admin.mint(&depositor, &amount);
+
+    let milestones = vec![
+        env,
+        Milestone {
+            amount,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Work"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1706400000u64,
+        &valid_metadata_hash(env),
+    );
+    token_client.approve(&depositor, &contract_id, &amount, &200);
+    client.deposit_funds(&escrow_id);
+
+    (client, contract_id, depositor, recipient)
+}
+
+/// A valid, non-zero evidence hash is recorded on chain and readable back
+/// through `get_dispute_evidence`.
+#[test]
+fn test_raise_dispute_records_evidence_hash() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let escrow_id = 610u64;
+    let (client, _contract_id, depositor, _recipient) =
+        setup_disputable_escrow(&env, escrow_id, 3000);
+
+    let evidence_hash = BytesN::from_array(&env, &[42u8; 32]);
+    client.raise_dispute(&escrow_id, &depositor, &evidence_hash);
+
+    assert_eq!(client.get_dispute_evidence(&escrow_id), evidence_hash);
+    assert_eq!(client.get_escrow(&escrow_id).status, EscrowStatus::Disputed);
+}
+
+/// The all-zero digest is rejected with the same error `create_escrow` uses for
+/// a zero `metadata_hash`, and no dispute state is written.
+#[test]
+fn test_raise_dispute_rejects_zero_evidence_hash() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let escrow_id = 611u64;
+    let (client, _contract_id, depositor, _recipient) =
+        setup_disputable_escrow(&env, escrow_id, 3000);
+
+    let result = client.try_raise_dispute(&escrow_id, &depositor, &zero_hash(&env));
+    assert_eq!(result, Err(Ok(Error::InvalidMetadataHash)));
+
+    assert_eq!(client.get_escrow(&escrow_id).status, EscrowStatus::Active);
+    assert_eq!(
+        client.try_get_dispute_evidence(&escrow_id),
+        Err(Ok(Error::DisputeEvidenceNotFound))
+    );
+}
+
+/// Reading evidence for an escrow that was never disputed, or for an unknown
+/// escrow id, surfaces explicit errors rather than panicking.
+#[test]
+fn test_get_dispute_evidence_error_paths() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let escrow_id = 612u64;
+    let (client, _contract_id, _depositor, _recipient) =
+        setup_disputable_escrow(&env, escrow_id, 3000);
+
+    assert_eq!(
+        client.try_get_dispute_evidence(&escrow_id),
+        Err(Ok(Error::DisputeEvidenceNotFound))
+    );
+    assert_eq!(
+        client.try_get_dispute_evidence(&999_999u64),
+        Err(Ok(Error::EscrowNotFound))
+    );
+    assert_eq!(
+        client.try_get_dispute_resolution_evidence(&999_999u64),
+        Err(Ok(Error::EscrowNotFound))
+    );
+}
+
+/// The emitted `DisputeRaised` payload carries the exact evidence hash supplied
+/// by the caller.
+#[test]
+fn test_dispute_raised_event_includes_evidence_hash() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let escrow_id = 613u64;
+    let (client, _contract_id, depositor, _recipient) =
+        setup_disputable_escrow(&env, escrow_id, 3000);
+
+    let evidence_hash = BytesN::from_array(&env, &[3u8; 32]);
+    client.raise_dispute(&escrow_id, &depositor, &evidence_hash);
+
+    // Captured before any further invocation: since soroban-sdk 21,
+    // `env.events().all()` only reports the last top-level invocation.
+    let events = all_events(&env);
+    let event = events.last().unwrap();
+    let expected_topics: soroban_sdk::Vec<soroban_sdk::Val> = (
+        Symbol::new(&env, "Vaultix"),
+        Symbol::new(&env, "v1"),
+        Symbol::new(&env, "DisputeRaised"),
+    )
+        .into_val(&env);
+    assert_eq!(event.1, expected_topics);
+
+    let escrow = client.get_escrow(&escrow_id);
+    let payload: DisputeRaisedEvent = event.2.into_val(&env);
+    assert_eq!(
+        payload,
+        DisputeRaisedEvent {
+            escrow_id,
+            raised_by: depositor,
+            depositor: escrow.depositor,
+            recipient: escrow.recipient,
+            evidence_hash,
+            status: EscrowStatus::Disputed,
+            total_amount: 3000,
+            total_released: 0,
+            deadline: 1706400000,
+            timestamp: 0,
+        }
+    );
+}
+
+/// Arbitrator supplies resolution evidence: it is stored, readable, and echoed
+/// on the `DisputeResolved` event.
+#[test]
+fn test_resolve_dispute_records_resolution_evidence() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let escrow_id = 614u64;
+    let (client, _contract_id, depositor, recipient) =
+        setup_disputable_escrow(&env, escrow_id, 3000);
+
+    let evidence_hash = BytesN::from_array(&env, &[11u8; 32]);
+    let resolution_hash = BytesN::from_array(&env, &[12u8; 32]);
+
+    client.raise_dispute(&escrow_id, &depositor, &evidence_hash);
+    client.resolve_dispute(
+        &escrow_id,
+        &recipient,
+        &None,
+        &Some(resolution_hash.clone()),
+    );
+
+    // Captured before any further invocation: since soroban-sdk 21,
+    // `env.events().all()` only reports the last top-level invocation.
+    let events = all_events(&env);
+
+    assert_eq!(client.get_dispute_evidence(&escrow_id), evidence_hash);
+    assert_eq!(
+        client.get_dispute_resolution_evidence(&escrow_id),
+        Some(resolution_hash.clone())
+    );
+
+    let event = events.last().unwrap();
+    let expected_topics: soroban_sdk::Vec<soroban_sdk::Val> = (
+        Symbol::new(&env, "Vaultix"),
+        Symbol::new(&env, "v1"),
+        Symbol::new(&env, "DisputeResolved"),
+    )
+        .into_val(&env);
+    assert_eq!(event.1, expected_topics);
+
+    let payload: DisputeResolvedEvent = event.2.into_val(&env);
+    assert_eq!(payload.resolution_evidence_hash, Some(resolution_hash));
+    assert_eq!(payload.escrow_id, escrow_id);
+}
+
+/// `None` resolution evidence stays a zero-friction path: resolution succeeds,
+/// nothing is stored, and the event reports the absence explicitly.
+#[test]
+fn test_resolve_dispute_without_resolution_evidence() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let escrow_id = 615u64;
+    let (client, _contract_id, depositor, recipient) =
+        setup_disputable_escrow(&env, escrow_id, 3000);
+
+    client.raise_dispute(&escrow_id, &depositor, &valid_evidence_hash(&env));
+    client.resolve_dispute(&escrow_id, &recipient, &None, &None);
+
+    // Captured before any further invocation: since soroban-sdk 21,
+    // `env.events().all()` only reports the last top-level invocation.
+    let events = all_events(&env);
+
+    assert_eq!(client.get_escrow(&escrow_id).status, EscrowStatus::Resolved);
+    assert_eq!(client.get_dispute_resolution_evidence(&escrow_id), None);
+    // Dispute evidence survives resolution.
+    assert_eq!(
+        client.get_dispute_evidence(&escrow_id),
+        valid_evidence_hash(&env)
+    );
+
+    let payload: DisputeResolvedEvent = events.last().unwrap().2.into_val(&env);
+    assert_eq!(payload.resolution_evidence_hash, None);
+}
+
+/// An all-zero resolution evidence hash is rejected with the same digest error,
+/// and the dispute stays open.
+#[test]
+fn test_resolve_dispute_rejects_zero_resolution_evidence() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let escrow_id = 616u64;
+    let (client, _contract_id, depositor, recipient) =
+        setup_disputable_escrow(&env, escrow_id, 3000);
+
+    client.raise_dispute(&escrow_id, &depositor, &valid_evidence_hash(&env));
+
+    let result = client.try_resolve_dispute(&escrow_id, &recipient, &None, &Some(zero_hash(&env)));
+    assert_eq!(result, Err(Ok(Error::InvalidMetadataHash)));
+
+    assert_eq!(client.get_escrow(&escrow_id).status, EscrowStatus::Disputed);
+    assert_eq!(client.get_dispute_resolution_evidence(&escrow_id), None);
+}
+
 #[test]
 fn test_raise_dispute_invalid_status() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
-    let treasury = Address::generate(&env);
     let escrow_id_completed = 21u64;
     let escrow_id_cancelled = 22u64;
-
-    client.initialize(&treasury, &Some(0));
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
@@ -1289,7 +1949,8 @@ fn test_raise_dispute_invalid_status() {
     client.confirm_delivery(&escrow_id_completed, &0, &depositor);
     client.complete_escrow(&escrow_id_completed);
 
-    let result_completed = client.try_raise_dispute(&escrow_id_completed, &depositor);
+    let result_completed =
+        client.try_raise_dispute(&escrow_id_completed, &depositor, &valid_evidence_hash(&env));
     assert_eq!(result_completed, Err(Ok(Error::InvalidEscrowStatus)));
 
     // Cancelled escrow
@@ -1306,7 +1967,8 @@ fn test_raise_dispute_invalid_status() {
     client.deposit_funds(&escrow_id_cancelled);
     client.cancel_escrow(&escrow_id_cancelled);
 
-    let result_cancelled = client.try_raise_dispute(&escrow_id_cancelled, &depositor);
+    let result_cancelled =
+        client.try_raise_dispute(&escrow_id_cancelled, &depositor, &valid_evidence_hash(&env));
     assert_eq!(result_cancelled, Err(Ok(Error::InvalidEscrowStatus)));
 }
 
@@ -1314,13 +1976,13 @@ fn test_raise_dispute_invalid_status() {
 fn test_resolve_dispute_invalid_winner_or_overflow() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let outsider = Address::generate(&env);
@@ -1328,8 +1990,6 @@ fn test_resolve_dispute_invalid_winner_or_overflow() {
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &1000);
-
-    client.init(&admin, &operator, &arbitrator);
 
     let milestones = vec![
         &env,
@@ -1352,10 +2012,10 @@ fn test_resolve_dispute_invalid_winner_or_overflow() {
     token_client.approve(&depositor, &contract_id, &1000, &200);
     client.deposit_funds(&escrow_id);
 
-    client.raise_dispute(&escrow_id, &depositor);
+    client.raise_dispute(&escrow_id, &depositor, &valid_evidence_hash(&env));
 
     // Invalid winner
-    let result_invalid_winner = client.try_resolve_dispute(&escrow_id, &outsider, &None);
+    let result_invalid_winner = client.try_resolve_dispute(&escrow_id, &outsider, &None, &None);
     assert_eq!(result_invalid_winner, Err(Ok(Error::InvalidWinner)));
 }
 
@@ -1363,24 +2023,19 @@ fn test_resolve_dispute_invalid_winner_or_overflow() {
 fn test_resolve_dispute_while_paused() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
-    let treasury = Address::generate(&env);
-    client.initialize(&treasury, &None);
-
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, None);
+
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let escrow_id = 25u64;
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &5000);
-
-    client.init(&admin, &operator, &arbitrator);
 
     let milestones = vec![
         &env,
@@ -1403,13 +2058,13 @@ fn test_resolve_dispute_while_paused() {
     token_client.approve(&depositor, &contract_id, &5000, &200);
     client.deposit_funds(&escrow_id);
 
-    client.raise_dispute(&escrow_id, &depositor);
+    client.raise_dispute(&escrow_id, &depositor, &valid_evidence_hash(&env));
 
     // Pause contract after dispute is raised
     client.set_paused(&true);
 
     // Resolution should still be allowed by admin while paused
-    client.resolve_dispute(&escrow_id, &depositor, &None);
+    client.resolve_dispute(&escrow_id, &depositor, &None, &None);
 
     let escrow = client.get_escrow(&escrow_id);
     assert_eq!(escrow.status, EscrowStatus::Resolved);
@@ -1424,21 +2079,19 @@ fn test_resolve_dispute_while_paused() {
 fn test_resolve_dispute_split_recipient_wins() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let escrow_id = 500u64;
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &3000);
-
-    client.init(&admin, &operator, &arbitrator);
 
     let milestones = vec![
         &env,
@@ -1460,10 +2113,10 @@ fn test_resolve_dispute_split_recipient_wins() {
     );
     token_client.approve(&depositor, &contract_id, &3000, &200);
     client.deposit_funds(&escrow_id);
-    client.raise_dispute(&escrow_id, &recipient);
+    client.raise_dispute(&escrow_id, &recipient, &valid_evidence_hash(&env));
 
     // Recipient wins 2000, depositor gets back 1000
-    client.resolve_dispute(&escrow_id, &recipient, &Some(2000));
+    client.resolve_dispute(&escrow_id, &recipient, &Some(2000), &None);
 
     let escrow = client.get_escrow(&escrow_id);
     assert_eq!(escrow.status, EscrowStatus::Resolved);
@@ -1482,21 +2135,19 @@ fn test_resolve_dispute_split_recipient_wins() {
 fn test_resolve_dispute_split_depositor_wins() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let escrow_id = 501u64;
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &3000);
-
-    client.init(&admin, &operator, &arbitrator);
 
     let milestones = vec![
         &env,
@@ -1518,10 +2169,10 @@ fn test_resolve_dispute_split_depositor_wins() {
     );
     token_client.approve(&depositor, &contract_id, &3000, &200);
     client.deposit_funds(&escrow_id);
-    client.raise_dispute(&escrow_id, &depositor);
+    client.raise_dispute(&escrow_id, &depositor, &valid_evidence_hash(&env));
 
     // Depositor wins 2000, recipient gets 1000
-    client.resolve_dispute(&escrow_id, &depositor, &Some(2000));
+    client.resolve_dispute(&escrow_id, &depositor, &Some(2000), &None);
 
     let escrow = client.get_escrow(&escrow_id);
     assert_eq!(escrow.status, EscrowStatus::Resolved);
@@ -1539,21 +2190,19 @@ fn test_resolve_dispute_split_depositor_wins() {
 fn test_resolve_dispute_split_negative_amount() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let escrow_id = 502u64;
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &1000);
-
-    client.init(&admin, &operator, &arbitrator);
 
     let milestones = vec![
         &env,
@@ -1575,9 +2224,9 @@ fn test_resolve_dispute_split_negative_amount() {
     );
     token_client.approve(&depositor, &contract_id, &1000, &200);
     client.deposit_funds(&escrow_id);
-    client.raise_dispute(&escrow_id, &depositor);
+    client.raise_dispute(&escrow_id, &depositor, &valid_evidence_hash(&env));
 
-    let result = client.try_resolve_dispute(&escrow_id, &recipient, &Some(-1));
+    let result = client.try_resolve_dispute(&escrow_id, &recipient, &Some(-1), &None);
     assert_eq!(result, Err(Ok(Error::InvalidMilestoneAmount)));
 
     // No funds should have moved
@@ -1589,21 +2238,19 @@ fn test_resolve_dispute_split_negative_amount() {
 fn test_resolve_dispute_split_exceeds_outstanding() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let escrow_id = 503u64;
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &1000);
-
-    client.init(&admin, &operator, &arbitrator);
 
     let milestones = vec![
         &env,
@@ -1625,10 +2272,10 @@ fn test_resolve_dispute_split_exceeds_outstanding() {
     );
     token_client.approve(&depositor, &contract_id, &1000, &200);
     client.deposit_funds(&escrow_id);
-    client.raise_dispute(&escrow_id, &depositor);
+    client.raise_dispute(&escrow_id, &depositor, &valid_evidence_hash(&env));
 
     // 1001 > 1000 outstanding
-    let result = client.try_resolve_dispute(&escrow_id, &recipient, &Some(1001));
+    let result = client.try_resolve_dispute(&escrow_id, &recipient, &Some(1001), &None);
     assert_eq!(result, Err(Ok(Error::InvalidMilestoneAmount)));
 
     // No funds should have moved
@@ -1641,24 +2288,19 @@ fn test_resolve_dispute_split_exceeds_outstanding() {
 fn test_resolved_is_terminal() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
-    let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(0));
-
     let admin = Address::generate(&env);
     let operator = Address::generate(&env);
     let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
+
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let escrow_id = 504u64;
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &2000);
-
-    client.init(&admin, &operator, &arbitrator);
 
     let milestones = vec![
         &env,
@@ -1680,18 +2322,18 @@ fn test_resolved_is_terminal() {
     );
     token_client.approve(&depositor, &contract_id, &2000, &200);
     client.deposit_funds(&escrow_id);
-    client.raise_dispute(&escrow_id, &depositor);
+    client.raise_dispute(&escrow_id, &depositor, &valid_evidence_hash(&env));
 
     // Resolve: recipient wins all
-    client.resolve_dispute(&escrow_id, &recipient, &None);
+    client.resolve_dispute(&escrow_id, &recipient, &None, &None);
     assert_eq!(client.get_escrow(&escrow_id).status, EscrowStatus::Resolved);
 
     // raise_dispute must be blocked
-    let r = client.try_raise_dispute(&escrow_id, &depositor);
+    let r = client.try_raise_dispute(&escrow_id, &depositor, &valid_evidence_hash(&env));
     assert_eq!(r, Err(Ok(Error::InvalidEscrowStatus)));
 
     // resolve_dispute again must be blocked (not Disputed)
-    let r = client.try_resolve_dispute(&escrow_id, &recipient, &None);
+    let r = client.try_resolve_dispute(&escrow_id, &recipient, &None, &None);
     assert_eq!(r, Err(Ok(Error::InvalidEscrowStatus)));
 
     // cancel_escrow must be blocked
@@ -1713,13 +2355,15 @@ fn test_resolved_is_terminal() {
 fn test_duplicate_escrow_id() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 7u64;
 
     let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -1758,17 +2402,16 @@ fn test_duplicate_escrow_id() {
 fn test_double_release() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     // Initialize treasury
-    let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50));
-
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 8u64;
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -1808,13 +2451,15 @@ fn test_double_release() {
 fn test_too_many_milestones() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 9u64;
 
     let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -1845,13 +2490,15 @@ fn test_too_many_milestones() {
 fn test_invalid_milestone_amount() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 10u64;
 
     let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -1882,14 +2529,16 @@ fn test_invalid_milestone_amount() {
 fn test_unauthorized_confirm_delivery() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let buyer = Address::generate(&env);
     let seller = Address::generate(&env);
     let non_buyer = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 9u64;
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -1924,17 +2573,16 @@ fn test_unauthorized_confirm_delivery() {
 fn test_double_confirm_delivery() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
 
     let buyer = Address::generate(&env);
     let seller = Address::generate(&env);
-    let admin = Address::generate(&env);
-    let treasury = Address::generate(&env);
     let escrow_id = 10u64;
-
-    client.initialize(&treasury, &Some(0));
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&buyer, &10000);
@@ -1971,12 +2619,14 @@ fn test_double_confirm_delivery() {
 fn test_zero_amount_milestone_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 11u64;
 
     let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -2008,12 +2658,12 @@ fn test_zero_amount_milestone_rejected() {
 fn test_legacy_escrow_migrates_to_v2_and_preserves_metadata() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50));
-
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let token_address = Address::generate(&env);
@@ -2033,6 +2683,8 @@ fn test_legacy_escrow_migrates_to_v2_and_preserves_metadata() {
         required_signatures: 1,
         collected_signatures: Vec::new(&env),
         metadata_hash: valid_metadata_hash(&env),
+        funded_amount: 0,
+        approved_signers: Vec::new(&env),
     };
 
     // Use test helper to write legacy storage under the contract context
@@ -2057,12 +2709,14 @@ fn test_legacy_escrow_migrates_to_v2_and_preserves_metadata() {
 fn test_milestone_sum_overflow_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 13u64;
 
     let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -2099,12 +2753,14 @@ fn test_milestone_sum_overflow_rejected() {
 fn test_negative_amount_milestone_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 12u64;
 
     let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -2136,11 +2792,13 @@ fn test_negative_amount_milestone_rejected() {
 fn test_self_dealing_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
-    let same_party = Address::generate(&env);
     let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+    let same_party = Address::generate(&env);
     let escrow_id = 13u64;
 
     let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -2172,12 +2830,14 @@ fn test_self_dealing_rejected() {
 fn test_valid_escrow_creation_succeeds() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 14u64;
 
     let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -2221,13 +2881,15 @@ fn test_valid_escrow_creation_succeeds() {
 fn test_double_deposit_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 15u64;
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -2264,16 +2926,17 @@ fn test_double_deposit_rejected() {
 fn test_cancel_active_escrow_retains_fee() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50)); // 50 bps = 0.5%
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    // 50 bps = 0.5%
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 20u64;
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -2322,13 +2985,15 @@ fn test_cancel_active_escrow_retains_fee() {
 fn test_release_milestone_before_deposit() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 16u64;
 
     let (_, token_address) = create_test_token(&env, &admin);
@@ -2361,20 +3026,19 @@ fn test_release_milestone_before_deposit() {
 fn test_refund_expired_authorization_check() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, None);
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let unauthorized_caller = Address::generate(&env);
-    let admin = Address::generate(&env);
-    let treasury = Address::generate(&env);
     let escrow_id = 100u64;
 
     // Initialize treasury
-    client.initialize(&treasury, &None);
-
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
 
@@ -2430,18 +3094,15 @@ fn setup_funded_escrow_for_refund(
     token::Client<'_>,
     Address,
 ) {
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(env, &contract_id);
-
-    let treasury = Address::generate(env);
-    client.initialize(&treasury, &None);
-
-    let depositor = Address::generate(env);
-    let recipient = Address::generate(env);
     let admin = Address::generate(env);
     let operator = Address::generate(env);
     let arbitrator = Address::generate(env);
-    client.init(&admin, &operator, &arbitrator);
+    let treasury = Address::generate(env);
+    let (client, contract_id) =
+        create_test_contract_full(env, &admin, &operator, &arbitrator, &treasury, None);
+
+    let depositor = Address::generate(env);
+    let recipient = Address::generate(env);
 
     let (token_client, token_admin, token_address) = create_token_contract(env, &admin);
     token_admin.mint(&depositor, &10_000);
@@ -2503,7 +3164,7 @@ fn test_refund_expired_blocked_when_disputed() {
     let (client, depositor, escrow_id, _, _) = setup_funded_escrow_for_refund(&env, deadline);
 
     // Raise a dispute before the deadline passes
-    client.raise_dispute(&escrow_id, &depositor);
+    client.raise_dispute(&escrow_id, &depositor, &valid_evidence_hash(&env));
 
     // Advance past deadline
     env.ledger().with_mut(|li| li.timestamp = deadline + 1);
@@ -2562,38 +3223,300 @@ fn test_refund_expired_allowed_when_paused() {
     assert!(result.is_ok());
 }
 
-#[test]
-#[should_panic(expected = "Error(Contract, #28)")]
-fn test_pause_fails_without_operator_initialized() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+// ===============================================================================
+// SECURITY REGRESSION TEST SUITES: Issues #623, #621, #622, #620
+// ===============================================================================
 
-    // set_paused requires operator. Operator not set -> OperatorNotInitialized (28)
-    client.set_paused(&true);
-}
+// --- Issue #623: Deadline Validation ---
 
 #[test]
-#[should_panic(expected = "Error(Contract, #29)")]
-fn test_resolve_dispute_fails_without_arbitrator_initialized() {
+fn test_create_escrow_deadline_in_past_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    env.ledger().with_mut(|l| l.timestamp = 1000);
 
     let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let escrow_id = 1u64;
-
-    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
-    token_admin.mint(&depositor, &1000);
+    let token_address = Address::generate(&env);
 
     let milestones = vec![
         &env,
         Milestone {
             amount: 1000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    // Deadline 500 is in the past (now = 1000)
+    let result = client.try_create_escrow(
+        &101,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &500,
+        &valid_metadata_hash(&env),
+    );
+    assert_eq!(result, Err(Ok(Error::InvalidDeadline)));
+}
+
+#[test]
+fn test_create_escrow_deadline_equal_to_now_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token_address = Address::generate(&env);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 1000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    // Deadline equal to current timestamp (1000) is rejected
+    let result = client.try_create_escrow(
+        &102,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1000,
+        &valid_metadata_hash(&env),
+    );
+    assert_eq!(result, Err(Ok(Error::InvalidDeadline)));
+}
+
+#[test]
+fn test_create_escrow_deadline_within_minimum_lead_time_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token_address = Address::generate(&env);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 1000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    // Deadline 1030 is within MIN_DEADLINE_LEAD_SECS (60s) -> rejected
+    let result = client.try_create_escrow(
+        &103,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1030,
+        &valid_metadata_hash(&env),
+    );
+    assert_eq!(result, Err(Ok(Error::InvalidDeadline)));
+}
+
+#[test]
+fn test_create_escrow_deadline_valid_future_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token_address = Address::generate(&env);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 1000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    // Deadline 1061 is > now + 60s -> succeeds
+    let result = client.try_create_escrow(
+        &104,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1061,
+        &valid_metadata_hash(&env),
+    );
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_create_escrows_batch_invalid_deadline_fails_entire_batch() {
+    let env = Env::default();
+    env.mock_all_auths();
+    env.ledger().with_mut(|l| l.timestamp = 1000);
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token_address = Address::generate(&env);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 1000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    let requests = vec![
+        &env,
+        CreateEscrowRequest {
+            escrow_id: 201,
+            depositor: depositor.clone(),
+            recipient: recipient.clone(),
+            token_address: token_address.clone(),
+            milestones: milestones.clone(),
+            deadline: 2000, // valid
+            metadata_hash: valid_metadata_hash(&env),
+        },
+        CreateEscrowRequest {
+            escrow_id: 202,
+            depositor: depositor.clone(),
+            recipient: recipient.clone(),
+            token_address: token_address.clone(),
+            milestones: milestones.clone(),
+            deadline: 500, // invalid: past deadline
+            metadata_hash: valid_metadata_hash(&env),
+        },
+    ];
+
+    let result = client.try_create_escrows_batch(&requests);
+    assert_eq!(result, Err(Ok(Error::InvalidDeadline)));
+
+    // Ensure atomic failure: neither escrow is created
+    assert_eq!(client.try_get_escrow(&201), Err(Ok(Error::EscrowNotFound)));
+    assert_eq!(client.try_get_escrow(&202), Err(Ok(Error::EscrowNotFound)));
+}
+
+// --- Issue #621: Initialization & Uninitialized Protection ---
+
+#[test]
+fn test_uninitialized_contract_rejects_operations() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    // Clear init in instance storage to simulate an uninitialized contract
+    env.as_contract(&contract_id, || {
+        env.storage().instance().remove(&symbol_short!("init"));
+    });
+
+    assert!(!client.is_initialized());
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token_address = Address::generate(&env);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 1000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    let result = client.try_create_escrow(
+        &301,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1706400000u64,
+        &valid_metadata_hash(&env),
+    );
+    assert_eq!(result, Err(Ok(Error::ContractNotInitialized)));
+
+    let r2 = client.try_deposit_funds(&301);
+    assert_eq!(r2, Err(Ok(Error::ContractNotInitialized)));
+}
+
+// --- Issue #622: Multisig Authorization & Approved Signers ---
+
+#[test]
+fn test_collect_signature_rejects_unapproved_signer() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let approved_signer = Address::generate(&env);
+    let rogue_signer = Address::generate(&env);
+    let escrow_id = 401u64;
+
+    let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &10000);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5000,
             status: MilestoneStatus::Pending,
             description: symbol_short!("Task"),
         },
@@ -2608,14 +3531,271 @@ fn test_resolve_dispute_fails_without_arbitrator_initialized() {
         &1706400000u64,
         &valid_metadata_hash(&env),
     );
-    token_client.approve(&depositor, &contract_id, &1000, &200);
+
+    // Configure multisig with only depositor and approved_signer
+    let signers = vec![&env, depositor.clone(), approved_signer.clone()];
+    client.configure_multisig(&escrow_id, &3000, &2, &signers);
+
+    // Rogue signer attempts to sign -> UnauthorizedAccess
+    let result = client.try_collect_signature(&escrow_id, &rogue_signer);
+    assert_eq!(result, Err(Ok(Error::UnauthorizedAccess)));
+
+    // Approved signer succeeds
+    let ok_result = client.try_collect_signature(&escrow_id, &approved_signer);
+    assert!(ok_result.is_ok());
+}
+
+#[test]
+fn test_configure_multisig_validation_errors() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let signer1 = Address::generate(&env);
+    let escrow_id = 402u64;
+
+    let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &10000);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1706400000u64,
+        &valid_metadata_hash(&env),
+    );
+
+    let signers = vec![&env, signer1.clone()];
+
+    // 1. required_signatures = 0 -> InvalidSignerConfiguration
+    let r1 = client.try_configure_multisig(&escrow_id, &3000, &0, &signers);
+    assert_eq!(r1, Err(Ok(Error::InvalidSignerConfiguration)));
+
+    // 2. required_signatures (2) > signers.len() (1) -> InvalidSignerConfiguration
+    let r2 = client.try_configure_multisig(&escrow_id, &3000, &2, &signers);
+    assert_eq!(r2, Err(Ok(Error::InvalidSignerConfiguration)));
+
+    // 3. threshold_amount < 0 -> InvalidSignerConfiguration
+    let r3 = client.try_configure_multisig(&escrow_id, &-100, &1, &signers);
+    assert_eq!(r3, Err(Ok(Error::InvalidSignerConfiguration)));
+}
+
+#[test]
+fn test_release_above_threshold_requires_depositor_auth() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let signer = Address::generate(&env);
+    let escrow_id = 403u64;
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+    token_admin.mint(&depositor, &10000);
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1706400000u64,
+        &valid_metadata_hash(&env),
+    );
+
+    let signers = vec![&env, depositor.clone(), signer.clone()];
+    client.configure_multisig(&escrow_id, &3000, &2, &signers);
+
+    token_client.approve(&depositor, &contract_id, &10000, &200);
     client.deposit_funds(&escrow_id);
-    client.raise_dispute(&escrow_id, &depositor);
 
-    let winner = Address::generate(&env);
+    // Collect signatures
+    client.collect_signature(&escrow_id, &depositor);
+    client.collect_signature(&escrow_id, &signer);
 
-    // This should now correctly panic with ArbitratorNotInitialized (29)
-    client.resolve_dispute(&escrow_id, &winner, &None);
+    // Release milestone and verify that depositor authorization was required
+    client.release_milestone(&escrow_id, &0);
+
+    assert_eq!(
+        env.auths(),
+        std::vec![(
+            depositor.clone(),
+            AuthorizedInvocation {
+                function: AuthorizedFunction::Contract((
+                    contract_id.clone(),
+                    Symbol::new(&env, "release_milestone"),
+                    (escrow_id, 0u32).into_val(&env),
+                )),
+                sub_invocations: std::vec![],
+            },
+        )]
+    );
+
+    assert_eq!(
+        client
+            .get_escrow(&escrow_id)
+            .milestones
+            .get(0)
+            .unwrap()
+            .status,
+        MilestoneStatus::Released
+    );
+}
+
+// --- Issue #620: Unfunded Escrow Dispute & Resolution Protection ---
+
+#[test]
+fn test_raise_dispute_on_created_escrow_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token_address = Address::generate(&env);
+    let escrow_id = 501u64;
+
+    let milestones = vec![
+        &env,
+        Milestone {
+            amount: 5000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id,
+        &depositor,
+        &recipient,
+        &token_address,
+        &milestones,
+        &1706400000u64,
+        &valid_metadata_hash(&env),
+    );
+
+    // Escrow is Created (unfunded). Attempting to raise dispute must fail with InvalidEscrowStatus
+    let result = client.try_raise_dispute(&escrow_id, &depositor, &valid_evidence_hash(&env));
+    assert_eq!(result, Err(Ok(Error::InvalidEscrowStatus)));
+}
+
+#[test]
+fn test_two_escrow_isolation_no_cross_drain() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
+
+    let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
+
+    // Escrow A: funded with 10,000 tokens
+    let depositor_a = Address::generate(&env);
+    let recipient_a = Address::generate(&env);
+    let escrow_id_a = 601u64;
+
+    token_admin.mint(&depositor_a, &10_000);
+    let milestones_a = vec![
+        &env,
+        Milestone {
+            amount: 10_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("WorkA"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id_a,
+        &depositor_a,
+        &recipient_a,
+        &token_address,
+        &milestones_a,
+        &1706400000u64,
+        &valid_metadata_hash(&env),
+    );
+    token_client.approve(&depositor_a, &contract_id, &10_000, &200);
+    client.deposit_funds(&escrow_id_a);
+
+    // Escrow A holds 10_000 in contract balance
+    assert_eq!(token_client.balance(&contract_id), 10_000);
+
+    // Escrow B: created for 10,000 tokens but NEVER funded
+    let depositor_b = Address::generate(&env);
+    let recipient_b = Address::generate(&env);
+    let escrow_id_b = 602u64;
+
+    let milestones_b = vec![
+        &env,
+        Milestone {
+            amount: 10_000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("WorkB"),
+        },
+    ];
+
+    client.create_escrow(
+        &escrow_id_b,
+        &depositor_b,
+        &recipient_b,
+        &token_address,
+        &milestones_b,
+        &1706400000u64,
+        &valid_metadata_hash(&env),
+    );
+
+    // Disputing unfunded Escrow B is rejected (#620)
+    let r = client.try_raise_dispute(&escrow_id_b, &depositor_b, &valid_evidence_hash(&env));
+    assert_eq!(r, Err(Ok(Error::InvalidEscrowStatus)));
+
+    // Contract's balance belongs entirely to Escrow A
+    assert_eq!(token_client.balance(&contract_id), 10_000);
+    assert_eq!(token_client.balance(&recipient_b), 0);
+    assert_eq!(token_client.balance(&depositor_b), 0);
 }
 // ===============================================================================
 // Configurable Fee Model Tests (Feature #93)
@@ -2627,7 +3807,7 @@ fn test_resolve_dispute_fails_without_arbitrator_initialized() {
 //     let env = Env::default();
 //     env.mock_all_auths();
 
-//     let contract_id = env.register_contract(None, VaultixEscrow);
+//     let contract_id = env.register(VaultixEscrow, ());
 //     let client = VaultixEscrowClient::new(&env, &contract_id);
 
 //     let treasury = Address::generate(&env);
@@ -2645,13 +3825,14 @@ fn test_resolve_dispute_fails_without_arbitrator_initialized() {
 fn test_set_token_fee_valid() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
-    let treasury = Address::generate(&env);
     let admin = Address::generate(&env);
-    client.initialize(&treasury, &Some(50)); // 0.5% default
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    // 0.5% default
 
     let (_token_client, _token_admin, token_address) = create_token_contract(&env, &admin);
 
@@ -2669,13 +3850,12 @@ fn test_set_token_fee_valid() {
 fn test_set_token_fee_invalid_fee_too_high() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
-    let treasury = Address::generate(&env);
     let admin = Address::generate(&env);
-    client.initialize(&treasury, &Some(50));
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let (_token_client, _token_admin, token_address) = create_token_contract(&env, &admin);
 
@@ -2689,7 +3869,7 @@ fn test_set_token_fee_invalid_fee_too_high() {
 //     let env = Env::default();
 //     env.mock_all_auths();
 
-//     let contract_id = env.register_contract(None, VaultixEscrow);
+//     let contract_id = env.register(VaultixEscrow, ());
 //     let client = VaultixEscrowClient::new(&env, &contract_id);
 
 //     let treasury = Address::generate(&env);
@@ -2706,12 +3886,14 @@ fn test_set_token_fee_invalid_fee_too_high() {
 fn test_set_escrow_fee_valid() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50)); // 0.5% default
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    // 0.5% default
 
     let escrow_id = 1u64;
 
@@ -2730,12 +3912,12 @@ fn test_set_escrow_fee_valid() {
 fn test_set_escrow_fee_invalid_fee_too_high() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50));
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let escrow_id = 1u64;
 
@@ -2748,16 +3930,17 @@ fn test_set_escrow_fee_invalid_fee_too_high() {
 fn test_release_milestone_uses_global_fee_by_default() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(100)); // 1% fee
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(100));
+
+    // 1% fee
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
@@ -2801,16 +3984,17 @@ fn test_release_milestone_uses_global_fee_by_default() {
 fn test_release_milestone_uses_token_fee_override() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50)); // 0.5% global fee
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    // 0.5% global fee
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
@@ -2858,16 +4042,17 @@ fn test_release_milestone_uses_token_fee_override() {
 fn test_release_milestone_uses_escrow_fee_override() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50)); // 0.5% global fee
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    // 0.5% global fee
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
@@ -2919,16 +4104,17 @@ fn test_release_milestone_uses_escrow_fee_override() {
 fn test_cancel_escrow_uses_token_fee_override() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50)); // 0.5% global fee
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    // 0.5% global fee
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
@@ -2976,15 +4162,14 @@ fn test_cancel_escrow_uses_token_fee_override() {
 fn test_refund_expired_uses_escrow_fee_override() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50));
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
-    let admin = Address::generate(&env);
     let recipient = Address::generate(&env);
 
     let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -3043,16 +4228,15 @@ fn test_refund_expired_uses_escrow_fee_override() {
 fn test_zero_fee_valid() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50));
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
 
     let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     let token_client = token::Client::new(&env, &token_address);
@@ -3095,16 +4279,15 @@ fn test_zero_fee_valid() {
 fn test_configure_multisig_threshold() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50));
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 100u64;
 
     let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -3130,7 +4313,9 @@ fn test_configure_multisig_threshold() {
     );
 
     // Configure multisig: threshold of 3000 and require 2 signatures
-    client.configure_multisig(&escrow_id, &3000, &2);
+    let signers = vec![&env, depositor.clone(), recipient.clone()];
+    client.configure_multisig(&escrow_id, &3000, &2, &signers);
+    assert_canonical_event_topics(&env, &all_events(&env), &contract_id, "MultisigConfigured");
 
     let escrow = client.get_escrow(&escrow_id);
     assert_eq!(escrow.threshold_amount, 3000);
@@ -3141,17 +4326,16 @@ fn test_configure_multisig_threshold() {
 fn test_collect_signature() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50));
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let third_party = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 101u64;
 
     let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -3177,10 +4361,12 @@ fn test_collect_signature() {
     );
 
     // Configure multisig: threshold of 3000 and require 2 signatures
-    client.configure_multisig(&escrow_id, &3000, &2);
+    let signers = vec![&env, depositor.clone(), third_party.clone()];
+    client.configure_multisig(&escrow_id, &3000, &2, &signers);
 
     // Collect first signature
     client.collect_signature(&escrow_id, &depositor);
+    assert_canonical_event_topics(&env, &all_events(&env), &contract_id, "SignatureCollected");
 
     let escrow = client.get_escrow(&escrow_id);
     assert_eq!(escrow.collected_signatures.len(), 1);
@@ -3199,16 +4385,15 @@ fn test_collect_signature() {
 fn test_release_milestone_below_threshold_single_signature() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(0));
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 102u64;
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -3234,7 +4419,8 @@ fn test_release_milestone_below_threshold_single_signature() {
     );
 
     // Configure multisig: threshold of 3000 and require 2 signatures
-    client.configure_multisig(&escrow_id, &3000, &2);
+    let signers = vec![&env, depositor.clone(), recipient.clone()];
+    client.configure_multisig(&escrow_id, &3000, &2, &signers);
 
     token_client.approve(&depositor, &contract_id, &10000, &200);
     client.deposit_funds(&escrow_id);
@@ -3253,16 +4439,15 @@ fn test_release_milestone_below_threshold_single_signature() {
 fn test_release_milestone_above_threshold_insufficient_signatures() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(0));
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 103u64;
 
     let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -3288,7 +4473,8 @@ fn test_release_milestone_above_threshold_insufficient_signatures() {
     );
 
     // Configure multisig: threshold of 3000 and require 2 signatures
-    client.configure_multisig(&escrow_id, &3000, &2);
+    let signers = vec![&env, depositor.clone(), recipient.clone()];
+    client.configure_multisig(&escrow_id, &3000, &2, &signers);
 
     let result = client.try_release_milestone(&escrow_id, &0);
 
@@ -3300,17 +4486,16 @@ fn test_release_milestone_above_threshold_insufficient_signatures() {
 fn test_release_milestone_above_threshold_sufficient_signatures() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(0));
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
     let third_party = Address::generate(&env);
-    let admin = Address::generate(&env);
     let escrow_id = 104u64;
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
@@ -3336,7 +4521,8 @@ fn test_release_milestone_above_threshold_sufficient_signatures() {
     );
 
     // Configure multisig: threshold of 3000 and require 2 signatures
-    client.configure_multisig(&escrow_id, &3000, &2);
+    let signers = vec![&env, depositor.clone(), third_party.clone()];
+    client.configure_multisig(&escrow_id, &3000, &2, &signers);
 
     token_client.approve(&depositor, &contract_id, &10000, &200);
     client.deposit_funds(&escrow_id);
@@ -3359,14 +4545,13 @@ fn test_release_milestone_above_threshold_sufficient_signatures() {
 fn test_list_escrows_by_depositor() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
-    let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(0));
-
     let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
+
     let depositor = Address::generate(&env);
     let recipient1 = Address::generate(&env);
     let recipient2 = Address::generate(&env);
@@ -3416,14 +4601,13 @@ fn test_list_escrows_by_depositor() {
 fn test_list_escrows_by_recipient() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
-    let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(0));
-
     let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
+
     let depositor1 = Address::generate(&env);
     let depositor2 = Address::generate(&env);
     let recipient = Address::generate(&env);
@@ -3473,14 +4657,13 @@ fn test_list_escrows_by_recipient() {
 fn test_list_escrows_pagination() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
-    let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(0));
-
     let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
+
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
 
@@ -3534,12 +4717,12 @@ fn test_list_escrows_pagination() {
 fn test_list_escrows_page_size_limit() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(0));
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
 
     let _admin = Address::generate(&env);
     let depositor = Address::generate(&env);
@@ -3564,12 +4747,12 @@ fn test_list_escrows_page_size_limit() {
 fn test_list_escrows_invalid_role() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(0));
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
 
     let _admin = Address::generate(&env);
     let depositor = Address::generate(&env);
@@ -3584,12 +4767,12 @@ fn test_list_escrows_invalid_role() {
 fn test_list_escrows_empty_party() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(0));
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
 
     let _admin = Address::generate(&env);
     let depositor = Address::generate(&env);
@@ -3600,18 +4783,362 @@ fn test_list_escrows_empty_party() {
     assert_eq!(summaries.len(), 0);
 }
 
+/// `Env` for the chunked party-index tests.
+///
+/// These tests create hundreds of ledger entries, and the default test `Env`
+/// writes a `test_snapshots/*.json` capture of the whole ledger when it drops,
+/// which would mean multi-megabyte snapshot files per test. soroban-sdk 21+
+/// exposes `EnvTestConfig::capture_snapshot_at_drop` so this can be opted out
+/// of explicitly.
+fn index_test_env() -> Env {
+    Env::new_with_config(EnvTestConfig {
+        capture_snapshot_at_drop: false,
+    })
+}
+
+/// Sets up an initialized contract plus a token and single-milestone template
+/// used by the chunked party-index tests.
+fn setup_index_test(
+    env: &Env,
+) -> (
+    VaultixEscrowClient<'_>,
+    Address,
+    soroban_sdk::Vec<Milestone>,
+) {
+    env.mock_all_auths();
+
+    let admin = Address::generate(env);
+    let operator = Address::generate(env);
+    let arbitrator = Address::generate(env);
+    let treasury = Address::generate(env);
+    let (client, _contract_id) =
+        create_test_contract_full(env, &admin, &operator, &arbitrator, &treasury, Some(0));
+
+    let (_token_client, _token_admin, token_address) = create_token_contract(env, &admin);
+
+    let milestones = vec![
+        env,
+        Milestone {
+            amount: 5000,
+            status: MilestoneStatus::Pending,
+            description: symbol_short!("Task"),
+        },
+    ];
+
+    (client, token_address, milestones)
+}
+
+#[test]
+fn test_list_escrows_spans_multiple_index_chunks() {
+    let env = index_test_env();
+    let (client, token_address, milestones) = setup_index_test(&env);
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    // 250 escrows => 3 chunks of 100/100/50 for both depositor and recipient.
+    let total: u64 = 250;
+    for i in 1..=total {
+        client.create_escrow(
+            &i,
+            &depositor,
+            &recipient,
+            &token_address,
+            &milestones,
+            &1706400000u64,
+            &valid_metadata_hash(&env),
+        );
+    }
+
+    // Chunks are bounded: no single entry holds the whole history.
+    assert_eq!(
+        client.test_party_index_chunk_len(&depositor, &symbol_short!("depositor"), &0u32),
+        100
+    );
+    assert_eq!(
+        client.test_party_index_chunk_len(&depositor, &symbol_short!("depositor"), &1u32),
+        100
+    );
+    assert_eq!(
+        client.test_party_index_chunk_len(&depositor, &symbol_short!("depositor"), &2u32),
+        50
+    );
+    assert_eq!(
+        client.test_party_index_chunk_len(&depositor, &symbol_short!("depositor"), &3u32),
+        0
+    );
+
+    // Full history is still readable, in order, across pages (both roles).
+    for (role, party) in [
+        (symbol_short!("depositor"), depositor.clone()),
+        (symbol_short!("recipient"), recipient.clone()),
+    ] {
+        let mut seen: u64 = 0;
+        for page in 0..3u32 {
+            let summaries = client.list_escrows_by_party(&party, &role, &page, &100u32);
+            let expected_len = if page == 2 { 50 } else { 100 };
+            assert_eq!(summaries.len(), expected_len);
+            for summary in summaries.iter() {
+                seen += 1;
+                assert_eq!(summary.escrow_id, seen);
+            }
+        }
+        assert_eq!(seen, total);
+
+        // Page past the end is empty.
+        let empty = client.list_escrows_by_party(&party, &role, &3u32, &100u32);
+        assert_eq!(empty.len(), 0);
+    }
+}
+
+#[test]
+fn test_list_escrows_pagination_across_chunk_boundary() {
+    let env = index_test_env();
+    let (client, token_address, milestones) = setup_index_test(&env);
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    for i in 1..=250u64 {
+        client.create_escrow(
+            &i,
+            &depositor,
+            &recipient,
+            &token_address,
+            &milestones,
+            &1706400000u64,
+            &valid_metadata_hash(&env),
+        );
+    }
+
+    // page_size 30 / page 3 => indices [90, 120) => ids 91..=120, straddling the
+    // boundary between chunk 0 (ids 1..=100) and chunk 1 (ids 101..=200).
+    let page = client.list_escrows_by_party(&depositor, &symbol_short!("depositor"), &3u32, &30u32);
+    assert_eq!(page.len(), 30);
+    for (offset, summary) in page.iter().enumerate() {
+        assert_eq!(summary.escrow_id, 91 + offset as u64);
+    }
+
+    // page_size 7 / page 14 => indices [98, 105) => ids 99..=105, also straddling.
+    let page = client.list_escrows_by_party(&depositor, &symbol_short!("depositor"), &14u32, &7u32);
+    assert_eq!(page.len(), 7);
+    for (offset, summary) in page.iter().enumerate() {
+        assert_eq!(summary.escrow_id, 99 + offset as u64);
+    }
+
+    // Boundary between chunk 1 and chunk 2 (ids 201..=250), with a short tail.
+    let page = client.list_escrows_by_party(&recipient, &symbol_short!("recipient"), &4u32, &45u32);
+    assert_eq!(page.len(), 45);
+    for (offset, summary) in page.iter().enumerate() {
+        assert_eq!(summary.escrow_id, 181 + offset as u64);
+    }
+
+    // Last partial page stops at the true total.
+    let page = client.list_escrows_by_party(&recipient, &symbol_short!("recipient"), &5u32, &45u32);
+    assert_eq!(page.len(), 25);
+    assert_eq!(page.get(0).unwrap().escrow_id, 226);
+    assert_eq!(page.get(24).unwrap().escrow_id, 250);
+
+    // MAX_PAGE_SIZE is still enforced now that pages are served from chunks.
+    let too_big =
+        client.try_list_escrows_by_party(&depositor, &symbol_short!("depositor"), &0u32, &101u32);
+    assert_eq!(too_big, Err(Ok(Error::VectorTooLarge)));
+}
+
+#[test]
+fn test_create_escrow_cost_is_independent_of_history() {
+    let env = index_test_env();
+    let (client, token_address, milestones) = setup_index_test(&env);
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    let create = |id: u64, from: &Address, to: &Address| {
+        client.create_escrow(
+            &id,
+            from,
+            to,
+            &token_address,
+            &milestones,
+            &1706400000u64,
+            &valid_metadata_hash(&env),
+        );
+    };
+
+    // Build up several chunks of history for one party pair.
+    for i in 1..=250u64 {
+        create(i, &depositor, &recipient);
+    }
+
+    // The test host resets budget metering before every top-level invocation,
+    // so each measurement below covers exactly one `create_escrow` call.
+
+    // Control: a party pair with no history at all, measured at the same total
+    // ledger size so only the per-party history differs.
+    let fresh_depositor = Address::generate(&env);
+    let fresh_recipient = Address::generate(&env);
+    create(251, &fresh_depositor, &fresh_recipient);
+    let fresh_cost = env.cost_estimate().budget().cpu_instruction_cost();
+
+    // Same call for a party with 250 prior escrows.
+    create(252, &depositor, &recipient);
+    let history_cost = env.cost_estimate().budget().cpu_instruction_cost();
+
+    assert!(
+        history_cost <= fresh_cost * 3 / 2,
+        "create_escrow cost grew with party history: fresh={} with_history={}",
+        fresh_cost,
+        history_cost
+    );
+}
+
+#[test]
+fn test_legacy_party_index_migrates_on_list() {
+    let env = index_test_env();
+    let (client, token_address, milestones) = setup_index_test(&env);
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    // Existing escrow entries these legacy ids point at.
+    for i in 1..=120u64 {
+        client.create_escrow(
+            &i,
+            &depositor,
+            &recipient,
+            &token_address,
+            &milestones,
+            &1706400000u64,
+            &valid_metadata_hash(&env),
+        );
+    }
+
+    // A party whose index only exists in the old unbounded-vector format.
+    let legacy_party = Address::generate(&env);
+    let mut legacy_ids = soroban_sdk::Vec::new(&env);
+    for i in 1..=120u64 {
+        legacy_ids.push_back(i);
+    }
+    client.test_set_legacy_party_index(&legacy_party, &symbol_short!("depositor"), &legacy_ids);
+    assert!(client.test_has_legacy_party_index(&legacy_party, &symbol_short!("depositor")));
+
+    // Read-only path migrates and paginates correctly.
+    let page0 =
+        client.list_escrows_by_party(&legacy_party, &symbol_short!("depositor"), &0u32, &100u32);
+    assert_eq!(page0.len(), 100);
+    assert_eq!(page0.get(0).unwrap().escrow_id, 1);
+    assert_eq!(page0.get(99).unwrap().escrow_id, 100);
+
+    let page1 =
+        client.list_escrows_by_party(&legacy_party, &symbol_short!("depositor"), &1u32, &100u32);
+    assert_eq!(page1.len(), 20);
+    assert_eq!(page1.get(0).unwrap().escrow_id, 101);
+    assert_eq!(page1.get(19).unwrap().escrow_id, 120);
+
+    // Legacy entry is gone, data now lives in bounded chunks.
+    assert!(!client.test_has_legacy_party_index(&legacy_party, &symbol_short!("depositor")));
+    assert_eq!(
+        client.test_party_index_chunk_len(&legacy_party, &symbol_short!("depositor"), &0u32),
+        100
+    );
+    assert_eq!(
+        client.test_party_index_chunk_len(&legacy_party, &symbol_short!("depositor"), &1u32),
+        20
+    );
+
+    // Straddling page after migration is still contiguous.
+    let straddle =
+        client.list_escrows_by_party(&legacy_party, &symbol_short!("depositor"), &3u32, &30u32);
+    assert_eq!(straddle.len(), 30);
+    for (offset, summary) in straddle.iter().enumerate() {
+        assert_eq!(summary.escrow_id, 91 + offset as u64);
+    }
+
+    // New appends continue after the migrated history.
+    let new_recipient = Address::generate(&env);
+    client.create_escrow(
+        &900u64,
+        &legacy_party,
+        &new_recipient,
+        &token_address,
+        &milestones,
+        &1706400000u64,
+        &valid_metadata_hash(&env),
+    );
+
+    let page1 =
+        client.list_escrows_by_party(&legacy_party, &symbol_short!("depositor"), &1u32, &100u32);
+    assert_eq!(page1.len(), 21);
+    assert_eq!(page1.get(20).unwrap().escrow_id, 900);
+}
+
+#[test]
+fn test_legacy_party_index_migrates_on_append() {
+    let env = index_test_env();
+    let (client, token_address, milestones) = setup_index_test(&env);
+
+    let depositor = Address::generate(&env);
+    let legacy_recipient = Address::generate(&env);
+
+    for i in 1..=5u64 {
+        client.create_escrow(
+            &i,
+            &depositor,
+            &Address::generate(&env),
+            &token_address,
+            &milestones,
+            &1706400000u64,
+            &valid_metadata_hash(&env),
+        );
+    }
+
+    // Legacy recipient index written directly in the old format.
+    let mut legacy_ids = soroban_sdk::Vec::new(&env);
+    for i in 1..=5u64 {
+        legacy_ids.push_back(i);
+    }
+    client.test_set_legacy_party_index(&legacy_recipient, &symbol_short!("recipient"), &legacy_ids);
+
+    // Append path (create_escrow) triggers migration before the first list.
+    client.create_escrow(
+        &6u64,
+        &depositor,
+        &legacy_recipient,
+        &token_address,
+        &milestones,
+        &1706400000u64,
+        &valid_metadata_hash(&env),
+    );
+
+    assert!(!client.test_has_legacy_party_index(&legacy_recipient, &symbol_short!("recipient")));
+    assert_eq!(
+        client.test_party_index_chunk_len(&legacy_recipient, &symbol_short!("recipient"), &0u32),
+        6
+    );
+
+    let summaries = client.list_escrows_by_party(
+        &legacy_recipient,
+        &symbol_short!("recipient"),
+        &0u32,
+        &10u32,
+    );
+    assert_eq!(summaries.len(), 6);
+    for (offset, summary) in summaries.iter().enumerate() {
+        assert_eq!(summary.escrow_id, 1 + offset as u64);
+    }
+}
+
 #[test]
 fn test_list_escrows_returns_lightweight_summaries() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
-    let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(0));
-
     let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
+
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
 
@@ -3657,14 +5184,13 @@ fn test_list_escrows_returns_lightweight_summaries() {
 fn test_max_fee_10000_bps_valid() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
-    let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50));
-
     let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
     let (_token_client, _token_admin, token_address) = create_token_contract(&env, &admin);
 
     // Set token fee to maximum valid value (BPS_DENOMINATOR = 10000)
@@ -3691,16 +5217,15 @@ fn test_max_fee_10000_bps_valid() {
 fn test_lifecycle_events_contain_all_summary_fields() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(0));
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
 
     let (_token_client, _token_admin, token_address) = create_token_contract(&env, &admin);
 
@@ -3726,7 +5251,7 @@ fn test_lifecycle_events_contain_all_summary_fields() {
         &valid_metadata_hash(&env),
     );
 
-    let events = env.events().all();
+    let events = all_events(&env);
     // Event index 0 is FeeUpdated from initialize, index 1 is RoleUpdated
     // So EscrowCreated should be the last event
     let event = events.last().unwrap();
@@ -3745,17 +5270,16 @@ fn test_lifecycle_events_contain_all_summary_fields() {
 fn test_full_lifecycle_event_summaries_are_accurate() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
-    let treasury = Address::generate(&env);
     let escrow_id = 999u64;
-
-    client.initialize(&treasury, &Some(0));
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
@@ -3787,7 +5311,7 @@ fn test_full_lifecycle_event_summaries_are_accurate() {
         &valid_metadata_hash(&env),
     );
 
-    let events = env.events().all();
+    let events = all_events(&env);
     // Find the last event (EscrowCreated) — skip initialization events
     let create_event: EscrowCreatedEvent = events.last().unwrap().2.clone().into_val(&env);
     assert_eq!(create_event.status, EscrowStatus::Created);
@@ -3799,7 +5323,7 @@ fn test_full_lifecycle_event_summaries_are_accurate() {
     token_client.approve(&depositor, &contract_id, &10_000, &200);
     client.deposit_funds(&escrow_id);
 
-    let events = env.events().all();
+    let events = all_events(&env);
     let deposit_event: FundsDepositedEvent = events.last().unwrap().2.clone().into_val(&env);
     assert_eq!(deposit_event.status, EscrowStatus::Active);
     assert_eq!(deposit_event.total_amount, 10000);
@@ -3809,7 +5333,7 @@ fn test_full_lifecycle_event_summaries_are_accurate() {
     // --- Step 3: Release milestone 0 ---
     client.release_milestone(&escrow_id, &0);
 
-    let events = env.events().all();
+    let events = all_events(&env);
     let release_event: MilestoneReleasedEvent = events.last().unwrap().2.clone().into_val(&env);
     assert_eq!(release_event.status, EscrowStatus::Active);
     assert_eq!(release_event.total_amount, 10000);
@@ -3819,7 +5343,7 @@ fn test_full_lifecycle_event_summaries_are_accurate() {
     // --- Step 4: Delivery confirm milestone 1 ---
     client.confirm_delivery(&escrow_id, &1, &depositor);
 
-    let events = env.events().all();
+    let events = all_events(&env);
     let confirm_event: DeliveryConfirmedEvent = events.last().unwrap().2.clone().into_val(&env);
     assert_eq!(confirm_event.status, EscrowStatus::Active);
     assert_eq!(confirm_event.total_amount, 10000);
@@ -3829,7 +5353,7 @@ fn test_full_lifecycle_event_summaries_are_accurate() {
     // --- Step 5: Complete escrow ---
     client.complete_escrow(&escrow_id);
 
-    let events = env.events().all();
+    let events = all_events(&env);
     let complete_event: EscrowCompletedEvent = events.last().unwrap().2.clone().into_val(&env);
     assert_eq!(complete_event.status, EscrowStatus::Completed);
     assert_eq!(complete_event.total_amount, 10000);
@@ -3844,17 +5368,16 @@ fn test_full_lifecycle_event_summaries_are_accurate() {
 fn test_event_ordering_is_deterministic() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
-    let treasury = Address::generate(&env);
     let escrow_id = 888u64;
-
-    client.initialize(&treasury, &Some(0));
 
     let (_token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
@@ -3878,7 +5401,7 @@ fn test_event_ordering_is_deterministic() {
         &valid_metadata_hash(&env),
     );
 
-    let events = env.events().all();
+    let events = all_events(&env);
 
     // The last event should be EscrowCreated (initialize emits FeeUpdated first)
     let event = events.last().unwrap();
@@ -3901,17 +5424,16 @@ fn test_event_ordering_is_deterministic() {
 fn test_event_topics_are_backwards_compatible() {
     let env = Env::default();
     env.mock_all_auths();
-
-    let contract_id = env.register_contract(None, VaultixEscrow);
-    let client = VaultixEscrowClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(0));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
-    let treasury = Address::generate(&env);
     let escrow_id = 777u64;
-
-    client.initialize(&treasury, &Some(0));
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
@@ -3925,7 +5447,11 @@ fn test_event_topics_are_backwards_compatible() {
         },
     ];
 
-    // Run through a series of operations and verify all event topics
+    // Run through a series of operations and verify all event topics.
+    //
+    // Since soroban-sdk 21, `env.events().all()` only reports the events of the
+    // most recent top-level invocation, so each operation is checked right
+    // after its own call instead of walking one accumulated log.
     let deadline = 1706400000u64;
 
     client.create_escrow(
@@ -3937,74 +5463,98 @@ fn test_event_topics_are_backwards_compatible() {
         &deadline,
         &valid_metadata_hash(&env),
     );
+    assert_canonical_event_topics(&env, &all_events(&env), &contract_id, "EscrowCreated");
 
     token_client.approve(&depositor, &contract_id, &10_000, &200);
     client.deposit_funds(&escrow_id);
+    assert_canonical_event_topics(&env, &all_events(&env), &contract_id, "FundsDeposited");
 
     client.release_milestone(&escrow_id, &0);
+    assert_canonical_event_topics(&env, &all_events(&env), &contract_id, "MilestoneReleased");
 
     client.complete_escrow(&escrow_id);
+    assert_canonical_event_topics(&env, &all_events(&env), &contract_id, "EscrowCompleted");
+}
 
-    let events = env.events().all();
+/// Covers `ContractUpgraded`, the third event fixed by issue #569.
+/// Calls `VaultixEscrow::upgrade` directly via `env.as_contract(...)` and
+/// catches the resulting panic from the dummy (non-existent) Wasm hash, since
+/// only the topic on the already-published event needs verifying here.
+#[test]
+fn test_contract_upgraded_uses_canonical_topic() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (_client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
 
-    let expected_event_names = [
-        "EscrowCreated",
-        "FundsDeposited",
-        "MilestoneReleased",
-        "EscrowCompleted",
-    ];
+    let new_wasm_hash = [7u8; 32];
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        env.as_contract(&contract_id, || {
+            let _ = VaultixEscrow::upgrade(env.clone(), new_wasm_hash);
+        });
+    }));
+    assert!(
+        result.is_err(),
+        "expected the dummy-wasm deploy step to panic"
+    );
 
-    let mut event_idx = 0;
-    // Skip initialization events (FeeUpdated + RoleUpdated) emitted by initialize()
-    // In this setup with treasury only, initialize emits FeeUpdated (topic index 2 with "FeeUpdated")
-    while event_idx < events.len() {
-        let topics: soroban_sdk::Vec<Val> = events.get(event_idx).unwrap().1.clone().into_val(&env);
-        let _name_val: Val = topics.get(2).unwrap();
-        let expected_topics: soroban_sdk::Vec<Val> = (
-            Symbol::new(&env, "Vaultix"),
-            Symbol::new(&env, "v1"),
-            Symbol::new(&env, expected_event_names[0]),
-        )
-            .into_val(&env);
-        if topics != expected_topics && event_idx < 5 {
-            // Skip the initial FeeUpdated event
-            event_idx += 1;
+    assert_canonical_event_topics(&env, &all_events(&env), &contract_id, "ContractUpgraded");
+}
+
+/// Asserts that every event emitted by `contract_id` in `events` uses the
+/// canonical `(Vaultix, v1, EventName)` three-topic format, and that at least
+/// one of them is named `expected_name`.
+fn assert_canonical_event_topics(
+    env: &Env,
+    events: &soroban_sdk::Vec<(Address, soroban_sdk::Vec<Val>, Val)>,
+    contract_id: &Address,
+    expected_name: &str,
+) {
+    use soroban_sdk::TryFromVal;
+
+    let namespace = Symbol::new(env, "Vaultix");
+    let version = Symbol::new(env, "v1");
+    let expected_topics: soroban_sdk::Vec<Val> = (
+        namespace.clone(),
+        version.clone(),
+        Symbol::new(env, expected_name),
+    )
+        .into_val(env);
+
+    let mut found = false;
+    for (emitter, topics, _) in events.iter() {
+        if &emitter != contract_id {
+            // Sub-invocations (e.g. the token contract) emit their own events.
             continue;
         }
-        break;
-    }
-
-    for expected_name in expected_event_names.iter() {
-        while event_idx < events.len() {
-            let topics: soroban_sdk::Vec<Val> =
-                events.get(event_idx).unwrap().1.clone().into_val(&env);
-            let expected_topics: soroban_sdk::Vec<Val> = (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "v1"),
-                Symbol::new(&env, expected_name),
-            )
-                .into_val(&env);
-            if topics == expected_topics {
-                break;
-            }
-            event_idx += 1;
-        }
-
-        assert!(event_idx < events.len(), "expected more events");
-
-        let topics: soroban_sdk::Vec<Val> = events.get(event_idx).unwrap().1.clone().into_val(&env);
-        let canon_topic: soroban_sdk::Vec<Val> = (
-            Symbol::new(&env, "Vaultix"),
-            Symbol::new(&env, "v1"),
-            Symbol::new(&env, expected_name),
-        )
-            .into_val(&env);
         assert_eq!(
-            topics, canon_topic,
-            "Event {} must use canonical topic format (Vaultix, v1, {})",
-            expected_name, expected_name
+            topics.len(),
+            3,
+            "Vaultix events must have exactly 3 topics, got {:?}",
+            topics
         );
-
-        event_idx += 1;
+        assert_eq!(
+            Symbol::try_from_val(env, &topics.get(0).unwrap()).unwrap(),
+            namespace,
+            "first topic must be the Vaultix namespace"
+        );
+        assert_eq!(
+            Symbol::try_from_val(env, &topics.get(1).unwrap()).unwrap(),
+            version,
+            "second topic must be the v1 schema version"
+        );
+        if topics == expected_topics {
+            found = true;
+        }
     }
+
+    assert!(
+        found,
+        "Event {} must be emitted with canonical topic format (Vaultix, v1, {})",
+        expected_name, expected_name
+    );
 }

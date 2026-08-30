@@ -12,6 +12,7 @@ import {
   OnModuleDestroy,
   Inject,
   forwardRef,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -22,9 +23,16 @@ import {
   StellarEventType,
 } from '../entities/stellar-event.entity';
 import { Escrow, EscrowStatus } from '../../escrow/entities/escrow.entity';
+import { Condition } from '../../escrow/entities/condition.entity';
+import {
+  EscrowEvent,
+  EscrowEventType,
+} from '../../escrow/entities/escrow-event.entity';
+import { Party } from '../../escrow/entities/party.entity';
 import { SorobanClientService } from '../../../services/stellar/soroban-client.service';
 import { ConsistencyCheckerService } from '../../admin/services/consistency-checker.service';
 import { AllowedAsset } from '../../assets/entities/allowed-asset.entity';
+import { EscrowGateway } from '../../../gateways/escrow.gateway';
 
 @Injectable()
 export class StellarEventListenerService
@@ -46,9 +54,16 @@ export class StellarEventListenerService
     private stellarEventRepository: Repository<StellarEvent>,
     @InjectRepository(Escrow)
     private escrowRepository: Repository<Escrow>,
+    @InjectRepository(Condition)
+    private conditionRepository: Repository<Condition>,
+    @InjectRepository(EscrowEvent)
+    private escrowEventRepository: Repository<EscrowEvent>,
+    @InjectRepository(Party)
+    private partyRepository: Repository<Party>,
     private sorobanClient: SorobanClientService,
     @Inject(forwardRef(() => ConsistencyCheckerService))
     private consistencyChecker: ConsistencyCheckerService,
+    @Optional() private escrowGateway?: EscrowGateway,
   ) {}
 
   async onModuleInit() {
@@ -263,7 +278,11 @@ export class StellarEventListenerService
       });
 
       if (existingEvent) {
-        this.logger.debug(`Event already processed: ${txHash}:${eventIndex}`);
+        this.logger.debug({
+          msg: 'Event already processed',
+          txHash,
+          eventIndex,
+        });
         return;
       }
 
@@ -282,14 +301,19 @@ export class StellarEventListenerService
       // Update related escrow records
       await this.updateEscrowFromEvent(normalizedEvent);
 
-      this.logger.debug(
-        `Processed event: ${normalizedEvent.eventType} for escrow: ${normalizedEvent.escrowId}`,
-      );
+      this.logger.log({
+        msg: 'Processed stellar event',
+        eventType: normalizedEvent.eventType,
+        escrowId: normalizedEvent.escrowId,
+        txHash,
+      });
     } catch (error) {
-      this.logger.error(
-        `Error processing event ${eventData.txHash}:${eventData.eventIndex}:`,
-        error,
-      );
+      this.logger.error({
+        msg: 'Error processing event',
+        txHash: eventData.txHash,
+        eventIndex: eventData.eventIndex,
+        error: error instanceof Error ? error.message : error,
+      });
     }
   }
 
@@ -515,7 +539,7 @@ export class StellarEventListenerService
           break;
 
         case StellarEventType.MILESTONE_RELEASED:
-          this.handleMilestoneReleased(event);
+          await this.handleMilestoneReleased(event);
           break;
 
         case StellarEventType.ESCROW_COMPLETED:
@@ -611,12 +635,105 @@ export class StellarEventListenerService
     }
   }
 
-  private handleMilestoneReleased(event: StellarEvent): void {
-    // This would update milestone-specific data
-    // For now, just log the event
-    this.logger.log(
-      `Milestone released for escrow: ${event.escrowId}, milestone: ${event.milestoneIndex}`,
+  private async handleMilestoneReleased(event: StellarEvent): Promise<void> {
+    if (!event.escrowId) {
+      this.logger.warn('Milestone released event missing escrowId');
+      return;
+    }
+
+    // 1. Find escrow by on-chain ID
+    const escrow = await this.escrowRepository.findOne({
+      where: { id: event.escrowId },
+      relations: ['conditions'],
+    });
+
+    if (!escrow) {
+      this.logger.warn(
+        `Escrow not found in DB for milestone release event: ${event.escrowId}. ` +
+          'The on-chain event references an escrow that has not been synced yet.',
+      );
+      return;
+    }
+
+    const milestoneIndex = event.milestoneIndex ?? 0;
+    const releaseAmount = event.amount ? Number(event.amount) : 0;
+
+    // 2. Find the specific condition/milestone by index
+    //    Conditions are ordered by createdAt; the milestone index maps to the Nth condition.
+    const conditions = (escrow.conditions || []).sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
     );
+    const condition = conditions[milestoneIndex];
+
+    if (!condition) {
+      this.logger.warn(
+        `Condition at index ${milestoneIndex} not found for escrow ${event.escrowId}. ` +
+          `Escrow has ${conditions.length} conditions.`,
+      );
+      return;
+    }
+
+    // 3. Idempotent: if milestone already released, skip
+    if (condition.isReleased) {
+      this.logger.debug(
+        `Milestone ${milestoneIndex} for escrow ${event.escrowId} already released. Skipping (idempotent).`,
+      );
+      return;
+    }
+
+    // 4. Mark condition as released with tx hash
+    condition.isReleased = true;
+    condition.releasedAt = event.timestamp;
+    condition.metadata = {
+      ...(condition.metadata || {}),
+      releasedTxHash: event.txHash,
+      releasedByEvent: event.id,
+      milestoneIndex,
+    };
+    await this.conditionRepository.save(condition);
+
+    // 5. Update escrow releasedAmount
+    escrow.releasedAmount = Number(escrow.releasedAmount || 0) + releaseAmount;
+    escrow.stellarTxHash = event.txHash;
+    await this.escrowRepository.save(escrow);
+
+    // 6. Log audit trail entry in escrow_events
+    const escrowEvent = this.escrowEventRepository.create({
+      escrowId: escrow.id,
+      eventType: EscrowEventType.MILESTONE_RELEASED,
+      actorId: 'stellar-network',
+      data: {
+        milestoneIndex,
+        amount: releaseAmount,
+        conditionId: condition.id,
+        txHash: event.txHash,
+        ledger: event.ledger,
+      },
+    });
+    await this.escrowEventRepository.save(escrowEvent);
+
+    this.logger.log(
+      `Milestone ${milestoneIndex} released for escrow ${event.escrowId}: ` +
+        `amount=${releaseAmount}, txHash=${event.txHash}, conditionId=${condition.id}`,
+    );
+
+    // 7. Emit WebSocket event to escrow room
+    try {
+      this.escrowGateway?.broadcastMilestoneReleased(escrow.id, {
+        milestoneIndex,
+        amount: releaseAmount,
+        conditionId: condition.id,
+        txHash: event.txHash,
+        releasedAmount: escrow.releasedAmount,
+        totalAmount: Number(escrow.amount),
+      });
+    } catch (wsError) {
+      this.logger.error(
+        'Failed to broadcast milestone released WebSocket event',
+        wsError,
+      );
+    }
   }
 
   private async handleEscrowCompleted(event: StellarEvent) {

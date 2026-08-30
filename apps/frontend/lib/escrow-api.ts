@@ -3,12 +3,15 @@ import { ICondition, IDispute, IEscrowExtended } from "@/types/escrow";
 const apiBaseUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "";
 
+// API version prefix
+const API_VERSION_PREFIX = "/v1";
+
 const buildApiUrl = (path: string) => {
   if (apiBaseUrl) {
-    return `${apiBaseUrl}${path}`;
+    return `${apiBaseUrl}${API_VERSION_PREFIX}${path}`;
   }
 
-  return `/api${path}`;
+  return `/api${API_VERSION_PREFIX}${path}`;
 };
 
 const readErrorMessage = async (response: Response) => {
@@ -94,7 +97,7 @@ export const uploadEvidence = async (
       : null;
 
   const response = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"}/escrows/${escrowId}/evidence`,
+    `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"}/v1/escrows/${escrowId}/evidence`,
     {
       method: "POST",
       headers: {
@@ -174,6 +177,28 @@ export const revokeApiKey = (id: string): Promise<IApiKey> =>
     method: "DELETE",
   });
 
+// Per-escrow events (timeline)
+export interface IEscrowEventsResponse {
+  data: IEventResponse[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export const fetchEscrowEvents = (
+  escrowId: string,
+  params: { page?: number; limit?: number; sortOrder?: "ASC" | "DESC" } = {},
+): Promise<IEscrowEventsResponse> => {
+  const qp = new URLSearchParams();
+  if (params.page) qp.set("page", String(params.page));
+  if (params.limit) qp.set("limit", String(params.limit));
+  if (params.sortOrder) qp.set("sortOrder", params.sortOrder);
+  const qs = qp.toString();
+  return request<IEscrowEventsResponse>(
+    `/escrows/${escrowId}/events${qs ? `?${qs}` : ""}`,
+  );
+};
+
 // Global Events / Transaction History
 export interface IEventResponse {
   id: string;
@@ -190,6 +215,8 @@ export interface IEventResponse {
     assetCode: string;
     assetIssuer?: string;
     status: string;
+    completedAt?: string;
+    deadline?: string;
   };
   actor?: {
     walletAddress?: string;
@@ -202,6 +229,15 @@ export interface IEventsListResponse {
   page: number;
   limit: number;
 }
+
+export const expireEscrow = (
+  escrowId: string,
+  data?: { reason?: string },
+): Promise<any> =>
+  request(`/escrows/${escrowId}/expire`, {
+    method: "POST",
+    body: data ? JSON.stringify(data) : undefined,
+  });
 
 export const fetchEvents = (
   params: {

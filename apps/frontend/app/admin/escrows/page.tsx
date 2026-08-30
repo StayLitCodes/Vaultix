@@ -1,19 +1,21 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Filter, ChevronLeft, ChevronRight, Eye, RefreshCw, X,
-  Loader2, AlertCircle, CheckCircle2, Clock, XCircle, AlertTriangle,
-} from 'lucide-react';
-import { AdminService } from '@/services/admin';
-import { IAdminEscrow, IAdminEscrowResponse } from '@/types/admin';
+import React, { useState, useEffect, useCallback } from "react";
+import { Filter, ChevronLeft, ChevronRight, Eye, RefreshCw, X, Loader2, AlertCircle, CheckCircle2, Clock, XCircle, AlertTriangle, Download } from "lucide-react";
+import { AdminService } from "@/services/admin";
+import { IAdminEscrow, IAdminEscrowResponse } from "@/types/admin";
+import { ExportDropdown, ExportFormat } from "@/components/ExportDropdown";
+import { ExportModal } from "@/components/ExportModal";
+import { useToast } from "@/hooks/useToast";
+import EscrowTimeline from "@/components/escrow/EscrowTimeline";
+import { AdminTableSkeleton } from "@/components/ui/AdminTableSkeleton";
 
 const STATUS_CONFIG: Record<string, { color: string; bg: string; icon: React.ElementType }> = {
-  ACTIVE: { color: 'text-emerald-400', bg: 'bg-emerald-500/10', icon: CheckCircle2 },
-  COMPLETED: { color: 'text-blue-400', bg: 'bg-blue-500/10', icon: CheckCircle2 },
-  PENDING: { color: 'text-yellow-400', bg: 'bg-yellow-500/10', icon: Clock },
-  CANCELLED: { color: 'text-gray-400', bg: 'bg-gray-500/10', icon: XCircle },
-  DISPUTED: { color: 'text-red-400', bg: 'bg-red-500/10', icon: AlertTriangle },
+  ACTIVE: { color: "text-emerald-400", bg: "bg-emerald-500/10", icon: CheckCircle2 },
+  COMPLETED: { color: "text-blue-400", bg: "bg-blue-500/10", icon: CheckCircle2 },
+  PENDING: { color: "text-yellow-400", bg: "bg-yellow-500/10", icon: Clock },
+  CANCELLED: { color: "text-gray-400", bg: "bg-gray-500/10", icon: XCircle },
+  DISPUTED: { color: "text-red-400", bg: "bg-red-500/10", icon: AlertTriangle },
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -27,9 +29,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function EscrowDetailModal({ escrow, onClose, onConsistencyCheck }: {
-  escrow: IAdminEscrow; onClose: () => void; onConsistencyCheck: (id: string) => void;
-}) {
+function EscrowDetailModal({ escrow, onClose, onConsistencyCheck }: { escrow: IAdminEscrow; onClose: () => void; onConsistencyCheck: (id: string) => void }) {
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<{ status: string; issues: string[] } | null>(null);
 
@@ -59,12 +59,24 @@ function EscrowDetailModal({ escrow, onClose, onConsistencyCheck }: {
             <p className="text-white font-medium">{escrow.title}</p>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div><p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Amount</p>
-              <p className="text-white font-medium text-sm">{parseFloat(escrow.amount).toLocaleString()} {escrow.asset}</p></div>
-            <div><p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Status</p><StatusBadge status={escrow.status} /></div>
-            <div><p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Type</p><p className="text-white text-sm">{escrow.type}</p></div>
-            <div><p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Created</p>
-              <p className="text-white text-sm">{new Date(escrow.createdAt).toLocaleDateString()}</p></div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Amount</p>
+              <p className="text-white font-medium text-sm">
+                {parseFloat(escrow.amount).toLocaleString()} {escrow.asset}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Status</p>
+              <StatusBadge status={escrow.status} />
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Type</p>
+              <p className="text-white text-sm">{escrow.type}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Created</p>
+              <p className="text-white text-sm">{new Date(escrow.createdAt).toLocaleDateString()}</p>
+            </div>
           </div>
           <div>
             <p className="text-xs text-gray-500 uppercase tracking-wider mb-2">Parties</p>
@@ -75,13 +87,25 @@ function EscrowDetailModal({ escrow, onClose, onConsistencyCheck }: {
                     <p className="text-xs text-gray-300">{party.role}</p>
                     <p className="text-[10px] text-gray-500 font-mono">{party.userId}</p>
                   </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full ${party.status === 'ACCEPTED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-yellow-500/10 text-yellow-400'}`}>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full ${party.status === "ACCEPTED" ? "bg-emerald-500/10 text-emerald-400" : "bg-yellow-500/10 text-yellow-400"}`}
+                  >
                     {party.status}
                   </span>
                 </div>
               ))}
             </div>
           </div>
+          {/* Activity Timeline */}
+          <div className="border-t border-white/5 pt-4">
+            <EscrowTimeline
+              escrowId={escrow.id}
+              escrowStatus={escrow.status}
+              hasConditions={(escrow.parties?.length ?? 0) > 0}
+              className="bg-transparent border-white/5 shadow-none p-0"
+            />
+          </div>
+
           <div className="border-t border-white/5 pt-4">
             <button
               onClick={handleCheck}
@@ -92,13 +116,23 @@ function EscrowDetailModal({ escrow, onClose, onConsistencyCheck }: {
               Run Consistency Check
             </button>
             {result && (
-              <div className={`mt-3 p-3 rounded-lg text-xs ${result.issues.length === 0 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-yellow-500/10 text-yellow-400'}`}>
+              <div className={`mt-3 p-3 rounded-lg text-xs ${result.issues.length === 0 ? "bg-emerald-500/10 text-emerald-400" : "bg-yellow-500/10 text-yellow-400"}`}>
                 {result.issues.length === 0 ? (
-                  <div className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4" />No issues found.</div>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4" />
+                    No issues found.
+                  </div>
                 ) : (
                   <div>
-                    <div className="flex items-center gap-2 mb-2"><AlertCircle className="w-4 h-4" />Issues detected:</div>
-                    <ul className="list-disc list-inside space-y-1">{result.issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul>
+                    <div className="flex items-center gap-2 mb-2">
+                      <AlertCircle className="w-4 h-4" />
+                      Issues detected:
+                    </div>
+                    <ul className="list-disc list-inside space-y-1">
+                      {result.issues.map((issue, i) => (
+                        <li key={i}>{issue}</li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </div>
@@ -123,8 +157,12 @@ function EscrowCard({ escrow, onView }: { escrow: IAdminEscrow; onView: () => vo
       </div>
       <div className="flex items-center justify-between">
         <div className="space-y-0.5">
-          <p className="text-sm text-white">{parseFloat(escrow.amount).toLocaleString()} <span className="text-gray-400 text-xs">{escrow.asset}</span></p>
-          <p className="text-xs text-gray-500">{escrow.type} · {new Date(escrow.createdAt).toLocaleDateString()}</p>
+          <p className="text-sm text-white">
+            {parseFloat(escrow.amount).toLocaleString()} <span className="text-gray-400 text-xs">{escrow.asset}</span>
+          </p>
+          <p className="text-xs text-gray-500">
+            {escrow.type} · {new Date(escrow.createdAt).toLocaleDateString()}
+          </p>
         </div>
         <button
           onClick={onView}
@@ -142,28 +180,116 @@ export default function AdminEscrowsPage() {
   const [data, setData] = useState<IAdminEscrowResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState("ALL");
   const [selectedEscrow, setSelectedEscrow] = useState<IAdminEscrow | null>(null);
+  const { success, error } = useToast();
 
-  const statuses = ['ALL', 'ACTIVE', 'COMPLETED', 'PENDING', 'CANCELLED', 'DISPUTED'];
+  // Export state
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>("csv");
+
+  const statuses = ["ALL", "ACTIVE", "COMPLETED", "PENDING", "CANCELLED", "DISPUTED"];
 
   const fetchEscrows = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await AdminService.getEscrows({ status: statusFilter === 'ALL' ? undefined : statusFilter, page, limit: 10 });
+      const result = await AdminService.getEscrows({ status: statusFilter === "ALL" ? undefined : statusFilter, page, limit: 10 });
       setData(result);
     } finally {
       setLoading(false);
     }
   }, [page, statusFilter]);
 
-  useEffect(() => { fetchEscrows(); }, [fetchEscrows]);
+  useEffect(() => {
+    fetchEscrows();
+  }, [fetchEscrows]);
+
+  const handleExportClick = (format: ExportFormat) => {
+    setExportFormat(format);
+    setExportModalOpen(true);
+  };
+
+  const handleExportConfirm = async (exportDateFrom: string, exportDateTo: string) => {
+    setIsExporting(true);
+    setExportModalOpen(false);
+
+    try {
+      // Fetch all escrows with the selected filters (no pagination for export)
+      const result = await AdminService.getEscrows({
+        status: statusFilter === "ALL" ? undefined : statusFilter,
+        page: 1,
+        limit: 10000,
+      });
+
+      setTimeout(() => {
+        try {
+          if (exportFormat === "csv") {
+            // Convert escrows to CSV format
+            const headers = ["ID", "Title", "Amount", "Asset", "Status", "Type", "Created At"];
+            const rows = result.escrows.map((escrow) => [
+              escrow.id,
+              escrow.title,
+              escrow.amount,
+              escrow.asset,
+              escrow.status,
+              escrow.type,
+              new Date(escrow.createdAt).toISOString(),
+            ]);
+
+            const csvContent = [
+              headers.join(","),
+              ...rows.map((row) =>
+                row
+                  .map((cell) => {
+                    const cellStr = String(cell);
+                    if (cellStr.includes(",") || cellStr.includes('"') || cellStr.includes("\n")) {
+                      return `"${cellStr.replace(/"/g, '""')}"`;
+                    }
+                    return cellStr;
+                  })
+                  .join(","),
+              ),
+            ].join("\n");
+
+            const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", `vaultix-escrows-${new Date().toISOString().split("T")[0]}.csv`);
+            link.style.visibility = "hidden";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+
+            success(`Successfully exported ${result.escrows.length} escrows to CSV`);
+          } else {
+            // PDF export would require jsPDF - for now show a message
+            error("PDF export for escrows is not yet implemented");
+          }
+        } catch (err) {
+          error("Failed to generate export file");
+          console.error("Export error:", err);
+        } finally {
+          setIsExporting(false);
+        }
+      }, 100);
+    } catch (err) {
+      error("Failed to fetch data for export");
+      console.error("Fetch error:", err);
+      setIsExporting(false);
+    }
+  };
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold text-white">Escrow Management</h1>
-        <p className="text-sm text-gray-500 mt-1">Monitor and manage all platform escrows</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold text-white">Escrow Management</h1>
+          <p className="text-sm text-gray-500 mt-1">Monitor and manage all platform escrows</p>
+        </div>
+        <ExportDropdown onExport={handleExportClick} disabled={!data || data.escrows.length === 0} isLoading={isExporting} />
       </div>
 
       {/* Filters — scrollable on mobile */}
@@ -173,11 +299,14 @@ export default function AdminEscrowsPage() {
           {statuses.map((s) => (
             <button
               key={s}
-              onClick={() => { setStatusFilter(s); setPage(1); }}
+              onClick={() => {
+                setStatusFilter(s);
+                setPage(1);
+              }}
               className={`min-h-[44px] px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
                 statusFilter === s
-                  ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30'
-                  : 'bg-white/[0.03] text-gray-400 border border-white/5 hover:border-white/10'
+                  ? "bg-purple-600/20 text-purple-300 border border-purple-500/30"
+                  : "bg-white/[0.03] text-gray-400 border border-white/5 hover:border-white/10"
               }`}
             >
               {s}
@@ -187,9 +316,7 @@ export default function AdminEscrowsPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="w-6 h-6 text-purple-500 animate-spin" />
-        </div>
+        <AdminTableSkeleton rows={8} />
       ) : (
         <>
           {/* Mobile card list */}
@@ -205,8 +332,10 @@ export default function AdminEscrowsPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-white/5">
-                    {['Title', 'Amount', 'Status', 'Type', 'Created', 'Actions'].map((h, i) => (
-                      <th key={h} className={`text-[11px] text-gray-500 uppercase tracking-wider font-medium px-5 py-3 ${i === 5 ? 'text-right' : 'text-left'}`}>{h}</th>
+                    {["Title", "Amount", "Status", "Type", "Created", "Actions"].map((h, i) => (
+                      <th key={h} className={`text-[11px] text-gray-500 uppercase tracking-wider font-medium px-5 py-3 ${i === 5 ? "text-right" : "text-left"}`}>
+                        {h}
+                      </th>
                     ))}
                   </tr>
                 </thead>
@@ -217,14 +346,27 @@ export default function AdminEscrowsPage() {
                         <p className="text-sm text-white font-medium">{escrow.title}</p>
                         <p className="text-[10px] text-gray-600 font-mono mt-0.5">{escrow.id}</p>
                       </td>
-                      <td className="px-5 py-3.5"><p className="text-sm text-white">{parseFloat(escrow.amount).toLocaleString()} {escrow.asset}</p></td>
-                      <td className="px-5 py-3.5"><StatusBadge status={escrow.status} /></td>
-                      <td className="px-5 py-3.5"><span className="text-xs text-gray-400">{escrow.type}</span></td>
-                      <td className="px-5 py-3.5"><span className="text-xs text-gray-400">{new Date(escrow.createdAt).toLocaleDateString()}</span></td>
+                      <td className="px-5 py-3.5">
+                        <p className="text-sm text-white">
+                          {parseFloat(escrow.amount).toLocaleString()} {escrow.asset}
+                        </p>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <StatusBadge status={escrow.status} />
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className="text-xs text-gray-400">{escrow.type}</span>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className="text-xs text-gray-400">{new Date(escrow.createdAt).toLocaleDateString()}</span>
+                      </td>
                       <td className="px-5 py-3.5 text-right">
-                        <button onClick={() => setSelectedEscrow(escrow)}
-                          className="min-h-[44px] inline-flex items-center gap-1.5 text-xs text-purple-400 hover:text-purple-300 transition-colors px-2">
-                          <Eye className="w-3.5 h-3.5" />View
+                        <button
+                          onClick={() => setSelectedEscrow(escrow)}
+                          className="min-h-[44px] inline-flex items-center gap-1.5 text-xs text-purple-400 hover:text-purple-300 transition-colors px-2"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          View
                         </button>
                       </td>
                     </tr>
@@ -234,14 +376,22 @@ export default function AdminEscrowsPage() {
             </div>
             {data && data.pagination.pages > 1 && (
               <div className="flex items-center justify-between px-5 py-3 border-t border-white/5">
-                <p className="text-xs text-gray-500">Page {data.pagination.page} of {data.pagination.pages} ({data.pagination.total} escrows)</p>
+                <p className="text-xs text-gray-500">
+                  Page {data.pagination.page} of {data.pagination.pages} ({data.pagination.total} escrows)
+                </p>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                    className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-white/5 text-gray-400 hover:text-white disabled:opacity-30">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page === 1}
+                    className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-white/5 text-gray-400 hover:text-white disabled:opacity-30"
+                  >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
-                  <button onClick={() => setPage(p => Math.min(data.pagination.pages, p + 1))} disabled={page === data.pagination.pages}
-                    className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-white/5 text-gray-400 hover:text-white disabled:opacity-30">
+                  <button
+                    onClick={() => setPage((p) => Math.min(data.pagination.pages, p + 1))}
+                    disabled={page === data.pagination.pages}
+                    className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-white/5 text-gray-400 hover:text-white disabled:opacity-30"
+                  >
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
@@ -252,14 +402,22 @@ export default function AdminEscrowsPage() {
           {/* Mobile pagination */}
           {data && data.pagination.pages > 1 && (
             <div className="sm:hidden flex items-center justify-between">
-              <p className="text-xs text-gray-500">Page {data.pagination.page} of {data.pagination.pages}</p>
+              <p className="text-xs text-gray-500">
+                Page {data.pagination.page} of {data.pagination.pages}
+              </p>
               <div className="flex gap-2">
-                <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-                  className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-white/5 text-gray-400 hover:text-white disabled:opacity-30">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-white/5 text-gray-400 hover:text-white disabled:opacity-30"
+                >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <button onClick={() => setPage(p => Math.min(data.pagination.pages, p + 1))} disabled={page === data.pagination.pages}
-                  className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-white/5 text-gray-400 hover:text-white disabled:opacity-30">
+                <button
+                  onClick={() => setPage((p) => Math.min(data.pagination.pages, p + 1))}
+                  disabled={page === data.pagination.pages}
+                  className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg bg-white/5 text-gray-400 hover:text-white disabled:opacity-30"
+                >
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
@@ -269,12 +427,11 @@ export default function AdminEscrowsPage() {
       )}
 
       {selectedEscrow && (
-        <EscrowDetailModal
-          escrow={selectedEscrow}
-          onClose={() => setSelectedEscrow(null)}
-          onConsistencyCheck={(id) => console.log('consistency check', id)}
-        />
+        <EscrowDetailModal escrow={selectedEscrow} onClose={() => setSelectedEscrow(null)} onConsistencyCheck={(id) => console.log("consistency check", id)} />
       )}
+
+      {/* Export Modal */}
+      <ExportModal isOpen={exportModalOpen} onClose={() => setExportModalOpen(false)} onConfirm={handleExportConfirm} isLoading={isExporting} />
     </div>
   );
 }

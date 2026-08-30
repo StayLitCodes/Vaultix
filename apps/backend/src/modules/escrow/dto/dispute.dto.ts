@@ -24,6 +24,7 @@ export class FileDisputeDto {
   @IsArray()
   @IsOptional()
   @IsString({ each: true })
+  @IsNotEmpty({ each: true })
   @MaxLength(500, { each: true })
   evidence?: string[];
 }

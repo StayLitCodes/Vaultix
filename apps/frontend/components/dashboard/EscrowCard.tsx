@@ -18,6 +18,7 @@ interface IEscrow {
 
 interface EscrowCardProps {
   escrow: IEscrow;
+  searchedAddress?: string;
 }
 
 const STATUS_STYLES: Record<string, string> = {
@@ -45,9 +46,19 @@ const formatDate = (dateString: string) =>
 
 const truncateAddress = (addr: string) => `${addr.substring(0, 6)}...${addr.slice(-4)}`;
 
-const EscrowCard: React.FC<EscrowCardProps> = ({ escrow }) => {
+const EscrowCard: React.FC<EscrowCardProps> = ({ escrow, searchedAddress }) => {
   const statusStyle = STATUS_STYLES[escrow.status] || 'bg-gray-100 text-gray-800';
   const statusLabel = STATUS_LABELS[escrow.status] || escrow.status;
+
+  let roleBadge = null;
+  if (searchedAddress) {
+    const searchLower = searchedAddress.toLowerCase();
+    if (escrow.creatorAddress?.toLowerCase() === searchLower) {
+      roleBadge = 'Buyer';
+    } else if (escrow.counterpartyAddress?.toLowerCase() === searchLower) {
+      roleBadge = 'Seller';
+    }
+  }
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden hover:shadow-md transition-shadow">
@@ -57,9 +68,16 @@ const EscrowCard: React.FC<EscrowCardProps> = ({ escrow }) => {
           <h3 className="text-base font-semibold text-gray-900 leading-tight line-clamp-1 min-w-0">
             {escrow.title}
           </h3>
-          <span className={`flex-shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${statusStyle}`}>
-            {statusLabel}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className={`flex-shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${statusStyle}`}>
+              {statusLabel}
+            </span>
+            {roleBadge && (
+              <span className="flex-shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap bg-purple-100 text-purple-800">
+                {roleBadge}
+              </span>
+            )}
+          </div>
         </div>
         <p className="text-sm text-gray-500 line-clamp-2 mb-4">{escrow.description}</p>
 

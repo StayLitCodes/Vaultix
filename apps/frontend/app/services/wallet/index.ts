@@ -23,6 +23,11 @@ export interface IWalletService {
 }
 
 export class WalletServiceFactory {
+  /**
+   * Retrieves the singleton service instance for the specified wallet type.
+   * @param {WalletType} walletType - The target wallet provider identifier.
+   * @returns {IWalletService} The matching wallet service implementation.
+   */
   static getService(walletType: WalletType): IWalletService {
     switch (walletType) {
       case WalletType.FREIGHTER:
@@ -36,6 +41,10 @@ export class WalletServiceFactory {
     }
   }
 
+  /**
+   * Scans and returns all available wallet providers installed in the client environment.
+   * @returns {Promise<WalletType[]>} List of available wallet types.
+   */
   static async getAvailableWallets(): Promise<WalletType[]> {
     const availableWallets: WalletType[] = [];
 
@@ -49,7 +58,7 @@ export class WalletServiceFactory {
       // Freighter not available
     }
 
-    // Albedo is always available as it's a web-based wallet
+    // Albedo is always available as a web-based wallet
     availableWallets.push(WalletType.ALBEDO);
 
     // Check for Lobstr

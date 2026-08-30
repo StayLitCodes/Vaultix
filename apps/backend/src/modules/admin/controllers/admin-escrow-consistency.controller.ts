@@ -4,10 +4,11 @@ import {
   ConsistencyCheckRequest,
   ConsistencyCheckResponse,
 } from '../dto/consistency-check.dto';
+import { AuthGuard } from '../../auth/middleware/auth.guard';
 import { AdminGuard } from '../../auth/middleware/admin.guard';
 
 @Controller('admin/escrows')
-@UseGuards(AdminGuard)
+@UseGuards(AuthGuard, AdminGuard)
 export class AdminEscrowConsistencyController {
   constructor(private readonly checker: ConsistencyCheckerService) {}
 

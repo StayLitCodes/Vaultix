@@ -6,6 +6,7 @@ import { ToastProvider } from '@/app/contexts/ToastProvider';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { WebSocketProvider } from '@/app/contexts/WebSocketContext';
+import { CurrencyProvider } from '@/context/CurrencyContext';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
@@ -23,7 +24,9 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         <ToastProvider>
           <ErrorBoundary>
             <WebSocketProvider>
-              {children}
+              <CurrencyProvider>
+                {children}
+              </CurrencyProvider>
             </WebSocketProvider>
           </ErrorBoundary>
         </ToastProvider>

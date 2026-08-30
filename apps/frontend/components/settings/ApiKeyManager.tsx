@@ -28,6 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/useToast";
 
 const MAX_KEYS_PER_USER = 10;
 const DEFAULT_RATE_LIMIT = 60;
@@ -42,10 +43,10 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
+    <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden text-foreground">
+      <div className="px-5 py-4 border-b border-border flex items-center gap-2">
         <Icon className="w-4 h-4 text-blue-500" />
-        <h2 className="font-semibold text-gray-800">{title}</h2>
+        <h2 className="font-semibold text-foreground">{title}</h2>
       </div>
       <div className="px-5 py-4">{children}</div>
     </div>
@@ -79,6 +80,7 @@ function ApiKeyManagerInner() {
     success: boolean;
     message: string;
   } | null>(null);
+  const { success, error } = useToast();
 
   // Fetch API keys on mount
   useEffect(() => {
@@ -120,7 +122,7 @@ function ApiKeyManagerInner() {
       await fetchKeys();
     } catch (error: any) {
       console.error("Error creating API key:", error);
-      alert(error.message || "Failed to create API key");
+      error(error.message || "Failed to create API key");
     } finally {
       setCreating(false);
     }
@@ -137,9 +139,10 @@ function ApiKeyManagerInner() {
       await revokeApiKey(id);
       setRevokingId(null);
       await fetchKeys();
+      success("API key revoked successfully");
     } catch (error: any) {
       console.error("Error revoking API key:", error);
-      alert(error.message || "Failed to revoke API key");
+      error(error.message || "Failed to revoke API key");
     }
   };
 

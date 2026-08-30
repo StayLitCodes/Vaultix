@@ -1,8 +1,12 @@
 /**
  * Welcome / Connect Wallet screen
- * Features: wallet connection simulation, animated branding, navigate to tabs on connect
+ *
+ * #550 — real Stellar challenge/response sign-in:
+ * resolve the built-in wallet keypair → request a nonce from the backend →
+ * sign it → exchange the signature for a JWT that is persisted in SecureStore.
+ * No simulated token or hardcoded address remains.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,15 +17,32 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { consumePendingRedirect, isAuthenticated } from '../services/auth';
+import { consumePendingRedirect, enterGuestMode, exitGuestMode } from '../services/auth';
+import { signInWithBuiltInWallet } from '../services/walletAuth';
+import {
+  ExternalWalletName,
+  isWalletCancelled,
+  openExternalWalletGuide,
+} from '../services/wallet';
+import { useSession } from '../hooks/useSession';
+import { toFriendlyError } from '../utils/errors';
+import { showToast } from '../components/Toast';
+
+/**
+ * External wallets can deep-link, but they cannot yet answer the backend
+ * sign-in challenge — the UI says so instead of silently doing nothing.
+ */
+const EXTERNAL_WALLETS: { name: ExternalWalletName; label: string }[] = [
+  { name: 'lobstr', label: 'Lobstr' },
+  { name: 'solar', label: 'Solar' },
+];
 
 export default function WelcomeScreen() {
   const router = useRouter();
+  const { isAuthenticated, isHydrated } = useSession();
   const [connecting, setConnecting] = useState(false);
 
-  useEffect(() => {
-    if (!isAuthenticated()) return;
-
+  const goToApp = useCallback(() => {
     const pending = consumePendingRedirect();
     if (pending?.pathname) {
       router.replace({ pathname: pending.pathname, params: pending.params });
@@ -30,26 +51,50 @@ export default function WelcomeScreen() {
     }
   }, [router]);
 
+  // Restore a previously persisted session on cold start.
+  useEffect(() => {
+    if (!isHydrated || !isAuthenticated) return;
+    goToApp();
+  }, [isHydrated, isAuthenticated, goToApp]);
+
   const handleConnectWallet = async () => {
+    if (connecting) return;
     setConnecting(true);
     try {
-      // Simulate wallet connection – in production this uses @stellar/freighter-api or similar
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-
-      // Store auth token (simulated)
-      (global as Record<string, unknown>).__authToken = 'simulated-jwt-token';
-      (global as Record<string, unknown>).__walletAddress = 'GABCD...XYZ';
-
-      const pending = consumePendingRedirect();
-      if (pending?.pathname) {
-        router.replace({ pathname: pending.pathname, params: pending.params });
-      } else {
-        router.replace('/(tabs)/dashboard');
+      exitGuestMode();
+      await signInWithBuiltInWallet();
+      goToApp();
+    } catch (error) {
+      // Cancellation is not a failure — stay on the welcome screen, no dialog.
+      if (isWalletCancelled(error)) {
+        showToast({ message: 'Wallet connection cancelled', type: 'info' });
+        return;
       }
-    } catch {
-      Alert.alert('Connection Failed', 'Could not connect to wallet. Please try again.');
+      const friendly = toFriendlyError(error);
+      Alert.alert(friendly.title, friendly.message);
     } finally {
       setConnecting(false);
+    }
+  };
+
+  const handleExploreWithoutWallet = () => {
+    enterGuestMode();
+    router.replace('/(tabs)/dashboard');
+  };
+
+  const handleExternalWallet = async (wallet: ExternalWalletName, label: string) => {
+    try {
+      await openExternalWalletGuide(wallet);
+      showToast({
+        message: `Opened ${label}. External-wallet sign-in isn't supported yet — use the built-in wallet.`,
+        type: 'info',
+        durationMs: 4000,
+      });
+    } catch (error) {
+      Alert.alert(
+        `${label} unavailable`,
+        error instanceof Error ? error.message : toFriendlyError(error).message,
+      );
     }
   };
 
@@ -76,12 +121,13 @@ export default function WelcomeScreen() {
           onPress={handleConnectWallet}
           disabled={connecting}
           accessibilityRole="button"
+          accessibilityState={{ disabled: connecting, busy: connecting }}
           accessibilityLabel="Connect wallet to continue"
         >
           {connecting ? (
             <View style={styles.connectingRow}>
               <ActivityIndicator color="#fff" size="small" />
-              <Text style={styles.connectBtnText}>Connecting…</Text>
+              <Text style={styles.connectBtnText}>Signing in…</Text>
             </View>
           ) : (
             <Text style={styles.connectBtnText}>Connect Wallet</Text>
@@ -89,18 +135,43 @@ export default function WelcomeScreen() {
         </TouchableOpacity>
 
         <Text style={styles.disclaimer}>
-          By connecting, you agree to the Terms of Service and Privacy Policy.
+          Your key is generated on this device and kept in secure storage. Connecting signs a
+          one-time challenge — it never moves funds.
+        </Text>
+      </View>
+
+      {/* External wallets — deep-link only, sign-in not yet supported */}
+      <View style={styles.externalSection}>
+        <Text style={styles.externalHeading}>Already use another wallet?</Text>
+        <View style={styles.externalRow}>
+          {EXTERNAL_WALLETS.map(({ name, label }) => (
+            <TouchableOpacity
+              key={name}
+              style={[styles.externalBtn, connecting && styles.btnDisabled]}
+              onPress={() => handleExternalWallet(name, label)}
+              disabled={connecting}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${label} — external wallet sign-in is not available yet`}
+            >
+              <Text style={styles.externalBtnText}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <Text style={styles.externalNote}>
+          External-wallet sign-in isn&apos;t available yet — these open the app (or its website) so
+          you can move funds to your Vaultix address.
         </Text>
       </View>
 
       {/* Skip / Explore */}
       <TouchableOpacity
         style={styles.skipBtn}
-        onPress={() => router.replace('/(tabs)/dashboard')}
+        onPress={handleExploreWithoutWallet}
+        disabled={connecting}
         accessibilityRole="button"
-        accessibilityLabel="Skip wallet connection and explore"
+        accessibilityLabel="Explore Vaultix in read-only mode without connecting a wallet"
       >
-        <Text style={styles.skipBtnText}>Explore without wallet →</Text>
+        <Text style={styles.skipBtnText}>Explore without wallet (read-only) →</Text>
       </TouchableOpacity>
     </ScrollView>
   );
@@ -145,6 +216,19 @@ const styles = StyleSheet.create({
   connectBtnText: { color: '#fff', fontWeight: '700', fontSize: 17 },
   connectingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   disclaimer: { color: '#666', fontSize: 11, textAlign: 'center', lineHeight: 16 },
+  externalSection: { width: '100%', alignItems: 'center', marginBottom: 20 },
+  externalHeading: { color: '#888', fontSize: 12, marginBottom: 8 },
+  externalRow: { flexDirection: 'row', gap: 10, width: '100%' },
+  externalBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#2d2d44',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  externalBtnText: { color: '#aaa', fontWeight: '600', fontSize: 14 },
+  externalNote: { color: '#666', fontSize: 11, textAlign: 'center', lineHeight: 16, marginTop: 8 },
   skipBtn: { marginTop: 4 },
   skipBtnText: { color: '#888', fontSize: 13, fontWeight: '500' },
 });

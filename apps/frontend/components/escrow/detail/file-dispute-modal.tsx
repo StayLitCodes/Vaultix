@@ -22,6 +22,7 @@ import { Loader2 } from "lucide-react";
 import { IDispute } from "@/types/escrow";
 import { DisputeEvidenceUpload, UploadedFile } from "./DisputeEvidenceUpload";
 import { fileDispute } from "@/lib/escrow-api";
+import { useToast } from "@/hooks/useToast";
 
 interface FileDisputeModalProps {
   open: boolean;
@@ -62,6 +63,7 @@ export default function FileDisputeModal({
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const { success, error, warning } = useToast();
 
   const canFileDispute =
     userRole &&
@@ -81,12 +83,12 @@ export default function FileDisputeModal({
 
   const handleSubmit = async () => {
     if (!reason || !description || !severity) {
-      alert("Please fill all required fields");
+      warning("Please fill all required fields");
       return;
     }
 
     if (!canFileDispute) {
-      alert("You cannot file a dispute on this escrow");
+      error("You cannot file a dispute on this escrow");
       return;
     }
 
@@ -112,7 +114,7 @@ export default function FileDisputeModal({
         evidence: allEvidence.length > 0 ? allEvidence : undefined,
       });
 
-      alert(
+      success(
         "Dispute filed successfully. The escrow funds are now frozen pending resolution.",
       );
       onDisputeUpdate?.();
@@ -127,7 +129,7 @@ export default function FileDisputeModal({
       setShowConfirmation(false);
     } catch (error: any) {
       console.error("Dispute filing error:", error);
-      alert(error.message || "Failed to file dispute. Please try again.");
+      error(error.message || "Failed to file dispute. Please try again.");
     } finally {
       setLoading(false);
     }

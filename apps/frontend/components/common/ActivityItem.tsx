@@ -134,7 +134,7 @@ const ActivityItem: React.FC<ActivityItemProps> = ({ event }) => {
       </div>
 
       <div className="flex-shrink-0 self-center opacity-0 group-hover:opacity-100 transition-opacity">
-        <button className="p-1 hover:bg-gray-100 rounded-full transition-colors text-gray-400">
+        <button className="p-1 hover:bg-gray-100 rounded-full transition-colors text-gray-400" aria-label="View Details">
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>

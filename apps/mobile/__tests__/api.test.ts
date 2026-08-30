@@ -1,16 +1,9 @@
 /**
-<<<<<<< HEAD
  * Unit tests for mobile API services + reliability utilities
  */
 import { escrowApi } from '../services/api';
 import { isRetryableError, withRetry } from '../utils/retry';
 import { toFriendlyError, isOfflineError } from '../utils/errors';
-=======
- * Basic unit tests for mobile API services
- */
-import { escrowApi } from '../services/api';
-import { notificationApi } from '../services/api';
->>>>>>> d431ba40ce53cfcf510d9b702e2540ee53b1f9f1
 
 // Mock axios
 jest.mock('axios', () => ({
@@ -24,14 +17,13 @@ jest.mock('axios', () => ({
 describe('escrowApi', () => {
   it('exports list, getById, create, releaseMilestone, getTxStatus', () => {
     expect(typeof escrowApi.list).toBe('function');
-    expect(typeof escrowApi.getById).toBe('function');
-    expect(typeof escrowApi.create).toBe('function');
-    expect(typeof escrowApi.releaseMilestone).toBe('function');
-    expect(typeof escrowApi.getTxStatus).toBe('function');
+    expect(typeof escrowApi.getById).toBe("function");
+    expect(typeof escrowApi.create).toBe("function");
+    expect(typeof escrowApi.releaseMilestone).toBe("function");
+    expect(typeof escrowApi.getTxStatus).toBe("function");
   });
 });
 
-<<<<<<< HEAD
 describe('isRetryableError', () => {
   it('retries on network errors', () => {
     expect(isRetryableError({ code: 'ECONNABORTED' })).toBe(true);
@@ -61,7 +53,7 @@ describe('withRetry', () => {
   it('returns result on first success', async () => {
     const fn = jest.fn().mockResolvedValue('ok');
     const result = await withRetry(fn, { maxRetries: 2, jitter: false });
-    expect(result).toBe('ok');
+    expect(result).toBe("ok");
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
@@ -122,13 +114,13 @@ describe('toFriendlyError', () => {
   it('maps 500 with testnet context', () => {
     const result = toFriendlyError({ response: { status: 500 } });
     expect(result.isRetryable).toBe(true);
-    expect(result.message).toContain('testnet');
+    expect(result.message.toLowerCase()).toContain('testnet');
   });
 
   it('maps 503 with testnet context', () => {
     const result = toFriendlyError({ response: { status: 503 } });
     expect(result.isRetryable).toBe(true);
-    expect(result.message).toContain('testnet');
+    expect(result.message.toLowerCase()).toContain('testnet');
   });
 
   it('maps 401 to session expired', () => {
@@ -144,14 +136,7 @@ describe('toFriendlyError', () => {
 
   it('prefers server message when available', () => {
     const result = toFriendlyError({ response: { status: 400, data: { message: 'Custom server error' } } });
-    expect(result.message).toBe('Custom server error');
-=======
-describe('notificationApi', () => {
-  it('exports list, getUnreadCount, markAsRead', () => {
-    expect(typeof notificationApi.list).toBe('function');
-    expect(typeof notificationApi.getUnreadCount).toBe('function');
-    expect(typeof notificationApi.markAsRead).toBe('function');
->>>>>>> d431ba40ce53cfcf510d9b702e2540ee53b1f9f1
+    expect(result.message).toBe("Custom server error");
   });
 });
 

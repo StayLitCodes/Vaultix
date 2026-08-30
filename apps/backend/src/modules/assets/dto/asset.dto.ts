@@ -7,7 +7,9 @@ import {
   Max,
   IsBoolean,
   Length,
+  MaxLength,
 } from 'class-validator';
+import { IsStellarAddress } from '../../../utils/validators';
 
 export class CreateAssetDto {
   @IsString()
@@ -15,17 +17,19 @@ export class CreateAssetDto {
   @Length(1, 12)
   code: string;
 
-  @IsString()
+  @IsStellarAddress()
   @IsOptional()
-  @Length(56, 56)
   issuer?: string;
 
   @IsString()
   @IsNotEmpty()
+  @MaxLength(255)
   displayName: string;
 
   @IsString()
+  @IsNotEmpty()
   @IsOptional()
+  @MaxLength(500)
   iconUrl?: string;
 
   @IsInt()
@@ -41,21 +45,25 @@ export class CreateAssetDto {
 
 export class UpdateAssetDto {
   @IsString()
+  @IsNotEmpty()
   @IsOptional()
   @Length(1, 12)
   code?: string;
 
-  @IsString()
+  @IsStellarAddress()
   @IsOptional()
-  @Length(56, 56)
   issuer?: string;
 
   @IsString()
+  @IsNotEmpty()
   @IsOptional()
+  @MaxLength(255)
   displayName?: string;
 
   @IsString()
+  @IsNotEmpty()
   @IsOptional()
+  @MaxLength(500)
   iconUrl?: string;
 
   @IsInt()

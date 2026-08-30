@@ -122,6 +122,12 @@
   body {
     @apply bg-background text-foreground;
   }
+  
+  /* Accessibility: Keyboard navigation focus styles */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
 }
 
 @layer utilities {

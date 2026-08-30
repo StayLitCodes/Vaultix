@@ -235,4 +235,7 @@ export class EscrowGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const sockets = this.userSocketMap.get(userId) || [];
     return sockets.length > 0;
   }
+  isHealthy(): boolean {
+    return this.server !== undefined;
+  }
 }

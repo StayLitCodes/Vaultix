@@ -1,40 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { createTransport, Transporter } from 'nodemailer';
 import {
   NotificationChannel,
   NotificationEventType,
 } from '../enums/notification-event.enum';
 import { NotificationSender } from '../interface/notification-sender.interface';
 import { Notification } from '../entities/notification.entity';
+import { EmailService } from '../../email/email.service';
 
 @Injectable()
 export class EmailSender implements NotificationSender {
   private readonly logger = new Logger(EmailSender.name);
-  private readonly transporter: Transporter;
-  private readonly fromAddress: string;
   channel = NotificationChannel.EMAIL;
 
-  constructor(private readonly configService: ConfigService) {
-    const host = this.configService.get<string>('SMTP_HOST');
-    const port = Number(this.configService.get<string>('SMTP_PORT', '587'));
-    const user = this.configService.get<string>('SMTP_USER');
-    const pass = this.configService.get<string>('SMTP_PASS');
-
-    this.fromAddress = this.configService.get<string>(
-      'EMAIL_FROM',
-      'no-reply@vaultix.local',
-    );
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    this.transporter = createTransport({
-      host,
-      port,
-      secure: port === 465,
-      auth: user && pass ? { user, pass } : undefined,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
-  }
+  constructor(private readonly emailService: EmailService) {}
 
   async send(notification: Notification): Promise<void> {
     const to = this.resolveRecipient(notification.payload);
@@ -47,14 +25,13 @@ export class EmailSender implements NotificationSender {
     const template = this.buildEmailTemplate(notification);
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
-      await (this.transporter as any).sendMail({
-        from: this.fromAddress,
+      // Direct send: the notification processor manages its own retries
+      await this.emailService.sendEmailNow(
         to,
-        subject: template.subject,
-        text: template.textBody,
-        html: template.htmlBody,
-      });
+        template.subject,
+        template.htmlBody,
+        template.textBody,
+      );
     } catch (error) {
       this.logger.error(
         `Failed to send email for notification ${notification.id}`,

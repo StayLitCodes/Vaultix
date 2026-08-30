@@ -7,6 +7,8 @@ import {
   IsString,
   Max,
   Min,
+  IsNotEmpty,
+  MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -55,6 +57,8 @@ export class EscrowOverviewQueryDto {
     example: 'XLM',
   })
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(12)
   @IsOptional()
   token?: string;
 
