@@ -23,6 +23,10 @@ pub fn validate_escrow_invariants(escrow: &EscrowEntryV2) -> Result<(), Error> {
         return Err(Error::InvalidMilestoneAmount);
     }
 
+    if escrow.funded_amount < 0 || escrow.funded_amount > escrow.total_amount {
+        return Err(Error::InvalidMilestoneAmount);
+    }
+
     validate_status_field_consistency(escrow)?;
 
     let released_sum = sum_released_milestone_amounts(&escrow.milestones)?;
@@ -33,6 +37,47 @@ pub fn validate_escrow_invariants(escrow: &EscrowEntryV2) -> Result<(), Error> {
             return Err(Error::InvalidMilestoneAmount);
         }
     } else if released_sum != escrow.total_released {
+        return Err(Error::InvalidMilestoneAmount);
+    }
+
+    validate_partial_settlement_accounting(escrow)?;
+
+    Ok(())
+}
+
+/// Ensures a partially settled escrow always reconciles to the original deposit:
+///
+/// settled + outstanding + refunded = total_amount
+///
+/// The fee component is intentionally folded into the released amount for this
+/// contract model because the contract charges fees out of each milestone payout
+/// and does not persist a separate fee ledger. This keeps the accounting honest
+/// across partial settlement, refund, and timeout paths without introducing a
+/// second source of truth that can drift during repeated partial operations.
+pub fn validate_partial_settlement_accounting(escrow: &EscrowEntryV2) -> Result<(), Error> {
+    let settled = escrow.total_released;
+    let outstanding = escrow
+        .funded_amount
+        .checked_sub(escrow.total_released)
+        .ok_or(Error::InvalidMilestoneAmount)?;
+    if outstanding < 0 {
+        return Err(Error::InvalidMilestoneAmount);
+    }
+
+    let refunded = escrow
+        .total_amount
+        .checked_sub(escrow.funded_amount)
+        .ok_or(Error::InvalidMilestoneAmount)?;
+    if refunded < 0 {
+        return Err(Error::InvalidMilestoneAmount);
+    }
+
+    let reconciled = settled
+        .checked_add(outstanding)
+        .and_then(|value| value.checked_add(refunded))
+        .ok_or(Error::InvalidMilestoneAmount)?;
+
+    if reconciled != escrow.total_amount {
         return Err(Error::InvalidMilestoneAmount);
     }
 
