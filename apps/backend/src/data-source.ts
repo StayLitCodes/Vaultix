@@ -15,6 +15,7 @@ import { Webhook } from './modules/webhook/webhook.entity';
 import { WebhookDelivery } from './modules/webhook/entities/webhook-delivery.entity';
 import { StellarEvent } from './modules/stellar/entities/stellar-event.entity';
 import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
+import { DisputeEvidence } from './modules/upload/entities/dispute-evidence.entity';
 
 config(); // Load .env file
 
@@ -37,6 +38,7 @@ export default new DataSource({
     WebhookDelivery,
     StellarEvent,
     AllowedAsset,
+    DisputeEvidence,
   ],
   migrations: ['./src/migrations/*.ts'],
   synchronize: false,

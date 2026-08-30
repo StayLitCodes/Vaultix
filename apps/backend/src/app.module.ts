@@ -34,6 +34,8 @@ import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
 import { IpfsModule } from './modules/ipfs/ipfs.module';
 import { HealthModule } from './modules/health/health.module';
 import { AppVersionModule } from './app-version/app-version.module';
+import { UploadModule } from './modules/upload/upload.module';
+import { DisputeEvidence } from './modules/upload/entities/dispute-evidence.entity';
 import stellarConfig from './config/stellar.config';
 import ipfsConfig from './config/ipfs.config';
 
@@ -69,6 +71,7 @@ import ipfsConfig from './config/ipfs.config';
           WebhookDelivery,
           StellarEvent,
           AllowedAsset,
+          DisputeEvidence,
         ],
         synchronize: false,
         migrations: [__dirname + '/migrations/*.ts'],
@@ -89,6 +92,7 @@ import ipfsConfig from './config/ipfs.config';
     IpfsModule,
     HealthModule,
     AppVersionModule,
+    UploadModule,
     JwtModule.registerAsync({
       useFactory: (configService: ConfigService) => ({
         secret:
