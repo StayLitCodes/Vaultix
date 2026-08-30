@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationService } from './notifications.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -17,7 +18,6 @@ describe('NotificationService', () => {
   let repo: jest.Mocked<Repository<Notification>>;
   let preferenceService: jest.Mocked<PreferenceService>;
   let emailSender: jest.Mocked<EmailSender>;
-  let webhookSender: jest.Mocked<WebhookSender>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -59,7 +59,6 @@ describe('NotificationService', () => {
     repo = module.get(getRepositoryToken(Notification));
     preferenceService = module.get(PreferenceService);
     emailSender = module.get(EmailSender);
-    webhookSender = module.get(WebhookSender);
   });
 
   const mockPref = {

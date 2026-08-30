@@ -40,6 +40,8 @@ import { HealthModule } from './modules/health/health.module';
 import { AppVersionModule } from './app-version/app-version.module';
 import { EmailModule } from './email/email.module';
 import { EmailOutbox } from './email/entities/email-outbox.entity';
+import { KycModule } from './modules/kyc/kyc.module';
+import { KycVerification } from './modules/kyc/entities/kyc-verification.entity';
 import stellarConfig from './config/stellar.config';
 import ipfsConfig from './config/ipfs.config';
 import emailConfig from './config/email.config';
@@ -106,6 +108,7 @@ import { BackupRecord } from './modules/backup/entities/backup-record.entity';
           AllowedAsset,
           EmailOutbox,
           BackupRecord,
+          KycVerification,
         ],
         synchronize: false,
         migrations: [__dirname + '/migrations/*.ts'],
@@ -129,6 +132,7 @@ import { BackupRecord } from './modules/backup/entities/backup-record.entity';
     EmailModule,
     ApiV2Module,
     BackupModule,
+    KycModule,
     JwtModule.registerAsync({
       useFactory: (configService: ConfigService) => ({
         secret: validateJwtSecret(configService.get<string>('JWT_SECRET')),

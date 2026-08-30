@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Test, TestingModule } from '@nestjs/testing';
 import { StellarEventListenerService } from './stellar-event-listener.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -20,7 +21,6 @@ import { NotificationService } from '../../../notifications/notifications.servic
 
 describe('StellarEventListenerService', () => {
   let service: StellarEventListenerService;
-  let stellarEventRepo: jest.Mocked<any>;
   let escrowRepo: jest.Mocked<any>;
   let conditionRepo: jest.Mocked<any>;
   let escrowEventRepo: jest.Mocked<any>;
@@ -116,7 +116,6 @@ describe('StellarEventListenerService', () => {
     service = module.get<StellarEventListenerService>(
       StellarEventListenerService,
     );
-    stellarEventRepo = module.get(getRepositoryToken(StellarEvent));
     escrowRepo = module.get(getRepositoryToken(Escrow));
     conditionRepo = module.get(getRepositoryToken(Condition));
     escrowEventRepo = module.get(getRepositoryToken(EscrowEvent));
