@@ -73,6 +73,97 @@ fn test_valid_created_escrow_passes_invariants() {
 }
 
 #[test]
+fn test_partial_settlement_accounting_reconciles_for_partially_released_escrow() {
+    let env = Env::default();
+    let mut entry = valid_created_entry(&env);
+    entry.packed_state = pack_escrow_state(EscrowStatus::Active, Resolution::None);
+    entry.funded_amount = 10_000;
+    entry.total_released = 4_000;
+
+    let mut milestones = sample_milestones(&env);
+    let mut m0 = milestones.get(0).unwrap();
+    m0.status = MilestoneStatus::Released;
+    milestones.set(0, m0);
+    entry.milestones = milestones;
+
+    assert!(VaultixEscrow::test_validate_escrow_invariants(entry).is_ok());
+}
+
+#[test]
+fn test_partial_settlement_accounting_rejects_overfunded_released_balance() {
+    let env = Env::default();
+    let mut entry = valid_created_entry(&env);
+    entry.packed_state = pack_escrow_state(EscrowStatus::Active, Resolution::None);
+    entry.funded_amount = 3_000;
+    entry.total_released = 4_000;
+
+    let mut milestones = sample_milestones(&env);
+    let mut m0 = milestones.get(0).unwrap();
+    m0.status = MilestoneStatus::Released;
+    milestones.set(0, m0);
+    let mut m1 = milestones.get(1).unwrap();
+    m1.status = MilestoneStatus::Released;
+    milestones.set(1, m1);
+    entry.milestones = milestones;
+
+    assert_eq!(
+        VaultixEscrow::test_validate_escrow_invariants(entry),
+        Err(Error::InvalidMilestoneAmount)
+    );
+}
+
+#[test]
+fn test_partial_settlement_invariant_holds_for_partial_sequence() {
+    let env = Env::default();
+    let total_amount = 10_000i128;
+    let funded_amount = total_amount;
+    let sequence = [4_000, 10_000];
+    let mut total_released = 0i128;
+
+    for release in sequence {
+        total_released += release;
+        let mut milestones = sample_milestones(&env);
+        for i in 0..milestones.len() {
+            let mut milestone = milestones.get(i).unwrap();
+            if i == 0 && release >= 4_000 {
+                milestone.status = MilestoneStatus::Released;
+            }
+            if i == 1 && release >= 10_000 {
+                milestone.status = MilestoneStatus::Released;
+            }
+            milestones.set(i, milestone);
+        }
+
+        let entry = EscrowEntryV2 {
+            depositor: Address::generate(&env),
+            recipient: Address::generate(&env),
+            token_address: Address::generate(&env),
+            total_amount,
+            total_released,
+            milestones,
+            packed_state: pack_escrow_state(EscrowStatus::Active, Resolution::None),
+            deadline: 9_999,
+            threshold_amount: total_amount,
+            required_signatures: 1,
+            collected_signatures: vec![&env],
+            fee_override_bps: -1,
+            metadata_hash: valid_metadata_hash(&env),
+            funded_amount,
+            approved_signers: vec![&env],
+        };
+
+        if total_released > funded_amount {
+            assert_eq!(
+                VaultixEscrow::test_validate_escrow_invariants(entry),
+                Err(Error::InvalidMilestoneAmount)
+            );
+        } else {
+            assert!(VaultixEscrow::test_validate_escrow_invariants(entry).is_ok());
+        }
+    }
+}
+
+#[test]
 fn test_invariant_total_amount_mismatch_rejected() {
     let env = Env::default();
     let mut entry = valid_created_entry(&env);
