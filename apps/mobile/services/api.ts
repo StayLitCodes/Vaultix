@@ -9,8 +9,7 @@ import {
 import { withRetry } from '../utils/retry';
 import { NotificationsResponse } from '../types/notification';
 import { getAccessToken, getSecureAccessToken } from './session';
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
+import { envConfig } from '../security/env';
 
 /**
  * The Nest auth module is URI-versioned (`app.enableVersioning`), so its routes
@@ -20,7 +19,7 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:3
 const AUTH_PATH_PREFIX = process.env.EXPO_PUBLIC_AUTH_PATH_PREFIX ?? '/v1/auth';
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: envConfig.apiUrl,
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 });
