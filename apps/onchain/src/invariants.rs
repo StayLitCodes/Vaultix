@@ -49,30 +49,31 @@ pub fn validate_escrow_invariants(escrow: &EscrowEntryV2) -> Result<(), Error> {
 ///
 /// settled + outstanding + refunded = total_amount
 ///
-/// The fee component is intentionally folded into the released amount for this
-/// contract model because the contract charges fees out of each milestone payout
-/// and does not persist a separate fee ledger. This keeps the accounting honest
-/// across partial settlement, refund, and timeout paths without introducing a
-/// second source of truth that can drift during repeated partial operations.
+/// `funded_amount` can be unset for historical or resolved entries, so the
+/// effective funded balance must be treated as the greater of the recorded
+/// funding and the amount already released. This preserves valid resolved states
+/// while still rejecting funding drift in actual partial-payment flows.
 pub fn validate_partial_settlement_accounting(escrow: &EscrowEntryV2) -> Result<(), Error> {
-    let settled = escrow.total_released;
-    let outstanding = escrow
-        .funded_amount
+    let status = escrow_status(escrow);
+    if matches!(status, EscrowStatus::Created | EscrowStatus::Cancelled) {
+        return Ok(());
+    }
+
+    let effective_funded = core::cmp::max(escrow.funded_amount, escrow.total_released);
+    if effective_funded < 0 || effective_funded > escrow.total_amount {
+        return Err(Error::InvalidMilestoneAmount);
+    }
+
+    let outstanding = effective_funded
         .checked_sub(escrow.total_released)
         .ok_or(Error::InvalidMilestoneAmount)?;
-    if outstanding < 0 {
-        return Err(Error::InvalidMilestoneAmount);
-    }
-
     let refunded = escrow
         .total_amount
-        .checked_sub(escrow.funded_amount)
+        .checked_sub(effective_funded)
         .ok_or(Error::InvalidMilestoneAmount)?;
-    if refunded < 0 {
-        return Err(Error::InvalidMilestoneAmount);
-    }
 
-    let reconciled = settled
+    let reconciled = escrow
+        .total_released
         .checked_add(outstanding)
         .and_then(|value| value.checked_add(refunded))
         .ok_or(Error::InvalidMilestoneAmount)?;
