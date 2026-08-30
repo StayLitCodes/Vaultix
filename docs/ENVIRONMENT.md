@@ -21,12 +21,12 @@ These values must be kept in sync. Drift will cause silent failures (CORS errors
 
 | Concept | Backend var | Frontend var | Mobile var |
 |---|---|---|---|
-| API base URL | `PORT` (determines URL) / `API_BASE_URL` | `NEXT_PUBLIC_API_BASE_URL` | `EXPO_PUBLIC_API_BASE_URL` ⚠️ **canonical** (see note) |
+| API base URL | `PORT` (determines URL) / `API_BASE_URL` | `NEXT_PUBLIC_API_BASE_URL` | `EXPO_PUBLIC_API_URL` (single source of truth via `security/env.ts`) |
 | Stellar network | `STELLAR_NETWORK` | `NEXT_PUBLIC_STELLAR_NETWORK` | `EXPO_PUBLIC_APP_ENV` (`dev`/`testnet`/`production`) |
 | RPC endpoint | `STELLAR_RPC_URL` (if overridden) | `NEXT_PUBLIC_RPC_URL` | `EXPO_PUBLIC_RPC_URL` |
 | Contract ID | served via `/api/config` or direct env | `NEXT_PUBLIC_CONTRACT_ID` | fetched from API |
 
-> ⚠️ **Duplicate / conflicting mobile vars:** `apps/mobile/services/api.ts` reads `EXPO_PUBLIC_API_BASE_URL` while `apps/mobile/security/env.ts` reads `EXPO_PUBLIC_API_URL`. These are two variables for the same concept with different defaults (`localhost:3000` vs `api-testnet.vaultix.com`). **Canonical name: `EXPO_PUBLIC_API_BASE_URL`** (used by `api.ts`). `EXPO_PUBLIC_API_URL` in `env.ts` should be migrated to `EXPO_PUBLIC_API_BASE_URL`. See issue [#579](https://github.com/StayLitCodes/Vaultix/issues/579).
+> Mobile configuration is centralized in `apps/mobile/security/env.ts` as `envConfig`. Both `services/api.ts` and any wallet/RPC consumers read from `envConfig`, so `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_RPC_URL` (optionally gated by `EXPO_PUBLIC_APP_ENV`) are the only environment variables that need to be set.
 
 ---
 
@@ -148,10 +148,9 @@ These values must be kept in sync. Drift will cause silent failures (CORS errors
 
 | Variable | Required | Secret | Default | Purpose |
 |---|---|---|---|---|
-| `EXPO_PUBLIC_API_BASE_URL` | ✅ | ❌ | `http://localhost:3000` | **Canonical** backend URL used by `services/api.ts`. **Must match** backend. |
-| `EXPO_PUBLIC_API_URL` | ⚠️ duplicate | ❌ | varies by env | Used by `security/env.ts`. **Should be removed** in favour of `EXPO_PUBLIC_API_BASE_URL`. |
 | `EXPO_PUBLIC_APP_ENV` | ❌ | ❌ | `dev` | `dev`, `testnet`, or `production`. Selects the config block in `security/env.ts`. |
-| `EXPO_PUBLIC_RPC_URL` | ❌ | ❌ | env-specific | Stellar RPC endpoint |
+| `EXPO_PUBLIC_API_URL` | ✅ | ❌ | per-env default | Backend API URL (single source of truth). Read via `envConfig.apiUrl`. Dev default: `http://localhost:3000`, testnet: `https://api-testnet.vaultix.com`, production: `https://api.vaultix.com`. |
+| `EXPO_PUBLIC_RPC_URL` | ✅ | ❌ | per-env default | Stellar Soroban RPC endpoint. Dev default: `http://localhost:8000/soroban/rpc`, testnet: `https://soroban-testnet.stellar.org`, production: `https://rpc.vaultix.com`. |
 | `EXPO_PUBLIC_AUTH_PATH_PREFIX` | ❌ | ❌ | `/v1/auth` | Auth route prefix (override for custom gateways) |
 
 ---

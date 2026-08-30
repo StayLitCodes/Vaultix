@@ -108,6 +108,6 @@ These values must agree across all services. Any drift will cause silent mismatc
 
 | Value | Backend | Frontend | Mobile |
 |---|---|---|---|
-| API base URL | `PORT` / `API_BASE_URL` | `NEXT_PUBLIC_API_BASE_URL` | `EXPO_PUBLIC_API_BASE_URL` / `EXPO_PUBLIC_API_URL` ⚠️ duplicate |
+| API base URL | `PORT` / `API_BASE_URL` | `NEXT_PUBLIC_API_BASE_URL` | `EXPO_PUBLIC_API_URL` (via `security/env.ts` — single source of truth) |
 | Stellar network | `STELLAR_NETWORK` | `NEXT_PUBLIC_STELLAR_NETWORK` | `EXPO_PUBLIC_APP_ENV` (maps to network) |
 | Contract ID | served via `/api/config` | read from API or `NEXT_PUBLIC_CONTRACT_ID` | read from API |
