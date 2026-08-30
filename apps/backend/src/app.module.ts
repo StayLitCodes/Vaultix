@@ -95,6 +95,7 @@ import { BackupRecord } from './modules/backup/entities/backup-record.entity';
           Condition,
           EscrowEvent,
           Dispute,
+          DisputeEvidence,
           Notification,
           NotificationPreference,
           ApiKey,
