@@ -19,6 +19,8 @@ jobs:
     defaults:
       run:
         working-directory: apps/onchain
+    env:
+      VAULTIX_BUILD_COMMIT: ${{ github.sha }}
 
     steps:
       - name: Checkout code
@@ -45,3 +47,4 @@ jobs:
 
       - name: Run tests
         run: cargo test
+
