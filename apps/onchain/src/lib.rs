@@ -6,9 +6,30 @@ mod invariants;
 
 use invariants::{validate_escrow_invariants, validate_status_transition};
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, token, Address, BytesN, Env,
-    Symbol, Vec,
+    contract, contractimpl, contractmeta, contracttype, contracterror, symbol_short, token,
+    Address, BytesN, Env, Symbol, Vec,
 };
+
+// ── Build metadata embedded in the WASM custom section ──────────────────────
+// Readable on-chain via `stellar contract info meta --wasm <file>` or
+// `stellar contract info meta --wasm-hash <hash> --network <net>`.
+//
+// `version` is sourced from Cargo.toml (single source of truth).
+// `build_commit` is injected by CI via the VAULTIX_BUILD_COMMIT env var;
+// local builds default to "dev".
+contractmeta!(
+    key = "name",
+    val = "VaultixEscrow"
+);
+contractmeta!(
+    key = "version",
+    val = env!("CARGO_PKG_VERSION")
+);
+contractmeta!(
+    key = "repository",
+    val = "https://github.com/StayLitCodes/Vaultix"
+);
+
 
 impl VaultixEscrow {
     /// Secure contract upgrade function (Admin Proxy).
