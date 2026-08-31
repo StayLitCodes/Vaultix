@@ -50,7 +50,10 @@ QuickEx is a Soroban-based dApp built on Stellar, utilizing:
 
 - **[Development Guide](DEVELOPMENT.md)** - Detailed setup instructions, troubleshooting, and workflows
 - **[Contributing Guide](CONTRIBUTING.md)** - How to contribute, branch naming, PR expectations
+- **[Environment Variables](docs/ENVIRONMENT.md)** - Every env var across the monorepo, with secrets guidance
+- **[Status Mapping](docs/STATUS_MAPPING.md)** - Cross-layer escrow/milestone status table and known gaps
 - **[Contract Docs](docs/contract/README.md)** - Smart contract overview and deployment
+- **[Contract Events](docs/contract/EVENTS.md)** - Event schema reference for indexers and consumers
 - **[Mobile Security](docs/mobile-security.md)** - Environment setup, secure storage, and testnet switching
 - **[Mobile Notifications](docs/mobile-notifications.md)** - Push notification strategy and MVP notes
 - **[Dispute Flow](docs/dispute-flow.md)** - Dispute resolution process and UX

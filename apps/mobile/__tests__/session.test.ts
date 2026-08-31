@@ -1,30 +1,30 @@
 /**
  * #549/#550 — SecureStore session layer + access-mode guards.
  */
-const store = new Map<string, string>();
-const asyncStore = new Map<string, string>();
+const mockStore = new Map<string, string>();
+const mockAsyncStore = new Map<string, string>();
 
 jest.mock('../utils/secureStore', () => ({
   saveSecureItem: jest.fn(async (key: string, value: string) => {
-    store.set(key, value);
+    mockStore.set(key, value);
   }),
-  getSecureItem: jest.fn(async (key: string) => store.get(key) ?? null),
+  getSecureItem: jest.fn(async (key: string) => mockStore.get(key) ?? null),
   deleteSecureItem: jest.fn(async (key: string) => {
-    store.delete(key);
+    mockStore.delete(key);
   }),
 }));
 
 jest.mock('@react-native-async-storage/async-storage', () => ({
   setItem: jest.fn(async (key: string, value: string) => {
-    asyncStore.set(key, value);
+    mockAsyncStore.set(key, value);
   }),
-  getItem: jest.fn(async (key: string) => asyncStore.get(key) ?? null),
-  getAllKeys: jest.fn(async () => Array.from(asyncStore.keys())),
-  multiRemove: jest.fn(async (keys: string[]) => {
-    keys.forEach((key) => asyncStore.delete(key));
+  getItem: jest.fn(async (key: string) => mockAsyncStore.get(key) ?? null),
+  getAllKeys: jest.fn(async () => Array.from(mockAsyncStore.keys())),
+  removeMany: jest.fn(async (keys: string[]) => {
+    keys.forEach((key) => mockAsyncStore.delete(key));
   }),
   removeItem: jest.fn(async (key: string) => {
-    asyncStore.delete(key);
+    mockAsyncStore.delete(key);
   }),
 }));
 
@@ -60,8 +60,8 @@ const SESSION = {
 };
 
 beforeEach(() => {
-  store.clear();
-  asyncStore.clear();
+  mockStore.clear();
+  mockAsyncStore.clear();
   __resetSessionForTests();
   __resetAuthForTests();
 });
@@ -77,9 +77,9 @@ describe('session store', () => {
     await saveSession(SESSION);
 
     expect(getAccessToken()).toBe(SESSION.accessToken);
-    expect(store.get('vaultix-access-token')).toBe(SESSION.accessToken);
-    expect(store.get('vaultix-refresh-token')).toBe(SESSION.refreshToken);
-    expect(store.get('vaultix-session-address')).toBe(SESSION.walletAddress);
+    expect(mockStore.get('vaultix-access-token')).toBe(SESSION.accessToken);
+    expect(mockStore.get('vaultix-refresh-token')).toBe(SESSION.refreshToken);
+    expect(mockStore.get('vaultix-session-address')).toBe(SESSION.walletAddress);
   });
 
   it('hydrates a previously persisted session', async () => {
@@ -94,7 +94,7 @@ describe('session store', () => {
   });
 
   it('hydrates to null when only part of the session survived', async () => {
-    store.set('vaultix-access-token', 'orphan');
+    mockStore.set('vaultix-access-token', 'orphan');
     expect(await hydrateSession()).toBeNull();
   });
 
@@ -112,7 +112,7 @@ describe('session store', () => {
     await clearSession();
 
     expect(getSession()).toBeNull();
-    expect(store.size).toBe(0);
+    expect(mockStore.size).toBe(0);
   });
 
   it('notifies subscribers on change', async () => {
@@ -160,7 +160,7 @@ describe('access modes', () => {
     await signOut();
 
     expect(getAccessMode()).toBe('anonymous');
-    expect(store.size).toBe(0);
+    expect(mockStore.size).toBe(0);
   });
 
   it('logout clears session, guest mode, and cached escrow data (#549)', async () => {
@@ -168,17 +168,17 @@ describe('access modes', () => {
     enterGuestMode();
 
     // Simulate cached data
-    asyncStore.set('dashboard_cache', JSON.stringify({ data: 'test' }));
-    asyncStore.set('escrow_detail_123', JSON.stringify({ data: 'escrow' }));
-    asyncStore.set('other_key', 'should_remain');
+    mockAsyncStore.set('dashboard_cache', JSON.stringify({ data: 'test' }));
+    mockAsyncStore.set('escrow_detail_123', JSON.stringify({ data: 'escrow' }));
+    mockAsyncStore.set('other_key', 'should_remain');
 
     await logout();
 
     expect(getAccessMode()).toBe('anonymous');
-    expect(store.size).toBe(0);
-    expect(asyncStore.has('dashboard_cache')).toBe(false);
-    expect(asyncStore.has('escrow_detail_123')).toBe(false);
-    expect(asyncStore.has('other_key')).toBe(true);
+    expect(mockStore.size).toBe(0);
+    expect(mockAsyncStore.has('dashboard_cache')).toBe(false);
+    expect(mockAsyncStore.has('escrow_detail_123')).toBe(false);
+    expect(mockAsyncStore.has('other_key')).toBe(true);
   });
 });
 
@@ -227,17 +227,17 @@ describe('route guards', () => {
 
 describe('clearAllCache (#549)', () => {
   it('removes only cache keys, leaving other AsyncStorage data intact', async () => {
-    asyncStore.set('dashboard_cache', JSON.stringify({ data: 'test' }));
-    asyncStore.set('escrow_detail_abc', JSON.stringify({ data: 'escrow1' }));
-    asyncStore.set('escrow_detail_def', JSON.stringify({ data: 'escrow2' }));
-    asyncStore.set('user_preferences', JSON.stringify({ theme: 'dark' }));
+    mockAsyncStore.set('dashboard_cache', JSON.stringify({ data: 'test' }));
+    mockAsyncStore.set('escrow_detail_abc', JSON.stringify({ data: 'escrow1' }));
+    mockAsyncStore.set('escrow_detail_def', JSON.stringify({ data: 'escrow2' }));
+    mockAsyncStore.set('user_preferences', JSON.stringify({ theme: 'dark' }));
 
     await clearAllCache();
 
-    expect(asyncStore.has('dashboard_cache')).toBe(false);
-    expect(asyncStore.has('escrow_detail_abc')).toBe(false);
-    expect(asyncStore.has('escrow_detail_def')).toBe(false);
-    expect(asyncStore.has('user_preferences')).toBe(true);
+    expect(mockAsyncStore.has('dashboard_cache')).toBe(false);
+    expect(mockAsyncStore.has('escrow_detail_abc')).toBe(false);
+    expect(mockAsyncStore.has('escrow_detail_def')).toBe(false);
+    expect(mockAsyncStore.has('user_preferences')).toBe(true);
   });
 
   it('handles empty cache gracefully', async () => {

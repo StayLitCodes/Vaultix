@@ -15,10 +15,10 @@ export async function clearAllCache(): Promise<void> {
   try {
     const keys = await AsyncStorage.getAllKeys();
     const cacheKeys = keys.filter(
-      (key) => key === CACHE_KEYS.DASHBOARD || key.startsWith('escrow_detail_')
+      (key: string) => key === CACHE_KEYS.DASHBOARD || key.startsWith('escrow_detail_')
     );
     if (cacheKeys.length > 0) {
-      await AsyncStorage.multiRemove(cacheKeys);
+      await AsyncStorage.removeMany(cacheKeys);
     }
   } catch (error) {
     console.error('Error clearing cache:', error);

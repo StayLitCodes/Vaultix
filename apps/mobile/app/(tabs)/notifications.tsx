@@ -1,10 +1,9 @@
 /**
- * Notifications screen: list of user notifications with loading/empty/error states
- * Features: pull-to-refresh, mark as read, link to related escrow
+ * Notifications screen: list of user notifications with loading/empty/error states.
+ * Features: pull-to-refresh, mark as read, link to related escrow.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -13,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { notificationApi } from '../../services/api';
+import { useNotifications } from '../../hooks/useNotifications';
 import { Notification } from '../../types/notification';
 
 const EVENT_LABELS: Record<string, string> = {
@@ -56,7 +55,9 @@ function NotificationItem({
         <View style={styles.itemContent}>
           <Text style={[styles.itemTitle, isUnread && styles.itemTitleUnread]}>{label}</Text>
           {notification.escrowId && (
-            <Text style={styles.itemMeta} numberOfLines={1}>Escrow: {notification.escrowId.slice(0, 12)}…</Text>
+            <Text style={styles.itemMeta} numberOfLines={1}>
+              Escrow: {notification.escrowId.slice(0, 12)}…
+            </Text>
           )}
           <Text style={styles.itemDate}>{new Date(notification.createdAt).toLocaleString()}</Text>
         </View>
@@ -79,57 +80,15 @@ function SkeletonItem() {
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { notifications, unreadCount, loading, error, markAsRead, markAllAsRead, reload } =
+    useNotifications();
   const [refreshing, setRefreshing] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  const fetchNotifications = useCallback(async () => {
-    try {
-      setError(null);
-      const res = await notificationApi.list();
-      setNotifications(res.notifications);
-      setUnreadCount(res.unreadCount);
-    } catch {
-      setError('Failed to load notifications. Pull to retry.');
-    }
-  }, []);
-
-  useEffect(() => {
-    setLoading(true);
-    fetchNotifications().finally(() => setLoading(false));
-  }, [fetchNotifications]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await fetchNotifications();
+    await reload();
     setRefreshing(false);
-  }, [fetchNotifications]);
-
-  const handleMarkRead = useCallback(async (id: string) => {
-    try {
-      await notificationApi.markAsRead(id);
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, readAt: new Date().toISOString() } : n)),
-      );
-      setUnreadCount((c) => Math.max(0, c - 1));
-    } catch {
-      // silently fail
-    }
-  }, []);
-
-  const handleMarkAllRead = useCallback(async () => {
-    try {
-      await notificationApi.markAsRead();
-      setNotifications((prev) =>
-        prev.map((n) => ({ ...n, readAt: n.readAt ?? new Date().toISOString() })),
-      );
-      setUnreadCount(0);
-    } catch {
-      // silently fail
-    }
-  }, []);
+  }, [reload]);
 
   const handlePress = useCallback(
     (escrowId?: string) => {
@@ -151,7 +110,11 @@ export default function NotificationsScreen() {
           )}
         </View>
         {unreadCount > 0 && (
-          <TouchableOpacity onPress={handleMarkAllRead} accessibilityRole="button" accessibilityLabel="Mark all as read">
+          <TouchableOpacity
+            onPress={markAllAsRead}
+            accessibilityRole="button"
+            accessibilityLabel="Mark all as read"
+          >
             <Text style={styles.markAllBtn}>Mark all read</Text>
           </TouchableOpacity>
         )}
@@ -159,12 +122,14 @@ export default function NotificationsScreen() {
 
       {loading ? (
         <View style={styles.skeletonList}>
-          {[1, 2, 3, 4, 5].map((k) => <SkeletonItem key={k} />)}
+          {[1, 2, 3, 4, 5].map((k) => (
+            <SkeletonItem key={k} />
+          ))}
         </View>
       ) : error ? (
         <View style={styles.errorContainer}>
           <Text style={styles.errorEmoji}>⚠️</Text>
-          <Text style={styles.errorText}>{error}</Text>
+          <Text style={styles.errorText}>{error} Pull down to retry.</Text>
           <TouchableOpacity style={styles.retryBtn} onPress={onRefresh}>
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
@@ -174,7 +139,9 @@ export default function NotificationsScreen() {
           data={notifications}
           keyExtractor={(item) => item.id}
           contentContainerStyle={notifications.length === 0 ? styles.emptyList : styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6c63ff" />}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6c63ff" />
+          }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyEmoji}>🔔</Text>
@@ -183,11 +150,7 @@ export default function NotificationsScreen() {
             </View>
           }
           renderItem={({ item }) => (
-            <NotificationItem
-              notification={item}
-              onRead={handleMarkRead}
-              onPress={handlePress}
-            />
+            <NotificationItem notification={item} onRead={markAsRead} onPress={handlePress} />
           )}
         />
       )}
@@ -237,18 +200,46 @@ const styles = StyleSheet.create({
   itemTitleUnread: { color: '#fff', fontWeight: '600' },
   itemMeta: { color: '#888', fontSize: 12, marginTop: 3 },
   itemDate: { color: '#666', fontSize: 11, marginTop: 3 },
-  emptyContainer: { alignItems: 'center', justifyContent: 'center', flex: 1, paddingTop: 80 },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+    paddingTop: 80,
+  },
   emptyEmoji: { fontSize: 40, marginBottom: 8 },
   empty: { color: '#888', fontSize: 15, textAlign: 'center' },
   emptySub: { color: '#666', fontSize: 13, marginTop: 4, textAlign: 'center' },
-  errorContainer: { alignItems: 'center', justifyContent: 'center', flex: 1, paddingHorizontal: 32 },
+  errorContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+    paddingHorizontal: 32,
+  },
   errorEmoji: { fontSize: 40, marginBottom: 12 },
   errorText: { color: '#ef476f', fontSize: 14, textAlign: 'center', marginBottom: 16 },
-  retryBtn: { backgroundColor: '#6c63ff', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10 },
+  retryBtn: {
+    backgroundColor: '#6c63ff',
+    borderRadius: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+  },
   retryText: { color: '#fff', fontWeight: '600' },
   skeletonList: { padding: 16 },
-  skeletonDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#2d2d44', marginRight: 10, marginTop: 6 },
+  skeletonDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#2d2d44',
+    marginRight: 10,
+    marginTop: 6,
+  },
   skeletonContent: { flex: 1 },
-  skeletonTitle: { height: 14, backgroundColor: '#2d2d44', borderRadius: 4, marginBottom: 8, width: '70%' },
+  skeletonTitle: {
+    height: 14,
+    backgroundColor: '#2d2d44',
+    borderRadius: 4,
+    marginBottom: 8,
+    width: '70%',
+  },
   skeletonLine: { height: 10, backgroundColor: '#2d2d44', borderRadius: 4, marginBottom: 6, width: '90%' },
 });

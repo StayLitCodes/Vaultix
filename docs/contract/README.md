@@ -1,5 +1,7 @@
 # VaultixEscrow Contract Overview
 
+> **Documentation index:** [DATA_MODELS.md](DATA_MODELS.md) · [EVENTS.md](EVENTS.md) · [ERRORS.md](ERRORS.md) · [WORKFLOWS.md](WORKFLOWS.md) · [DEPLOYMENT.md](DEPLOYMENT.md)
+
 ## High-Level Purpose
 The `VaultixEscrow` contract is a decentralized, milestone-based escrow system built on the Soroban network. It facilitates secure transactions between two parties (a depositor and a recipient). Funds are locked into the contract and released incrementally upon the completion of predefined milestones. The contract includes dispute resolution, emergency pausing, and platform fee capabilities to provide a robust on-chain trust mechanism.
 

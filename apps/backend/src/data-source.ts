@@ -18,6 +18,8 @@ import { WebhookDeadLetter } from './modules/webhook/entities/webhook-dead-lette
 import { StellarEvent } from './modules/stellar/entities/stellar-event.entity';
 import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
 import { EmailOutbox } from './email/entities/email-outbox.entity';
+import { BackupRecord } from './modules/backup/entities/backup-record.entity';
+import { KycVerification } from './modules/kyc/entities/kyc-verification.entity';
 
 config(); // Load .env file
 

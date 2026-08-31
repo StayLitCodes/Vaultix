@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -13,6 +14,7 @@ import {
 } from "lucide-react";
 import { IEscrowExtended } from "@/types/escrow";
 import TransactionTracker from "@/components/stellar/TransactionTracker";
+import { toast } from "sonner";
 
 type ReleaseMode = "manual" | "auto";
 
@@ -28,9 +30,27 @@ interface ReleaseFundsModalProps {
 }
 
 type Step = "review" | "confirm" | "success";
+type SigningPhase = "idle" | "building" | "waiting" | "submitting" | "confirming" | "complete" | "timeout";
 
 const PLATFORM_FEE_BPS = 50;
 const BPS_DENOMINATOR = 10_000;
+const NETWORK_FEE = "0.00001 XLM";
+const SIGNING_TIMEOUT_MS = 60_000;
+
+const getReleaseError = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : String(error);
+  const normalized = message.toLowerCase();
+  if (normalized.includes("balance") || normalized.includes("underfunded")) {
+    return "Insufficient balance to release funds, including the network fee.";
+  }
+  if (normalized.includes("sequence") || normalized.includes("tx_bad_seq")) {
+    return "Your wallet sequence number is out of date. Refresh your wallet and try again.";
+  }
+  if (normalized.includes("fetch") || normalized.includes("network")) {
+    return "A network error prevented the transaction from being submitted.";
+  }
+  return message || "Failed to release funds. Please try again.";
+};
 
 export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
   isOpen,
@@ -42,6 +62,7 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
   publicKey,
   network = "testnet",
 }) => {
+  const router = useRouter();
   const existingTxHash =
     (escrow as any).releaseTransactionHash ??
     (escrow as any).onChainReleaseHash ??
@@ -57,6 +78,8 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(existingTxHash ?? null);
+  const [signingPhase, setSigningPhase] = useState<SigningPhase>("idle");
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const sellerAddress =
     escrow.counterpartyAddress || (escrow as any).sellerAddress || "Unknown";
@@ -94,11 +117,32 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
   }, [escrow.amount, escrow.asset]);
 
   const handleClose = () => {
+    abortControllerRef.current?.abort();
     setError(null);
     setIsSubmitting(false);
+    setSigningPhase("idle");
     setStep(isAlreadyReleased ? "success" : "review");
     onClose();
   };
+
+  useEffect(() => {
+    if (step !== "success") return;
+    const timeoutId = window.setTimeout(() => {
+      onClose();
+      router.push(`/escrow/${escrow.id}`);
+    }, 3_000);
+    return () => window.clearTimeout(timeoutId);
+  }, [escrow.id, onClose, router, step]);
+
+  const signingLabel = {
+    idle: "",
+    building: "Building Transaction",
+    waiting: "Waiting for Wallet",
+    submitting: "Submitting",
+    confirming: "Confirming",
+    complete: "Complete",
+    timeout: "Timed Out",
+  }[signingPhase];
 
   const handlePrimaryAction = async () => {
     if (step === "review") {
@@ -114,13 +158,22 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
 
       setIsSubmitting(true);
       setError(null);
+      setSigningPhase("building");
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+      const timeoutId = window.setTimeout(() => abortController.abort(), SIGNING_TIMEOUT_MS);
 
       try {
+        await Promise.resolve();
+        setSigningPhase("waiting");
+        await Promise.resolve();
+        setSigningPhase("submitting");
         const response = await fetch(`/api/escrows/${escrow.id}/release`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
+          signal: abortController.signal,
         });
 
         if (!response.ok) {
@@ -141,14 +194,25 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
           setTxHash(data.transactionHash);
         }
 
+        setSigningPhase("confirming");
+        await new Promise((resolve) => window.setTimeout(resolve, 150));
         setStep("success");
+        toast.success(
+          data.transactionHash
+            ? `Release confirmed: ${data.transactionHash}`
+            : "Escrow funds released successfully",
+        );
       } catch (err) {
+        const timedOut = abortController.signal.aborted;
+        setSigningPhase(timedOut ? "timeout" : "idle");
         setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to release funds. Please try again.",
+          timedOut
+            ? "Transaction timed out after 60 seconds. Cancel and try again."
+            : getReleaseError(err),
         );
       } finally {
+        window.clearTimeout(timeoutId);
+        abortControllerRef.current = null;
         setIsSubmitting(false);
       }
     }
@@ -160,7 +224,8 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
     return "Done";
   })();
 
-  const primaryDisabled = isSubmitting;
+  const isSigning = isSubmitting || signingPhase === "timeout";
+  const primaryDisabled = isSigning;
 
   const showTracker = step === "success" && txHash;
 
@@ -203,6 +268,26 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
               <p className="text-red-700 text-sm" data-testid="release-error">
                 {error}
               </p>
+            </div>
+          )}
+
+          {isSubmitting && signingLabel && (
+            <div
+              className="p-4 rounded-lg border border-blue-200 bg-blue-50"
+              data-testid="signing-status"
+            >
+              <div className="flex items-center gap-3 text-blue-800 font-medium">
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>{signingLabel}</span>
+              </div>
+              <div className="mt-3 grid grid-cols-4 gap-1" aria-label="Transaction progress">
+                {["building", "waiting", "submitting", "confirming"].map((phase) => (
+                  <div
+                    key={phase}
+                    className={`h-1 rounded ${phase === signingPhase ? "bg-blue-600" : "bg-blue-200"}`}
+                  />
+                ))}
+              </div>
             </div>
           )}
 
@@ -315,6 +400,16 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
                   </div>
                 </div>
               )}
+
+              {step === "confirm" && (
+                <div className="flex items-start space-x-3">
+                  <Info className="w-5 h-5 text-gray-500 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm text-gray-500">Estimated network fee</p>
+                    <p className="text-sm text-gray-900">{NETWORK_FEE}</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -339,6 +434,14 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
                     <span className="font-medium">Transaction hash:</span>{" "}
                     <span className="font-mono break-all">{txHash}</span>
                   </p>
+                  <a
+                    href={`https://stellar.expert/explorer/${network}/tx/${txHash}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-sm text-emerald-700 underline"
+                  >
+                    View transaction on Stellar explorer
+                  </a>
                   <TransactionTracker
                     txHash={txHash}
                     network={network}
@@ -373,7 +476,7 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
               {isSubmitting ? (
                 <span className="flex items-center justify-center space-x-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Releasing...</span>
+                  <span>{signingLabel ?? "Releasing..."}</span>
                 </span>
               ) : (
                 primaryLabel

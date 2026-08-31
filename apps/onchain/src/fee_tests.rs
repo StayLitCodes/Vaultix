@@ -34,6 +34,22 @@ fn create_token_contract<'a>(
     (token_client, token_admin, token_address)
 }
 
+fn create_test_contract<'a>(
+    env: &Env,
+    admin: &Address,
+    treasury: &Address,
+    fee_bps: Option<i128>,
+) -> (VaultixEscrowClient<'a>, Address) {
+    let operator = Address::generate(env);
+    let arbitrator = Address::generate(env);
+    let contract_id = env.register(
+        VaultixEscrow,
+        (admin, &operator, &arbitrator, treasury, fee_bps),
+    );
+    let client = VaultixEscrowClient::new(env, &contract_id);
+    (client, contract_id)
+}
+
 fn valid_metadata_hash(env: &Env) -> BytesN<32> {
     BytesN::from_array(env, &[7u8; 32])
 }
@@ -43,12 +59,9 @@ fn test_set_token_fee_valid() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(VaultixEscrow, ());
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let treasury = Address::generate(&env);
     let admin = Address::generate(&env);
-    client.initialize(&treasury, &Some(50)); // 0.5% default
+    let (client, _contract_id) = create_test_contract(&env, &admin, &treasury, Some(50));
 
     let (_token_client, _token_admin, token_address) = create_token_contract(&env, &admin);
 
@@ -62,12 +75,9 @@ fn test_set_token_fee_invalid_fee_too_high() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(VaultixEscrow, ());
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let treasury = Address::generate(&env);
     let admin = Address::generate(&env);
-    client.initialize(&treasury, &Some(50));
+    let (client, _contract_id) = create_test_contract(&env, &admin, &treasury, Some(50));
 
     let (_token_client, _token_admin, token_address) = create_token_contract(&env, &admin);
 
@@ -81,11 +91,9 @@ fn test_set_escrow_fee_valid() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(VaultixEscrow, ());
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50)); // 0.5% default
+    let admin = Address::generate(&env);
+    let (client, _contract_id) = create_test_contract(&env, &admin, &treasury, Some(50));
 
     let escrow_id = 1u64;
 
@@ -99,11 +107,9 @@ fn test_set_escrow_fee_invalid_fee_too_high() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(VaultixEscrow, ());
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50));
+    let admin = Address::generate(&env);
+    let (client, _contract_id) = create_test_contract(&env, &admin, &treasury, Some(50));
 
     let escrow_id = 1u64;
 
@@ -117,15 +123,12 @@ fn test_release_milestone_uses_global_fee_by_default() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(VaultixEscrow, ());
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(100)); // 1% fee
+    let admin = Address::generate(&env);
+    let (client, contract_id) = create_test_contract(&env, &admin, &treasury, Some(100)); // 1% fee
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
@@ -169,15 +172,12 @@ fn test_release_milestone_uses_token_fee_override() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(VaultixEscrow, ());
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50)); // 0.5% global fee
+    let admin = Address::generate(&env);
+    let (client, contract_id) = create_test_contract(&env, &admin, &treasury, Some(50)); // 0.5% global fee
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
@@ -224,15 +224,12 @@ fn test_release_milestone_uses_escrow_fee_override() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(VaultixEscrow, ());
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50)); // 0.5% global fee
+    let admin = Address::generate(&env);
+    let (client, contract_id) = create_test_contract(&env, &admin, &treasury, Some(50)); // 0.5% global fee
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
@@ -283,15 +280,12 @@ fn test_fee_precedence_escrow_over_token_and_global() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(VaultixEscrow, ());
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50)); // 0.5% global
+    let admin = Address::generate(&env);
+    let (client, contract_id) = create_test_contract(&env, &admin, &treasury, Some(50)); // 0.5% global
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
@@ -339,15 +333,12 @@ fn test_cancel_escrow_uses_token_fee_override() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(VaultixEscrow, ());
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50)); // 0.5% global fee
+    let admin = Address::generate(&env);
+    let (client, contract_id) = create_test_contract(&env, &admin, &treasury, Some(50)); // 0.5% global fee
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
@@ -394,15 +385,12 @@ fn test_refund_expired_uses_escrow_fee_override() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(VaultixEscrow, ());
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50)); // 0.5% global fee
+    let admin = Address::generate(&env);
+    let (client, contract_id) = create_test_contract(&env, &admin, &treasury, Some(50)); // 0.5% global fee
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
@@ -421,7 +409,7 @@ fn test_refund_expired_uses_escrow_fee_override() {
         },
     ];
 
-    let deadline = env.ledger().timestamp() + 1; // Set a very short deadline
+    let deadline = env.ledger().timestamp() + 100;
     client.create_escrow(
         &escrow_id,
         &depositor,
@@ -456,15 +444,12 @@ fn test_zero_fee_valid() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(VaultixEscrow, ());
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50));
+    let admin = Address::generate(&env);
+    let (client, contract_id) = create_test_contract(&env, &admin, &treasury, Some(50));
 
     let depositor = Address::generate(&env);
     let recipient = Address::generate(&env);
-    let admin = Address::generate(&env);
 
     let (token_client, token_admin, token_address) = create_token_contract(&env, &admin);
     token_admin.mint(&depositor, &10_000);
@@ -507,13 +492,10 @@ fn test_max_fee_10000_bps_valid() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(VaultixEscrow, ());
-    let client = VaultixEscrowClient::new(&env, &contract_id);
-
     let treasury = Address::generate(&env);
-    client.initialize(&treasury, &Some(50));
-
     let admin = Address::generate(&env);
+    let (client, _contract_id) = create_test_contract(&env, &admin, &treasury, Some(50));
+
     let (_token_client, _token_admin, token_address) = create_token_contract(&env, &admin);
 
     // Set token fee to maximum valid value (BPS_DENOMINATOR = 10000)

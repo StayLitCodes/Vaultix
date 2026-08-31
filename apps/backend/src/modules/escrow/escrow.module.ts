@@ -13,6 +13,7 @@ import { EventsController } from './controllers/events.controller';
 import { EscrowAccessGuard } from './guards/escrow-access.guard';
 import { EscrowExpireGuard } from './guards/escrow-expire.guard';
 import { AuthModule } from '../auth/auth.module';
+import { KycModule } from '../kyc/kyc.module';
 import { EscrowStellarIntegrationService } from './services/escrow-stellar-integration.service';
 import { WebhookModule } from '../webhook/webhook.module';
 import { IpfsModule } from '../ipfs/ipfs.module';
@@ -41,6 +42,7 @@ import { forwardRef } from '@nestjs/common';
       AllowedAsset,
     ]),
     AuthModule,
+    KycModule,
     WebhookModule,
     IpfsModule,
     NotificationsModule,

@@ -1,5 +1,17 @@
+import React from 'react';
 import { renderHook, waitFor } from '@testing-library/react';
 import { useEscrow } from './useEscrow';
+import { useNotifications } from './useNotifications';
+import { WebSocketProvider } from '@/app/contexts/WebSocketContext';
+
+jest.mock('socket.io-client', () => ({
+  io: jest.fn(() => ({
+    on: jest.fn(),
+    off: jest.fn(),
+    emit: jest.fn(),
+    disconnect: jest.fn(),
+  })),
+}));
 
 const mockFetch = (response: Partial<Response>) => {
   global.fetch = jest.fn().mockResolvedValue(response as Response);
@@ -8,6 +20,20 @@ const mockFetch = (response: Partial<Response>) => {
 describe('useEscrow', () => {
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('shares one socket instance between escrow and notification hooks', async () => {
+    const { io } = jest.requireMock('socket.io-client') as { io: jest.Mock };
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(WebSocketProvider, null, children);
+
+    mockFetch({ ok: true, json: async () => ({ id: 'test-123' }) });
+    renderHook(() => {
+      useEscrow('test-123');
+      useNotifications();
+    }, { wrapper });
+
+    await waitFor(() => expect(io).toHaveBeenCalledTimes(1));
   });
 
   it('successfully fetches an escrow', async () => {
