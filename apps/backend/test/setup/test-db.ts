@@ -5,6 +5,6 @@ export async function resetDatabase(dataSource: DataSource) {
 
   for (const entity of entities) {
     const repo = dataSource.getRepository(entity.name);
-    await repo.query(`DELETE FROM ${entity.tableName}`);
+    await repo.query(`DELETE FROM "${entity.tableName}"`);
   }
 }

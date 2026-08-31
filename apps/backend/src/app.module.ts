@@ -82,13 +82,10 @@ import { BackupRecord } from './modules/backup/entities/backup-record.entity';
     ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        type: 'sqlite',
-        database: configService.get<string>(
-          'DATABASE_PATH',
-          './data/vaultix.db',
-        ),
-        entities: [
+      useFactory: (configService: ConfigService) => {
+        const isPostgres =
+          configService.get<string>('DATABASE_DRIVER') === 'postgres';
+        const entities = [
           User,
           RefreshToken,
           EmailVerification,
@@ -107,13 +104,41 @@ import { BackupRecord } from './modules/backup/entities/backup-record.entity';
           StellarEvent,
           AllowedAsset,
           EmailOutbox,
-          BackupRecord,
-          KycVerification,
-        ],
-        synchronize: false,
-        migrations: [__dirname + '/migrations/*.ts'],
-        migrationsRun: true,
-      }),
+        ];
+
+        if (isPostgres) {
+          const url = configService.get<string>('DATABASE_URL');
+          if (!url) {
+            throw new Error(
+              'DATABASE_URL is required when DATABASE_DRIVER is postgres',
+            );
+          }
+          return {
+            type: 'postgres',
+            url,
+            entities,
+            synchronize: false,
+            migrations: [__dirname + '/migrations/*.ts'],
+            migrationsRun: true,
+            extra: {
+              max: 20,
+              idleTimeoutMillis: 30000,
+            },
+          };
+        }
+
+        return {
+          type: 'sqlite',
+          database: configService.get<string>(
+            'DATABASE_PATH',
+            './data/vaultix.db',
+          ),
+          entities,
+          synchronize: false,
+          migrations: [__dirname + '/migrations/*.ts'],
+          migrationsRun: true,
+        };
+      },
       inject: [ConfigService],
     }),
     AuthModule,

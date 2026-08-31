@@ -44,7 +44,7 @@ interface OverallHealthResponse {
   version: string;
   uptime: number;
   dependencies: {
-    database: DependencyHealth;
+    database: DependencyHealth & { driver?: string };
     stellar: DependencyHealth;
     ipfs: DependencyHealth;
     websocket: DependencyHealth;
@@ -152,7 +152,7 @@ export class HealthController {
       nodeVersion: process.version,
       uptime: process.uptime(),
       network: process.env.STELLAR_NETWORK || 'testnet',
-      databaseType: 'sqlite',
+      databaseType: this.configService.get<string>('DATABASE_DRIVER', 'sqlite'),
       metrics: {
         activeEscrows,
         totalUsers,
@@ -196,18 +196,22 @@ export class HealthController {
     }
   }
 
-  private async probeDatabase(): Promise<DependencyHealth> {
+  private async probeDatabase(): Promise<
+    DependencyHealth & { driver?: string }
+  > {
     const startedAt = Date.now();
+    const driver = this.configService.get<string>('DATABASE_DRIVER', 'sqlite');
     try {
       await this.typeOrmHealthIndicator.pingCheck('database', {
         timeout: this.checkTimeoutMs,
       });
-      return { status: 'up', responseTimeMs: Date.now() - startedAt };
+      return { status: 'up', responseTimeMs: Date.now() - startedAt, driver };
     } catch (error) {
       return {
         status: 'down',
         responseTimeMs: Date.now() - startedAt,
         error: error instanceof Error ? error.message : String(error),
+        driver,
       };
     }
   }

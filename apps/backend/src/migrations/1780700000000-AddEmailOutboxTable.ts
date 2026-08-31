@@ -4,22 +4,43 @@ export class AddEmailOutboxTable1780700000000 implements MigrationInterface {
   name = 'AddEmailOutboxTable1780700000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`
-      CREATE TABLE "email_outbox" (
-        "id" varchar PRIMARY KEY,
-        "to" varchar NOT NULL,
-        "subject" varchar NOT NULL,
-        "html" text NOT NULL,
-        "text" text,
-        "status" varchar NOT NULL DEFAULT 'pending',
-        "attempts" integer NOT NULL DEFAULT 0,
-        "nextRetryAt" datetime,
-        "lastError" text,
-        "sentAt" datetime,
-        "createdAt" datetime NOT NULL DEFAULT (datetime('now')),
-        "updatedAt" datetime NOT NULL DEFAULT (datetime('now'))
-      )
-    `);
+    const isPostgres = queryRunner.connection.options.type === 'postgres';
+
+    if (isPostgres) {
+      await queryRunner.query(`
+        CREATE TABLE "email_outbox" (
+          "id" varchar PRIMARY KEY,
+          "to" varchar NOT NULL,
+          "subject" varchar NOT NULL,
+          "html" text NOT NULL,
+          "text" text,
+          "status" varchar NOT NULL DEFAULT 'pending',
+          "attempts" integer NOT NULL DEFAULT 0,
+          "nextRetryAt" TIMESTAMP,
+          "lastError" text,
+          "sentAt" TIMESTAMP,
+          "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
+          "updatedAt" TIMESTAMP NOT NULL DEFAULT now()
+        )
+      `);
+    } else {
+      await queryRunner.query(`
+        CREATE TABLE "email_outbox" (
+          "id" varchar PRIMARY KEY,
+          "to" varchar NOT NULL,
+          "subject" varchar NOT NULL,
+          "html" text NOT NULL,
+          "text" text,
+          "status" varchar NOT NULL DEFAULT 'pending',
+          "attempts" integer NOT NULL DEFAULT 0,
+          "nextRetryAt" datetime,
+          "lastError" text,
+          "sentAt" datetime,
+          "createdAt" datetime NOT NULL DEFAULT (datetime('now')),
+          "updatedAt" datetime NOT NULL DEFAULT (datetime('now'))
+        )
+      `);
+    }
     await queryRunner.query(
       `CREATE INDEX "idx_email_outbox_status_retry" ON "email_outbox" ("status", "nextRetryAt")`,
     );
