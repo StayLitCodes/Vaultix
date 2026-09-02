@@ -1,5 +1,6 @@
 'use client';
 
+import { adminMetadata } from '@/lib/admin-metadata';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   FileText,
@@ -15,6 +16,8 @@ import {
 } from 'lucide-react';
 import { AdminService } from '@/services/admin';
 import { IAuditLogResponse, IAuditLogFilters } from '@/types/admin';
+
+export const metadata = adminMetadata;
 
 const ACTION_COLORS: Record<string, string> = {
   SUSPEND_USER: 'text-red-400 bg-red-500/10',

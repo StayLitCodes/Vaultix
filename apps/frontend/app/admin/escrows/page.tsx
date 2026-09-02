@@ -1,5 +1,6 @@
 "use client";
 
+import { adminMetadata } from "@/lib/admin-metadata";
 import React, { useState, useEffect, useCallback } from "react";
 import { Filter, ChevronLeft, ChevronRight, Eye, RefreshCw, X, Loader2, AlertCircle, CheckCircle2, Clock, XCircle, AlertTriangle, Download } from "lucide-react";
 import { AdminService } from "@/services/admin";
@@ -9,6 +10,8 @@ import { ExportModal } from "@/components/ExportModal";
 import { useToast } from "@/hooks/useToast";
 import EscrowTimeline from "@/components/escrow/EscrowTimeline";
 import { AdminTableSkeleton } from "@/components/ui/AdminTableSkeleton";
+
+export const metadata = adminMetadata;
 
 const STATUS_CONFIG: Record<string, { color: string; bg: string; icon: React.ElementType }> = {
   ACTIVE: { color: "text-emerald-400", bg: "bg-emerald-500/10", icon: CheckCircle2 },
