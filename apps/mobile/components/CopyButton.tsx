@@ -3,7 +3,7 @@
  * Uses expo-clipboard for cross-platform clipboard access.
  */
 import React, { useCallback, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { showToast } from './Toast';
 

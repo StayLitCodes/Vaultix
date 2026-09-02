@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { EscrowSchedulerService } from './escrow-scheduler.service';
 import { getRepositoryToken } from '@nestjs/typeorm';

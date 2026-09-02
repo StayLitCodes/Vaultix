@@ -7,6 +7,7 @@ import { Buffer } from 'buffer';
 import { Linking } from 'react-native';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { deleteSecureItem, getSecureItem, saveSecureItem } from '../utils/secureStore';
+import { clearSession } from './session';
 
 if (typeof (global as { Buffer?: unknown }).Buffer === 'undefined') {
   (global as { Buffer?: unknown }).Buffer = Buffer;
@@ -124,4 +125,47 @@ export async function openExternalWalletGuide(wallet: ExternalWalletName): Promi
   } catch (error) {
     throw new Error(`Could not open ${EXTERNAL_WALLET_LABELS[wallet]} wallet. Please install it or use the built-in mobile wallet.`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Wallet management: reveal, import, and wipe (#553)
+// ---------------------------------------------------------------------------
+
+/**
+ * Return the secret seed for the active wallet.
+ * The caller MUST gate this behind a biometric prompt — seeds are never
+ * logged, never sent to a backend, and never written outside SecureStore.
+ */
+export async function revealWalletSeed(): Promise<string> {
+  const seed = await getSecureItem(WALLET_SEED_KEY);
+  if (!seed) throw new Error('No wallet found.');
+  return seed;
+}
+
+/**
+ * Import an existing wallet from a Stellar secret seed.
+ * Validates the seed format, overwrites the current wallet, and clears any
+ * stale session so the user must re-authenticate with the new key.
+ */
+export async function importWalletFromSeed(secretSeed: string): Promise<StellarSdk.Keypair> {
+  const keypair = StellarSdk.Keypair.fromSecret(secretSeed);
+
+  // Persist the new keypair
+  await saveSecureItem(WALLET_SEED_KEY, keypair.secret());
+  await saveSecureItem(WALLET_ADDRESS_KEY, keypair.publicKey());
+
+  // Wipe the session so the user re-authenticates with the new address
+  await clearSession();
+
+  return keypair;
+}
+
+/**
+ * Remove the wallet keypair and wipe the session.
+ * This is irreversible — the user must create or import a new wallet.
+ */
+export async function removeWallet(): Promise<void> {
+  await deleteSecureItem(WALLET_SEED_KEY);
+  await deleteSecureItem(WALLET_ADDRESS_KEY);
+  await clearSession();
 }

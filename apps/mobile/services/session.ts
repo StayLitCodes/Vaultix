@@ -11,7 +11,7 @@
  */
 import { deleteSecureItem, getSecureItem, saveSecureItem } from '../utils/secureStore';
 
-const ACCESS_TOKEN_KEY = 'vaultix-access-token';
+export const ACCESS_TOKEN_KEY = 'vaultix-access-token';
 const REFRESH_TOKEN_KEY = 'vaultix-refresh-token';
 const SESSION_ADDRESS_KEY = 'vaultix-session-address';
 
@@ -51,6 +51,15 @@ export function getAccessToken(): string | null {
 
 export function getSessionAddress(): string | null {
   return current?.walletAddress ?? null;
+}
+
+/**
+ * Read the access token directly from SecureStore, bypassing the in-memory
+ * mirror. Used by the axios interceptor as a fallback when the session has
+ * not yet been hydrated (#549).
+ */
+export async function getSecureAccessToken(): Promise<string | null> {
+  return getSecureItem(ACCESS_TOKEN_KEY);
 }
 
 export function isSessionHydrated(): boolean {

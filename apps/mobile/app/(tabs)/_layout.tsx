@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { requireAuth } from '../../services/auth';
 import { useSession } from '../../hooks/useSession';
+import { useNotifications } from '../../hooks/useNotifications';
 import { ReadOnlyBanner } from '../../components/ReadOnlyBanner';
 
 export default function TabLayout() {
@@ -11,6 +12,7 @@ export default function TabLayout() {
   const segments = useSegments();
   const insets = useSafeAreaInsets();
   const { isGuest, isHydrated, accessMode, exitGuestMode } = useSession();
+  const { unreadCount } = useNotifications();
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -58,7 +60,19 @@ export default function TabLayout() {
             tabBarIcon: ({ color, size }) => (
               <TabIcon name="bell" color={color} size={size} />
             ),
-            tabBarBadge: undefined, // set dynamically when we have unread count
+            tabBarBadge: unreadCount > 0 ? (unreadCount > 99 ? '99+' : unreadCount) : undefined,
+            tabBarBadgeStyle: {
+              backgroundColor: '#ff4444',
+              color: '#fff',
+              fontSize: 10,
+              fontWeight: '700',
+              minWidth: 18,
+              height: 18,
+              lineHeight: 18,
+              borderRadius: 9,
+              textAlign: 'center',
+              paddingHorizontal: 4,
+            },
           }}
         />
         {/* #552 – Settings was unreachable until this entry existed */}

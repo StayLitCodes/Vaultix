@@ -84,7 +84,7 @@ describe('Security Headers (e2e)', () => {
   it('should set Strict-Transport-Security (HSTS) with includeSubDomains', async () => {
     const server = app.getHttpServer() as unknown as import('http').Server;
     const res = await request(server).get('/');
-    const hsts = res.headers['strict-transport-security'] as string;
+    const hsts = res.headers['strict-transport-security'];
     expect(hsts).toBeDefined();
     expect(hsts).toContain('max-age=31536000');
     expect(hsts).toContain('includeSubDomains');
@@ -101,7 +101,7 @@ describe('Security Headers (e2e)', () => {
   it('should set Content-Security-Policy with default-src self', async () => {
     const server = app.getHttpServer() as unknown as import('http').Server;
     const res = await request(server).get('/');
-    const csp = res.headers['content-security-policy'] as string;
+    const csp = res.headers['content-security-policy'];
     expect(csp).toBeDefined();
     expect(csp).toContain("default-src 'self'");
   });
@@ -129,7 +129,7 @@ describe('Security Headers (e2e)', () => {
   it('should set CSP directives for frame-src none and object-src none', async () => {
     const server = app.getHttpServer() as unknown as import('http').Server;
     const res = await request(server).get('/');
-    const csp = res.headers['content-security-policy'] as string;
+    const csp = res.headers['content-security-policy'];
     expect(csp).toContain("frame-src 'none'");
     expect(csp).toContain("object-src 'none'");
   });

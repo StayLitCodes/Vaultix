@@ -1,5 +1,5 @@
 /**
- * #550 — React binding over the SecureStore session layer.
+ * #549/#550 — React binding over the SecureStore session layer.
  * Re-renders whenever the access mode changes (sign-in, sign-out, guest toggle).
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -7,7 +7,7 @@ import {
   AccessMode,
   exitGuestMode,
   getAccessMode,
-  signOut as signOutInternal,
+  logout as logoutInternal,
   subscribeToAuth,
 } from '../services/auth';
 import { getSession, hydrateSession, isSessionHydrated, Session } from '../services/session';
@@ -43,7 +43,7 @@ export function useSession(): UseSessionResult {
   }, []);
 
   const signOut = useCallback(async () => {
-    await signOutInternal();
+    await logoutInternal();
   }, []);
 
   const accessMode = getAccessMode();

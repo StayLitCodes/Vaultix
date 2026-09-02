@@ -3,8 +3,10 @@ import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
+import * as express from 'express';
 import { AppModule } from './app.module';
 import { ApiVersionMiddleware } from './middleware/api-version.middleware';
+import { RequestLoggingMiddleware } from './middleware/request-logging.middleware';
 import {
   EscrowV2Controller,
   AuthV2Controller,
@@ -95,6 +97,13 @@ async function bootstrap() {
       permittedCrossDomainPolicies: false,
     }),
   );
+
+  // Body size limit enforcement (10MB)
+  app.use(express.json({ limit: '10mb' }));
+
+  // Request logging with correlation IDs (applied before API version middleware)
+  const requestLoggingMiddleware = new RequestLoggingMiddleware();
+  app.use(requestLoggingMiddleware.use.bind(requestLoggingMiddleware));
 
   // API version negotiation middleware
   // Rewrites unversioned requests to /v1/... and adds Sunset headers

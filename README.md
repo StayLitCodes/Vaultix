@@ -50,7 +50,10 @@ QuickEx is a Soroban-based dApp built on Stellar, utilizing:
 
 - **[Development Guide](DEVELOPMENT.md)** - Detailed setup instructions, troubleshooting, and workflows
 - **[Contributing Guide](CONTRIBUTING.md)** - How to contribute, branch naming, PR expectations
+- **[Environment Variables](docs/ENVIRONMENT.md)** - Every env var across the monorepo, with secrets guidance
+- **[Status Mapping](docs/STATUS_MAPPING.md)** - Cross-layer escrow/milestone status table and known gaps
 - **[Contract Docs](docs/contract/README.md)** - Smart contract overview and deployment
+- **[Contract Events](docs/contract/EVENTS.md)** - Event schema reference for indexers and consumers
 - **[Mobile Security](docs/mobile-security.md)** - Environment setup, secure storage, and testnet switching
 - **[Mobile Notifications](docs/mobile-notifications.md)** - Push notification strategy and MVP notes
 - **[Dispute Flow](docs/dispute-flow.md)** - Dispute resolution process and UX
@@ -200,7 +203,7 @@ pnpm dev
 
 # Terminal 3 - Watch onchain contracts (optional)
 cd apps/onchain
-cargo build --target wasm32-unknown-unknown --release
+cargo build --target wasm32v1-none --release
 ```
 
 ### Testing Your Setup
@@ -253,12 +256,12 @@ pnpm install
 ```bash
 # Update Rust toolchain
 rustup update
-rustup target add wasm32-unknown-unknown
+rustup target add wasm32v1-none
 
 # Rebuild contract
 cd apps/onchain
 cargo clean
-cargo build --target wasm32-unknown-unknown --release
+cargo build --target wasm32v1-none --release
 ```
 
 ### Environment Setup
@@ -430,6 +433,7 @@ Contributions welcome to bolster Vaultix's trust features!
   3. Commit: "feat: add milestone notifications".
   4. PR to `main`.
 - Monorepo tips: `pnpm turbo run build --filter=...`.
+- **Mobile app**: see [apps/mobile/README.md](apps/mobile/README.md) for Expo SDK 52 / React Native 0.76 prerequisites, `EXPO_PUBLIC_*` environment variables (matching `security/env.ts`), and `start`, `android`, `ios`, `lint`, `type-check`, and `test` commands.
 Follow [CONTRIBUTING.md](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License

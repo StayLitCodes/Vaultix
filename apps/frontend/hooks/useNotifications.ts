@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { notificationService, NotificationPreference, UpdatePreferenceDto } from '@/services/notification';
 import { Notification } from '@/types/notification';
-import { io, Socket } from 'socket.io-client';
+import { useWebSocket } from '@/app/contexts/WebSocketContext';
 import { toast } from 'sonner';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -140,6 +140,7 @@ export const useNotifications = (): UseNotificationsReturn => {
   const [preferences, setPreferences] = useState<UserPreferences>(getDefaultPreferences());
   const [preferencesLoading, setPreferencesLoading] = useState<boolean>(true);
   const [savingPreferences, setSavingPreferences] = useState<boolean>(false);
+  const { socket, isConnected } = useWebSocket();
 
   // Track whether initial fetch has happened to avoid double-fetch in StrictMode
   const initialFetchDone = useRef(false);
@@ -277,26 +278,14 @@ export const useNotifications = (): UseNotificationsReturn => {
     if (initialFetchDone.current) return;
     initialFetchDone.current = true;
 
-    fetchNotifications();
-    fetchPreferences();
+    void fetchNotifications();
+    void fetchPreferences();
+  }, [fetchNotifications, fetchPreferences]);
 
-    // ── WebSocket Integration ──
-    const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3000';
-    const WS_URL = `${WS_BASE_URL.replace(/\/$/, '')}/escrow`;
-    const token = localStorage.getItem('vaultix_token') || localStorage.getItem('authToken');
+  useEffect(() => {
+    if (!socket || !isConnected) return;
 
-    const socket = io(WS_URL, {
-      transports: ['websocket'],
-      auth: { token },
-      autoConnect: true,
-      reconnectionAttempts: 5,
-    });
-
-    socket.on('connect', () => {
-      console.log('Notifications WebSocket connected');
-    });
-
-    socket.on('notification:new', (data: any) => {
+    const handleNewNotification = (data: any) => {
       console.log('Real-time notification received via WebSocket:', data);
       playNotificationSound();
 
@@ -335,12 +324,14 @@ export const useNotifications = (): UseNotificationsReturn => {
       toast.success(msg, {
         description: newNotification.escrowId ? `Escrow ID: ${newNotification.escrowId.slice(0, 8)}...` : undefined,
       });
-    });
+    };
+
+    socket.on('notification:new', handleNewNotification);
 
     return () => {
-      socket.disconnect();
+      socket.off('notification:new', handleNewNotification);
     };
-  }, [fetchNotifications, fetchPreferences]);
+  }, [socket, isConnected]);
 
   return {
     notifications,

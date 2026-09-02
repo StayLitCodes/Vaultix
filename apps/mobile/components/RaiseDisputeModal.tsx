@@ -117,11 +117,12 @@ export const RaiseDisputeModal: React.FC<RaiseDisputeModalProps> = ({ visible, o
             : f,
         ),
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Upload failed';
       setUploadedFiles(prev =>
         prev.map(f =>
           f.id === file.id
-            ? { ...f, progress: 0, error: error.message || 'Upload failed', isRetrying: false }
+            ? { ...f, progress: 0, error: message, isRetrying: false }
             : f,
         ),
       );
