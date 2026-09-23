@@ -88,16 +88,16 @@ export class Escrow {
   @Column({ nullable: true })
   stellarTxHash?: string;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   fundedAt?: Date;
 
   @Column({ default: false })
   isReleased: boolean;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   expiresAt?: Date;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   expirationNotifiedAt?: Date;
 
   @Column({ default: true })

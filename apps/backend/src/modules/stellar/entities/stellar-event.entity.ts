@@ -44,14 +44,14 @@ export class StellarEvent {
   @Index()
   ledger: number;
 
-  @Column({ type: 'datetime' })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime' })
   @Index()
   timestamp: Date;
 
-  @Column({ type: 'simple-json' })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'jsonb' : 'simple-json' })
   rawPayload: Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-  @Column({ type: 'simple-json', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'jsonb' : 'simple-json', nullable: true })
   extractedFields?: Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
   @CreateDateColumn()

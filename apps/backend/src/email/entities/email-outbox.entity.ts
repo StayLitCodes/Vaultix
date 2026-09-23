@@ -41,13 +41,13 @@ export class EmailOutbox {
   @Column({ default: 0 })
   attempts: number;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   nextRetryAt?: Date;
 
   @Column({ type: 'text', nullable: true })
   lastError?: string;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   sentAt?: Date;
 
   @CreateDateColumn()

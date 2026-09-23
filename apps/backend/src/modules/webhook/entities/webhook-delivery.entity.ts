@@ -25,7 +25,7 @@ export class WebhookDelivery {
   @Column()
   event!: string;
 
-  @Column({ type: 'simple-json' })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'jsonb' : 'simple-json' })
   payload!: Record<string, unknown>;
 
   @Column({
@@ -41,7 +41,7 @@ export class WebhookDelivery {
   @Column({ default: 5 })
   maxAttempts!: number;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   nextRetryAt!: Date | null;
 
   @Column({ type: 'integer', nullable: true })
@@ -50,7 +50,7 @@ export class WebhookDelivery {
   @Column({ type: 'text', nullable: true })
   lastError!: string | null;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   lastAttemptAt!: Date | null;
 
   @CreateDateColumn()

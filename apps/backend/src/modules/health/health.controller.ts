@@ -16,6 +16,7 @@ import { Escrow, EscrowStatus } from '../escrow/entities/escrow.entity';
 import { StellarService } from '../../services/stellar.service';
 import { EmailService } from '../../email/email.service';
 import { IpfsProviderService } from '../ipfs/services/ipfs-provider.service';
+import { getDatabaseDriver } from '../../config/database.config';
 
 interface HealthInfo {
   version: string;
@@ -152,7 +153,7 @@ export class HealthController {
       nodeVersion: process.version,
       uptime: process.uptime(),
       network: process.env.STELLAR_NETWORK || 'testnet',
-      databaseType: 'sqlite',
+      databaseType: getDatabaseDriver(),
       metrics: {
         activeEscrows,
         totalUsers,
