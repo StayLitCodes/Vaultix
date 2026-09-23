@@ -46,11 +46,11 @@ export class Dispute {
   reason: string;
 
   // Stores URLs or reference strings pointing to supporting evidence
-  @Column({ type: 'simple-json', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'jsonb' : 'simple-json', nullable: true })
   evidence: string[] | null;
 
   // Evidence files with metadata stored on IPFS
-  @Column({ type: 'simple-json', nullable: true, default: () => "'[]'" })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'jsonb' : 'simple-json', nullable: true, default: () => "'[]'" })
   evidenceFiles: Array<{
     cid: string;
     name: string;
@@ -84,7 +84,7 @@ export class Dispute {
   @Column({ type: 'varchar', nullable: true })
   outcome: DisputeOutcome | null;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   resolvedAt: Date | null;
 
   @CreateDateColumn()

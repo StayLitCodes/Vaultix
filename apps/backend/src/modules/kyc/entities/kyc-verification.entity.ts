@@ -51,16 +51,16 @@ export class KycVerification {
   @Column({ type: 'varchar', nullable: true })
   rejectionReason?: string;
 
-  @Column({ type: 'simple-json', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'jsonb' : 'simple-json', nullable: true })
   providerMetadata?: Record<string, unknown>;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   initiatedAt?: Date;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   completedAt?: Date;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   expiresAt?: Date;
 
   @CreateDateColumn()

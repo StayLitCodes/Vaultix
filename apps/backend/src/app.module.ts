@@ -49,6 +49,7 @@ import webhookConfig from './config/webhook.config';
 import { ApiV2Module } from './modules/versioning/api-v2.module';
 import { BackupModule } from './modules/backup/backup.module';
 import { BackupRecord } from './modules/backup/entities/backup-record.entity';
+import { getDatabaseDriver } from './config/database.config';
 
 @Module({
   imports: [
@@ -83,11 +84,15 @@ import { BackupRecord } from './modules/backup/entities/backup-record.entity';
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
-        type: 'sqlite',
-        database: configService.get<string>(
-          'DATABASE_PATH',
-          './data/vaultix.db',
-        ),
+        type: getDatabaseDriver(configService.get<string>('DATABASE_DRIVER')),
+        ...(getDatabaseDriver(configService.get<string>('DATABASE_DRIVER')) === 'postgres'
+          ? {
+              url: configService.getOrThrow<string>('DATABASE_URL'),
+              extra: { max: 20, idleTimeoutMillis: 30_000 },
+            }
+          : {
+              database: configService.get<string>('DATABASE_PATH', './data/vaultix.db'),
+            }),
         entities: [
           User,
           RefreshToken,
@@ -111,7 +116,12 @@ import { BackupRecord } from './modules/backup/entities/backup-record.entity';
           KycVerification,
         ],
         synchronize: false,
-        migrations: [__dirname + '/migrations/*.ts'],
+        migrations: [
+          getDatabaseDriver(configService.get<string>('DATABASE_DRIVER')) ===
+          'postgres'
+            ? __dirname + '/migrations/postgres/*.ts'
+            : __dirname + '/migrations/*.ts',
+        ],
         migrationsRun: true,
       }),
       inject: [ConfigService],

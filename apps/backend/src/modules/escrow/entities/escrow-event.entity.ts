@@ -50,7 +50,7 @@ export class EscrowEvent {
   @Column({ nullable: true })
   actorId?: string;
 
-  @Column({ type: 'simple-json', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'jsonb' : 'simple-json', nullable: true })
   data?: Record<string, any>;
 
   @Column({ nullable: true })

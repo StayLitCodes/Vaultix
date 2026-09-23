@@ -41,7 +41,7 @@ export class Condition {
   @Column({ default: false })
   isFulfilled: boolean;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   fulfilledAt?: Date;
 
   @Column({ nullable: true })
@@ -56,13 +56,13 @@ export class Condition {
   @Column({ default: false })
   isMet: boolean;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   metAt?: Date;
 
   @Column({ nullable: true })
   metByUserId?: string;
 
-  @Column({ type: 'simple-json', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'jsonb' : 'simple-json', nullable: true })
   metadata?: Record<string, any>;
 
   @Column({ type: 'decimal', precision: 18, scale: 7, nullable: true })
@@ -80,7 +80,7 @@ export class Condition {
   @Column({ default: false })
   isReleased: boolean;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   releasedAt?: Date;
 
   @CreateDateColumn()

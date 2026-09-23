@@ -138,7 +138,7 @@ $ npm run migration:revert
 $ npm run migration:show
 ```
 
-Note: In development, `synchronize: false` is set to ensure schema changes are always handled via migrations. Migrations run automatically on application startup (`migrationsRun: true`).
+Note: In development, `synchronize: false` is set to ensure schema changes are always handled via migrations. Migrations run automatically on application startup (`migrationsRun: true`). See [PostgreSQL deployment](../../docs/POSTGRESQL.md) for production setup and SQLite data transfer.
 
 ## Deployment
 

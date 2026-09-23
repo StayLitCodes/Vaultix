@@ -25,7 +25,7 @@ export class Notification {
   @Column({ type: 'simple-enum', enum: NotificationEventType })
   eventType: NotificationEventType;
 
-  @Column({ type: 'simple-json' })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'jsonb' : 'simple-json' })
   payload: Record<string, unknown>;
 
   @Column({
@@ -38,7 +38,7 @@ export class Notification {
   @Column({ default: 0 })
   retryCount: number;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   readAt?: Date;
 
   @Column({ nullable: true })

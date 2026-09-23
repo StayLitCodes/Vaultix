@@ -54,7 +54,7 @@ export class Party {
   })
   status: PartyStatus;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   respondedAt: Date | null;
 
   @CreateDateColumn()
