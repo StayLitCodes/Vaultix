@@ -1,5 +1,4 @@
 name: CI
-
 # The path-scoped workflows own frontend, backend, contract, and mobile checks.
 # Keep this workflow manual so a push or pull request cannot execute those jobs twice.
 on:

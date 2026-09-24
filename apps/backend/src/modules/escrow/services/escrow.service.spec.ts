@@ -76,7 +76,7 @@ describe('EscrowService', () => {
   const mockEscrow: Partial<Escrow> = {
     id: 'escrow-123',
     title: 'Test Escrow',
-    amount: 100,
+    amount: '100',
     status: EscrowStatus.PENDING,
     type: EscrowType.STANDARD,
     creatorId: 'user-123',
@@ -492,7 +492,7 @@ describe('EscrowService', () => {
         ...mockEscrow,
         status: EscrowStatus.PENDING,
         stellarTxHash: undefined,
-        amount: 100,
+        amount: '100',
         parties: [
           {
             role: PartyRole.BUYER,
@@ -513,7 +513,7 @@ describe('EscrowService', () => {
       await expect(
         service.fund(
           'escrow-123',
-          { amount: 100 } as any,
+          { amount: '100' } as any,
           'user-123',
           'wallet-addr',
         ),

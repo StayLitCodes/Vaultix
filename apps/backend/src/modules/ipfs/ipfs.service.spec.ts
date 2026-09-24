@@ -72,7 +72,7 @@ describe('IpfsService', () => {
         conditions: [
           { description: 'Condition 1', type: 'delivery', isFulfilled: false },
         ],
-        amount: 100,
+        amount: '100',
         assetCode: 'XLM',
         expiresAt: new Date('2026-12-31'),
         status: 'active',

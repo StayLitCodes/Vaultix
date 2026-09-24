@@ -3,22 +3,19 @@ import {
   IsOptional,
   IsString,
   IsNotEmpty,
-  IsNumber,
-  Min,
-  Max,
+  Matches,
   MaxLength,
 } from 'class-validator';
 
 export class ProposeMilestoneChangeDto {
   @ApiPropertyOptional({
     description: 'The proposed new amount for this milestone',
-    example: 100.5,
+    example: '100.5',
   })
   @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Max(1e13)
-  amount?: number;
+  @IsString()
+  @Matches(/^(?:0|[1-9]\d{0,38})(?:\.\d+)?$/)
+  amount?: string;
 
   @ApiPropertyOptional({
     description: 'The proposed new description for this milestone',

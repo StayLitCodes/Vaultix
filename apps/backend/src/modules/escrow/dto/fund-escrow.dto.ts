@@ -1,8 +1,8 @@
-import { IsNumber, IsPositive, Max } from 'class-validator';
+import { IsPositive, IsString, Matches } from 'class-validator';
 
 export class FundEscrowDto {
-  @IsNumber()
+  @IsString()
+  @Matches(/^(?:0|[1-9]\d{0,38})(?:\.\d+)?$/)
   @IsPositive()
-  @Max(1e13)
-  amount: number;
+  amount: string;
 }

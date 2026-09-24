@@ -112,7 +112,7 @@ describe('CreateEscrowDto', () => {
         CreateEscrowDto,
         {
           title: 'Test Escrow',
-          amount: 100,
+          amount: '100',
           parties: [
             {
               userId: '123e4567-e89b-12d3-a456-426614174000',
@@ -132,7 +132,7 @@ describe('CreateEscrowDto', () => {
         {
           title: 'Test Escrow',
           description: 'Test description',
-          amount: 100,
+          amount: '100',
           asset: { code: 'XLM', issuer: '' },
           type: EscrowType.MILESTONE,
           parties: [
@@ -159,7 +159,7 @@ describe('CreateEscrowDto', () => {
       const dto = plainToInstance(
         CreateEscrowDto,
         {
-          amount: 100,
+          amount: '100',
           parties: [
             {
               userId: '123e4567-e89b-12d3-a456-426614174000',
@@ -178,7 +178,7 @@ describe('CreateEscrowDto', () => {
         CreateEscrowDto,
         {
           title: 'Test',
-          amount: -100,
+          amount: '-100',
           parties: [
             {
               userId: '123e4567-e89b-12d3-a456-426614174000',
@@ -197,7 +197,7 @@ describe('CreateEscrowDto', () => {
         CreateEscrowDto,
         {
           title: 'Test',
-          amount: 100,
+          amount: '100',
           parties: [],
         },
         { enableImplicitConversion: true },
@@ -211,7 +211,7 @@ describe('CreateEscrowDto', () => {
         CreateEscrowDto,
         {
           title: 'A'.repeat(256),
-          amount: 100,
+          amount: '100',
           parties: [
             {
               userId: '123e4567-e89b-12d3-a456-426614174000',
@@ -230,7 +230,7 @@ describe('CreateEscrowDto', () => {
         CreateEscrowDto,
         {
           title: 'Test',
-          amount: 100,
+          amount: '100',
           metadataHash: 'A'.repeat(65),
           parties: [
             {
