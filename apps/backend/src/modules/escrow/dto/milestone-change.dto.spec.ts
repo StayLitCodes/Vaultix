@@ -4,7 +4,7 @@ import { ProposeMilestoneChangeDto } from './milestone-change.dto';
 describe('ProposeMilestoneChangeDto', () => {
   it('should validate with amount', async () => {
     const dto = new ProposeMilestoneChangeDto();
-    dto.amount = 100.5;
+    dto.amount = '100.5';
     const errors = await validate(dto);
     expect(errors).toHaveLength(0);
   });
@@ -18,7 +18,7 @@ describe('ProposeMilestoneChangeDto', () => {
 
   it('should validate with both amount and description', async () => {
     const dto = new ProposeMilestoneChangeDto();
-    dto.amount = 100.5;
+    dto.amount = '100.5';
     dto.description = 'Updated milestone description';
     const errors = await validate(dto);
     expect(errors).toHaveLength(0);
@@ -32,14 +32,14 @@ describe('ProposeMilestoneChangeDto', () => {
 
   it('should reject negative amount', async () => {
     const dto = new ProposeMilestoneChangeDto();
-    dto.amount = -10;
+    dto.amount = '-10';
     const errors = await validate(dto);
     expect(errors.length).toBeGreaterThan(0);
   });
 
   it('should reject amount exceeding max', async () => {
     const dto = new ProposeMilestoneChangeDto();
-    dto.amount = 1e13 + 1;
+    dto.amount = '999999999999999999999999999999999999999999';
     const errors = await validate(dto);
     expect(errors.length).toBeGreaterThan(0);
   });

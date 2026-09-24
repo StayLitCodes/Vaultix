@@ -49,6 +49,28 @@ describe('EscrowOperationsService Integration', () => {
     expect(op).toBeDefined();
   });
 
+  it('encodes large base-unit amounts as exact i128 XDR', () => {
+    const ops = service.createEscrowInitializationOps(
+      '123',
+      StellarSdk.Keypair.random().publicKey(),
+      StellarSdk.Keypair.random().publicKey(),
+      StellarSdk.Keypair.random().publicKey(),
+      [
+        {
+          id: 1,
+          amount: '18446744073709551617',
+          description: 'large amount',
+        },
+      ],
+      Math.floor(Date.now() / 1000) + 3600,
+      '1'.repeat(64),
+    );
+    const args = (ops[0] as any).body().value().call().args();
+    const amount = args[4].vec()[0].map()[0].val().i128();
+    expect(amount.hi().toString()).toBe('1');
+    expect(amount.lo().toString()).toBe('1');
+  });
+
   it('should create funding operations', () => {
     const ops = service.createFundingOps('123');
     expect(ops.length).toBe(1);

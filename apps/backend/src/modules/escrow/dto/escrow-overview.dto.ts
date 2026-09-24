@@ -130,13 +130,13 @@ export class EscrowOverviewItemDto {
   tokenDecimals: number;
 
   @ApiProperty()
-  totalAmount: number;
+  totalAmount: string;
 
   @ApiProperty()
-  totalReleased: number;
+  totalReleased: string;
 
   @ApiProperty()
-  remainingAmount: number;
+  remainingAmount: string;
 
   @ApiProperty()
   status: string;

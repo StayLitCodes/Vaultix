@@ -72,7 +72,7 @@ describe('EscrowStellarIntegrationService', () => {
 
   const mockEscrow = {
     id: 'e1',
-    amount: 100,
+    amount: '100',
     parties: [
       { role: 'buyer', user: { walletAddress: 'buyer-addr' } },
       { role: 'seller', user: { walletAddress: 'seller-addr' } },

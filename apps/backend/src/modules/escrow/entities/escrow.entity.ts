@@ -51,11 +51,11 @@ export class Escrow {
   @Column({ type: 'text', nullable: true })
   description?: string;
 
-  @Column({ type: 'decimal', precision: 18, scale: 7 })
-  amount: number;
+  @Column({ type: 'varchar', length: 64 })
+  amount: string;
 
-  @Column({ type: 'decimal', precision: 18, scale: 7, default: 0 })
-  releasedAmount: number;
+  @Column({ type: 'varchar', length: 64, default: '0' })
+  releasedAmount: string;
 
   @Column({ default: 'XLM', name: 'asset_code' })
   assetCode: string;

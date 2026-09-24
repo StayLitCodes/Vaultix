@@ -13,6 +13,11 @@ import {
   StellarTransactionResponse,
 } from '../../../types/stellar.types';
 import * as StellarSdk from '@stellar/stellar-sdk';
+import {
+  decimalToBaseUnits,
+  DEFAULT_ASSET_DECIMALS,
+  splitBaseUnits,
+} from '../utils/amount.util';
 
 @Injectable()
 export class EscrowStellarIntegrationService {
@@ -73,10 +78,22 @@ export class EscrowStellarIntegrationService {
       }
 
       // Convert conditions to milestones format
+      const milestoneAmounts =
+        escrow.conditions.length > 0
+          ? splitBaseUnits(
+              decimalToBaseUnits(escrow.amount, DEFAULT_ASSET_DECIMALS),
+              escrow.conditions.length,
+            )
+          : [];
       const milestones = escrow.conditions.map((condition, index) => ({
         id: index,
         amount: (
-          parseFloat(escrow.amount.toString()) / escrow.conditions.length
+          condition.amount
+            ? decimalToBaseUnits(
+                condition.amount,
+                DEFAULT_ASSET_DECIMALS,
+              )
+            : milestoneAmounts[index]
         ).toString(),
         description: condition.description,
       }));

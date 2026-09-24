@@ -5,11 +5,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [18, 20, 22]
+        node-version: [20, 22]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-      - run: npm ci 2>/dev/null || npm install
-      - run: npm test 2>/dev/null || echo "Tests completed"
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm ci --prefix apps/backend --no-audit --no-fund
+      - run: npm --prefix apps/backend run build
+      - run: npm --prefix apps/backend test -- --runInBand

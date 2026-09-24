@@ -14,7 +14,7 @@ export class EventResponseDto {
   escrow?: {
     id: string;
     title: string;
-    amount: number;
+    amount: string;
     assetCode: string;
     assetIssuer?: string;
     status: string;

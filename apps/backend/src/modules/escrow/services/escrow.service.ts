@@ -45,6 +45,11 @@ import { IpfsService } from '../../ipfs/ipfs.service';
 import { AllowedAsset } from '../../assets/entities/allowed-asset.entity';
 import { NotificationService } from '../../../notifications/notifications.service';
 import { NotificationEventType } from '../../../notifications/enums/notification-event.enum';
+import {
+  baseUnitsToDecimal,
+  decimalToBaseUnits,
+  DEFAULT_ASSET_DECIMALS,
+} from '../utils/amount.util';
 
 @Injectable()
 export class EscrowService {
@@ -72,17 +77,36 @@ export class EscrowService {
     private readonly notificationService: NotificationService,
   ) {}
 
+  private async getAssetDecimals(
+    code: string,
+    issuer?: string,
+  ): Promise<number> {
+    const asset = await this.assetRepository.findOne({
+      where: { code, issuer: issuer ?? undefined },
+    });
+    return asset?.decimals ?? DEFAULT_ASSET_DECIMALS;
+  }
+
   async create(
     dto: CreateEscrowDto,
     creatorId: string,
     ipAddress?: string,
   ): Promise<Escrow> {
     try {
+      const assetCode = dto.asset?.code || 'XLM';
+      const assetDecimals = await this.getAssetDecimals(
+        assetCode,
+        dto.asset?.issuer,
+      );
+      const amount = baseUnitsToDecimal(
+        decimalToBaseUnits(dto.amount, assetDecimals),
+        assetDecimals,
+      );
       const escrow = this.escrowRepository.create({
         title: dto.title,
         description: dto.description,
-        amount: dto.amount,
-        assetCode: dto.asset?.code || 'XLM',
+        amount,
+        assetCode,
         assetIssuer: dto.asset?.issuer || undefined,
         type: dto.type,
         creatorId,
@@ -302,9 +326,9 @@ export class EscrowService {
         token: row.token,
         tokenIssuer: row.tokenIssuer || undefined,
         tokenDecimals: row.tokenDecimals,
-        totalAmount: parseFloat(row.totalAmount.toString()),
-        totalReleased: parseFloat(row.totalReleased.toString()),
-        remainingAmount: parseFloat(row.remainingAmount.toString()),
+        totalAmount: row.totalAmount.toString(),
+        totalReleased: row.totalReleased.toString(),
+        remainingAmount: row.remainingAmount.toString(),
         status: row.status,
         deadline: row.deadline,
         createdAt: row.createdAt,
@@ -532,8 +556,13 @@ export class EscrowService {
       );
     }
 
-    const escrowAmount = Number(escrow.amount);
-    if (Number(dto.amount) !== escrowAmount) {
+    const decimals = await this.getAssetDecimals(
+      escrow.assetCode,
+      escrow.assetIssuer,
+    );
+    const requestedAmount = decimalToBaseUnits(dto.amount, decimals);
+    const escrowAmount = decimalToBaseUnits(escrow.amount, decimals);
+    if (requestedAmount !== escrowAmount) {
       throw new BadRequestException('Amount must match the escrow amount');
     }
 
@@ -543,7 +572,7 @@ export class EscrowService {
       await this.stellarIntegrationService.fundOnChainEscrow(
         id,
         walletAddress,
-        String(dto.amount),
+        baseUnitsToDecimal(requestedAmount, decimals),
         escrow.assetCode ?? 'XLM',
       );
 
@@ -553,7 +582,7 @@ export class EscrowService {
       msg: 'Escrow funded successfully',
       userId,
       escrowId: id,
-      amount: dto.amount,
+      amount: baseUnitsToDecimal(requestedAmount, decimals),
     });
     await this.escrowRepository.update(id, {
       stellarTxHash,
@@ -1222,8 +1251,34 @@ export class EscrowService {
       );
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    condition.proposedAmount = (dto.amount ?? null) as any;
+    let proposedAmount: string | null = null;
+    if (dto.amount !== undefined) {
+      const decimals = await this.getAssetDecimals(
+        escrow.assetCode,
+        escrow.assetIssuer,
+      );
+      const amountInBaseUnits = decimalToBaseUnits(dto.amount, decimals);
+      const otherMilestones = escrow.conditions
+        .filter((candidate) => candidate.id !== condition.id)
+        .reduce(
+          (sum, candidate) =>
+            sum +
+            (candidate.amount
+              ? decimalToBaseUnits(candidate.amount, decimals)
+              : 0n),
+          0n,
+        );
+      if (
+        otherMilestones + amountInBaseUnits >
+        decimalToBaseUnits(escrow.amount, decimals)
+      ) {
+        throw new UnprocessableEntityException(
+          'Milestone amounts cannot exceed the escrow amount',
+        );
+      }
+      proposedAmount = baseUnitsToDecimal(amountInBaseUnits, decimals);
+    }
+    condition.proposedAmount = proposedAmount;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     condition.proposedDescription = (dto.description ?? null) as any;
     condition.proposedByUserId = userId;
@@ -1571,22 +1626,31 @@ export class EscrowService {
     }
 
     // Calculate released amount
-    const releaseAmount = parseFloat(condition.amount.toString());
+    const decimals = await this.getAssetDecimals(
+      escrow.assetCode,
+      escrow.assetIssuer,
+    );
+    const releaseAmount = decimalToBaseUnits(condition.amount, decimals);
     const newReleasedAmount =
-      parseFloat(escrow.releasedAmount.toString()) + releaseAmount;
+      decimalToBaseUnits(escrow.releasedAmount || '0', decimals) + releaseAmount;
+    const escrowAmount = decimalToBaseUnits(escrow.amount, decimals);
+    if (newReleasedAmount > escrowAmount) {
+      throw new BadRequestException('Released amount exceeds escrow amount');
+    }
 
     // Update escrow
-    escrow.releasedAmount = newReleasedAmount;
+    escrow.releasedAmount = baseUnitsToDecimal(newReleasedAmount, decimals);
 
     // Check if all milestones are released
     const totalMilestonesAmount = escrow.conditions.reduce(
-      (sum, c) => sum + (c.amount ? parseFloat(c.amount.toString()) : 0),
-      0,
+      (sum, c) =>
+        sum + (c.amount ? decimalToBaseUnits(c.amount, decimals) : 0n),
+      0n,
     );
 
     // If all are released, set escrow to completed
     if (
-      newReleasedAmount >= parseFloat(escrow.amount.toString()) ||
+      newReleasedAmount >= escrowAmount ||
       newReleasedAmount >= totalMilestonesAmount
     ) {
       escrow.status = EscrowStatus.COMPLETED;
@@ -1604,14 +1668,14 @@ export class EscrowService {
     // Log the event
     await this.logEvent(escrowId, EscrowEventType.MILESTONE_RELEASED, userId, {
       conditionId,
-      amount: releaseAmount,
+      amount: baseUnitsToDecimal(releaseAmount, decimals),
     });
 
     // Dispatch webhook
     await this.webhookService.dispatchEvent('escrow.milestone_released', {
       escrowId,
       conditionId,
-      amount: releaseAmount,
+      amount: baseUnitsToDecimal(releaseAmount, decimals),
     });
 
     return this.findOne(escrowId);
