@@ -18,10 +18,15 @@ export function isEvidenceMimeTypeAllowed(mimeType: string): boolean {
   return ALLOWED_EVIDENCE_MIME_TYPES.includes(mimeType);
 }
 
-export function validateEvidenceFile(sizeBytes: number, mimeType: string): string[] {
+export function validateEvidenceFile(
+  sizeBytes: number,
+  mimeType: string,
+): string[] {
   const errors: string[] = [];
   if (!isEvidenceFileSizeValid(sizeBytes)) {
-    errors.push(`File size must be between 1 byte and ${MAX_EVIDENCE_FILE_BYTES} bytes.`);
+    errors.push(
+      `File size must be between 1 byte and ${MAX_EVIDENCE_FILE_BYTES} bytes.`,
+    );
   }
   if (!isEvidenceMimeTypeAllowed(mimeType)) {
     errors.push(`File type "${mimeType}" is not allowed.`);

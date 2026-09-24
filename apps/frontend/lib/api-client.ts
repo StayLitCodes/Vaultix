@@ -1,39 +1,43 @@
 const getApiBaseUrl = (): string => {
   // Safely access process.env in Next.js (available at build time)
   try {
-    if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_API_URL) {
+    if (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_API_URL) {
       return process.env.NEXT_PUBLIC_API_URL;
     }
   } catch {
     // process is not available
   }
-  return 'http://localhost:3000';
+  return "http://localhost:3000";
 };
 
 const API_BASE_URL = getApiBaseUrl();
+
+// API version prefix - all requests go through /v1/
+const API_VERSION_PREFIX = "/v1";
 
 class ApiClient {
   private authToken: string | null = null;
 
   constructor() {
     // Load token from localStorage on init
-    if (typeof window !== 'undefined') {
-      this.authToken = window.localStorage.getItem('vaultix_token');
+    if (typeof window !== "undefined") {
+      this.authToken = window.localStorage.getItem("vaultix_token");
     }
   }
 
   setToken(token: string | null) {
     this.authToken = token;
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       if (token) {
-        window.localStorage.setItem('vaultix_token', token);
-        window.localStorage.setItem('vaultix_login_time', String(Date.now()));
-        document.cookie = 'vaultix_token=' + token + '; path=/; max-age=86400';
+        window.localStorage.setItem("vaultix_token", token);
+        window.localStorage.setItem("vaultix_login_time", String(Date.now()));
+        document.cookie = "vaultix_token=" + token + "; path=/; max-age=86400";
       } else {
-        window.localStorage.removeItem('vaultix_token');
-        window.localStorage.removeItem('vaultix_refresh_token');
-        window.localStorage.removeItem('vaultix_login_time');
-        document.cookie = 'vaultix_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+        window.localStorage.removeItem("vaultix_token");
+        window.localStorage.removeItem("vaultix_refresh_token");
+        window.localStorage.removeItem("vaultix_login_time");
+        document.cookie =
+          "vaultix_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
       }
     }
   }
@@ -47,12 +51,10 @@ class ApiClient {
     options: RequestInit = {},
     retryCount = 0,
   ): Promise<T> {
-    const url = `${API_BASE_URL}${path}`;
+    const url = `${API_BASE_URL}${API_VERSION_PREFIX}${path}`;
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(this.authToken
-        ? { Authorization: `Bearer ${this.authToken}` }
-        : {}),
+      "Content-Type": "application/json",
+      ...(this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {}),
       ...(options.headers as Record<string, string>),
     };
 
@@ -60,7 +62,7 @@ class ApiClient {
       const response = await fetch(url, {
         ...options,
         headers,
-        credentials: 'include',
+        credentials: "include",
       });
 
       if (!response.ok) {
@@ -74,7 +76,7 @@ class ApiClient {
 
         const error = await response
           .json()
-          .catch(() => ({ message: 'Request failed' }));
+          .catch(() => ({ message: "Request failed" }));
         throw new Error(error.message || `HTTP ${response.status}`);
       }
 
@@ -90,39 +92,39 @@ class ApiClient {
   }
 
   async get<T>(path: string): Promise<T> {
-    return this.request<T>(path, { method: 'GET' });
+    return this.request<T>(path, { method: "GET" });
   }
 
   async post<T>(path: string, body?: any): Promise<T> {
     return this.request<T>(path, {
-      method: 'POST',
+      method: "POST",
       body: body ? JSON.stringify(body) : undefined,
     });
   }
 
   async patch<T>(path: string, body?: any): Promise<T> {
     return this.request<T>(path, {
-      method: 'PATCH',
+      method: "PATCH",
       body: body ? JSON.stringify(body) : undefined,
     });
   }
 
   async put<T>(path: string, body?: any): Promise<T> {
     return this.request<T>(path, {
-      method: 'PUT',
+      method: "PUT",
       body: body ? JSON.stringify(body) : undefined,
     });
   }
 
   async delete<T>(path: string): Promise<T> {
-    return this.request<T>(path, { method: 'DELETE' });
+    return this.request<T>(path, { method: "DELETE" });
   }
 
   private async refreshToken(): Promise<boolean> {
     try {
       const refreshToken =
-        typeof window !== 'undefined'
-          ? window.localStorage.getItem('vaultix_refresh_token')
+        typeof window !== "undefined"
+          ? window.localStorage.getItem("vaultix_refresh_token")
           : null;
 
       if (!refreshToken) {
@@ -131,18 +133,18 @@ class ApiClient {
       }
 
       const response = await this.post<{ accessToken: string }>(
-        '/auth/refresh',
+        "/auth/refresh",
         { refreshToken },
       );
 
       this.setToken(response.accessToken);
-      console.log('Token refreshed successfully');
+      console.log("Token refreshed successfully");
       return true;
     } catch (error) {
-      console.error('Token refresh failed', error);
+      console.error("Token refresh failed", error);
       this.setToken(null);
-      if (typeof window !== 'undefined') {
-        window.localStorage.removeItem('vaultix_refresh_token');
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem("vaultix_refresh_token");
       }
       return false;
     }

@@ -6,20 +6,28 @@ import {
 } from '@nestjs/common';
 import { UserRole } from '../../user/entities/user-role.enum';
 
+interface AuthenticatedUser {
+  userId: string;
+  walletAddress: string;
+  role: UserRole;
+}
+
 @Injectable()
 export class AdminGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const request = context
       .switchToHttp()
-      .getRequest<{ user?: { role: UserRole } }>();
+      .getRequest<{ user?: AuthenticatedUser }>();
     const user = request['user'];
 
     if (!user) {
-      throw new ForbiddenException('User not authenticated');
+      throw new ForbiddenException('Authentication required');
     }
 
     if (user.role !== UserRole.ADMIN && user.role !== UserRole.SUPER_ADMIN) {
-      throw new ForbiddenException('Admin access required');
+      throw new ForbiddenException(
+        'Admin access required. Your current role does not grant permission to this resource.',
+      );
     }
 
     return true;

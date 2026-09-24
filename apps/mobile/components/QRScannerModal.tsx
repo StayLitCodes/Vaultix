@@ -6,6 +6,7 @@ import {
   Text,
   TouchableOpacity,
 } from "react-native";
+import * as StellarSdk from "@stellar/stellar-sdk";
 
 import {
   BarCodeScanner,
@@ -57,6 +58,14 @@ export default function QRScannerModal({
     const result = processScannedQRCode(data);
 
     if (result.type === "stellar_address") {
+      if (!StellarSdk.StrKey.isValidEd25519PublicKey(result.value)) {
+        setErrorMessage("Invalid Stellar address format.");
+        setTimeout(() => {
+          setHasScanned(false);
+          setErrorMessage(null);
+        }, 2000);
+        return;
+      }
       onAddressScanned?.(result.value);
       onClose();
       return;

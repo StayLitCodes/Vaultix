@@ -5,6 +5,7 @@ import { ApiRateLimitService } from './api-rate-limit.service';
 import { ApiKeyGuard } from './guards/api-key.guard';
 import { AuthGuard } from '../modules/auth/middleware/auth.guard';
 import { AuthService } from '../modules/auth/services/auth.service';
+import { UserService } from '../modules/user/user.service';
 import { ApiKeyScope } from './entities/api-key.entity';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
@@ -49,6 +50,12 @@ describe('ApiKeyController', () => {
           provide: AuthService,
           useValue: {
             validateToken: jest.fn(),
+          },
+        },
+        {
+          provide: UserService,
+          useValue: {
+            findById: jest.fn(),
           },
         },
       ],

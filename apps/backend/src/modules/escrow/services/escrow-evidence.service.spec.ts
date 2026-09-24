@@ -75,7 +75,7 @@ describe('EscrowEvidenceService', () => {
         } as Express.Multer.File,
       ];
 
-      const mockDispute: Dispute = {
+      const mockDispute = {
         id: mockDisputeId,
         escrowId: mockEscrowId,
         evidenceFiles: [],
@@ -83,7 +83,7 @@ describe('EscrowEvidenceService', () => {
         status: 'open' as any,
         createdAt: new Date(),
         updatedAt: new Date(),
-      } as Dispute;
+      } as unknown as Dispute;
 
       const mockEscrow: Escrow = {
         id: mockEscrowId,
@@ -198,8 +198,8 @@ describe('EscrowEvidenceService', () => {
       // Verify that the saved dispute has both old and new files
       const savedCall = disputeRepo.save.mock.calls[0][0];
       expect(savedCall.evidenceFiles).toHaveLength(2);
-      expect(savedCall.evidenceFiles[0]).toEqual(existingFile);
-      expect(savedCall.evidenceFiles[1].name).toBe('new.png');
+      expect(savedCall.evidenceFiles?.[0]).toEqual(existingFile);
+      expect(savedCall.evidenceFiles?.[1].name).toBe('new.png');
     });
   });
 
@@ -321,11 +321,11 @@ describe('EscrowEvidenceService', () => {
         parties: [{ userId: mockUserId }] as any,
       } as Escrow;
 
-      const mockDispute: Dispute = {
+      const mockDispute = {
         id: mockDisputeId,
         escrowId: mockEscrowId,
         evidenceFiles: [],
-      } as Dispute;
+      } as unknown as Dispute;
 
       const mockResponse = {} as Response;
 

@@ -29,6 +29,7 @@ import {
 } from '@nestjs/swagger';
 import { AuthGuard } from '../../auth/middleware/auth.guard';
 import { AdminGuard } from '../../auth/middleware/admin.guard';
+import { KycGuard } from '../../kyc/guards/kyc.guard';
 import { EscrowAccessGuard } from '../guards/escrow-access.guard';
 import { EscrowExpireGuard } from '../guards/escrow-expire.guard';
 import { EscrowService } from '../services/escrow.service';
@@ -78,6 +79,7 @@ export class EscrowController {
   }
 
   @Post()
+  @UseGuards(KycGuard)
   async create(
     @Body() dto: CreateEscrowDto,
     @Request() req: AuthenticatedRequest,

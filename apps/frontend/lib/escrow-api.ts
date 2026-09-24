@@ -3,12 +3,15 @@ import { ICondition, IDispute, IEscrowExtended } from "@/types/escrow";
 const apiBaseUrl =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") ?? "";
 
+// API version prefix
+const API_VERSION_PREFIX = "/v1";
+
 const buildApiUrl = (path: string) => {
   if (apiBaseUrl) {
-    return `${apiBaseUrl}${path}`;
+    return `${apiBaseUrl}${API_VERSION_PREFIX}${path}`;
   }
 
-  return `/api${path}`;
+  return `/api${API_VERSION_PREFIX}${path}`;
 };
 
 const readErrorMessage = async (response: Response) => {
@@ -94,7 +97,7 @@ export const uploadEvidence = async (
       : null;
 
   const response = await fetch(
-    `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"}/escrows/${escrowId}/evidence`,
+    `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"}/v1/escrows/${escrowId}/evidence`,
     {
       method: "POST",
       headers: {

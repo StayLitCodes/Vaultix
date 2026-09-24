@@ -57,6 +57,69 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## Security Headers
+
+The backend uses [Helmet](https://helmetjs.github.io/) to automatically set security-related HTTP headers on all responses. Since this is an API-only server (no HTML serving), headers are tuned accordingly.
+
+### Headers Configured
+
+| Header                      | Value                                        | Purpose                                          |
+| --------------------------- | -------------------------------------------- | ------------------------------------------------ |
+| `X-Frame-Options`           | `DENY`                                       | Prevents clickjacking by disallowing framing     |
+| `X-Content-Type-Options`    | `nosniff`                                    | Prevents MIME-type sniffing                      |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains`        | Enforces HTTPS (HSTS)                            |
+| `Referrer-Policy`           | `strict-origin-when-cross-origin`            | Controls referrer information sent with requests |
+| `Content-Security-Policy`   | `default-src 'self'; script-src 'self'; ...` | Restricts resource loading to same origin        |
+| `X-XSS-Protection`          | _(disabled)_                                 | Modern browsers use CSP instead                  |
+
+### CORS Configuration
+
+CORS origins are configurable via the `CORS_ORIGINS` environment variable (comma-separated list). Defaults to `http://localhost:3000,http://localhost:3001` for local development.
+
+```env
+CORS_ORIGINS=https://app.vaultix.io,https://admin.vaultix.io
+```
+
+## Admin Role Hierarchy
+
+The backend implements a three-tier role system enforced via JWT authentication and guard middleware.
+
+### Roles
+
+| Role          | Description                                                                                                    |
+| ------------- | -------------------------------------------------------------------------------------------------------------- |
+| `USER`        | Default role for all registered users. Can create/manage own escrows.                                          |
+| `ADMIN`       | Platform administrators. Access to admin dashboard, escrow management, user management, audit logs, analytics. |
+| `SUPER_ADMIN` | Highest privilege level. Includes all ADMIN capabilities plus user role management (promote/demote).           |
+
+### Guard Chain
+
+All admin endpoints require **both** guards in sequence:
+
+```
+@UseGuards(AuthGuard, AdminGuard)   // ADMIN or SUPER_ADMIN
+@UseGuards(AuthGuard, SuperAdminGuard)  // SUPER_ADMIN only
+```
+
+- **AuthGuard** — validates JWT, looks up user from DB, attaches `{ userId, walletAddress, role }` to request. Rejects suspended accounts.
+- **AdminGuard** — verifies `role` is `ADMIN` or `SUPER_ADMIN`. Returns `403` with clear message otherwise.
+- **SuperAdminGuard** — verifies `role` is `SUPER_ADMIN`. Returns `403` with clear message otherwise.
+
+### Role Management Endpoints (Super-Admin Only)
+
+| Method | Endpoint                      | Description                                       |
+| ------ | ----------------------------- | ------------------------------------------------- |
+| `POST` | `/v1/admin/users/:id/promote` | Promote user to ADMIN. Requires `reason` in body. |
+| `POST` | `/v1/admin/users/:id/demote`  | Demote user to USER. Requires `reason` in body.   |
+| `GET`  | `/v1/admin/users/:id/roles`   | View role change history for a user.              |
+
+### Safety Rules
+
+- Cannot promote or demote your own account
+- Cannot demote the last remaining super-admin
+- All role changes require a `reason` (max 500 chars) for audit trail
+- Every role change is logged in `admin_audit_log` with actor ID, action type, old/new role, and reason
+
 ## Database Migrations
 
 This project uses TypeORM migrations for database schema management.

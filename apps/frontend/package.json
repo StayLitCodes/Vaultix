@@ -37,6 +37,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@eslint/js": "^8.57.1",
     "@playwright/test": "^1.58.2",
     "@shadcn/ui": "^0.0.4",
     "@tailwindcss/postcss": "^4",

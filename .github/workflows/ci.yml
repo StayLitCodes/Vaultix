@@ -1,7 +1,7 @@
 name: CI
 on: [push, pull_request]
 jobs:
-  test:
+  frontend-build:
     runs-on: ubuntu-latest
     strategy:
       matrix:

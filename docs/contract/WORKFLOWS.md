@@ -71,7 +71,7 @@ sequenceDiagram
 
 ## 4. Dispute Resolution
 
-If a disagreement arises, either party can raise a dispute, locking the escrow until the Arbitrator steps in.
+If a disagreement arises, either party can raise a dispute, locking the escrow until the Arbitrator steps in. Raising a dispute requires an `evidence_hash` anchoring the off-chain evidence; the Arbitrator may optionally anchor its own `resolution_evidence_hash` with the ruling. See "Dispute Evidence Hash Interop" in `README.md` for the digest convention.
 
 ```mermaid
 sequenceDiagram
@@ -80,11 +80,35 @@ sequenceDiagram
     participant A as Arbitrator
     participant T as Tokens
 
-    U->>C: raise_dispute(id)
+    U->>C: raise_dispute(id, evidence_hash)
     Note over C: Status: Disputed
     
-    A->>C: resolve_dispute(id, winner, split)
+    A->>C: resolve_dispute(id, winner, split, resolution_evidence_hash?)
     C->>T: transfer(winner_amount to Winner)
     C->>T: transfer(other_amount to Other)
     Note over C: Status: Resolved
+```
+
+## 5. Admin Transfer (Two-Step)
+
+A single `set_admin` typo used to permanently lock out contract governance. The
+admin role now changes only through a propose/accept handshake: the current
+admin stages a pending proposal, and only the pending admin — by authenticating
+as themselves — can complete the transfer. A pending proposal expires after
+`ADMIN_PROPOSAL_WINDOW_SECS` (7 days); the current admin can withdraw it at any
+time with `cancel_admin_proposal`.
+
+```mermaid
+sequenceDiagram
+    participant A as Current Admin
+    participant C as VaultixEscrow
+    participant N as New Admin
+
+    A->>C: propose_admin(new_admin)
+    Note over C: Stores pending proposal + expiry window<br/>Admin role unchanged
+    A->>C: cancel_admin_proposal() (optional)
+    Note over C: Withdraws the pending proposal<br/>Admin role unchanged
+    N->>C: accept_admin()
+    Note over C: Requires auth from pending admin<br/>Emits RoleUpdated(Admin, old → new)
+    Note over C: Admin role transferred
 ```

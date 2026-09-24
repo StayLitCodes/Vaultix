@@ -1,5 +1,7 @@
 # Data Models & Storage Layout
 
+> **See also:** [STATUS_MAPPING.md](../STATUS_MAPPING.md) for cross-layer status mapping · [EVENTS.md](EVENTS.md) for event schema · [WORKFLOWS.md](WORKFLOWS.md) for state transitions
+
 This document outlines the core data structures and key-value storage layout of the `VaultixEscrow` smart contract.
 
 ## Structs & Enums
@@ -72,6 +74,16 @@ pub struct Milestone {
 }
 ```
 
+### `AdminProposal`
+Represents a pending two-step admin transfer (see "Admin Transfer (Two-Step
+Handshake)" in `README.md`).
+```rust
+pub struct AdminProposal {
+    pub new_admin: Address, // Address waiting to become admin
+    pub expires_at: u64,    // Ledger timestamp after which accept_admin() fails
+}
+```
+
 ### `EscrowStatus`
 Enumerates all the potential states an `Escrow` can be in:
 - `Created`: Initialized but unfunded.
@@ -101,6 +113,7 @@ Holds global configuration data required frequently.
 ### Persistent Storage
 Holds longer-term state, retaining data specifically for individual escrows and specific roles.
 - `admin` (`Symbol`): (`Address`) The contract admin.
+- `admprop` (`Symbol`): (`AdminProposal`) Pending two-step admin transfer created by `propose_admin`; expires (becomes un-acceptable) after `ADMIN_PROPOSAL_WINDOW_SECS` ledger seconds and is removed on a successful `accept_admin` or a `cancel_admin_proposal`.
 - `operator` (`Symbol`): (`Address`) The emergency operator.
 - `arbitrator` (`Symbol`): (`Address`) The dispute resolution arbitrator.
 - `("escrow", id: u64)`: (`Escrow`) Legacy escrow record format, migrated on access.
@@ -108,3 +121,5 @@ Holds longer-term state, retaining data specifically for individual escrows and 
 - `("escver", id: u64)`: (`u8`) Explicit V2 escrow version marker companion value.
 - `("tokfee", token: Address)`: (`i128`) A token-specific fee BPS override.
 - `("escfee", escrow_id: u64)`: (`i128`) An escrow-specific fee BPS override.
+- `("dispev", escrow_id: u64)`: (`BytesN<32>`) Evidence digest recorded by `raise_dispute`, written only for disputed escrows and given the same TTL as the escrow entry.
+- `("disprev", escrow_id: u64)`: (`BytesN<32>`) Optional resolution evidence digest recorded by the arbitrator in `resolve_dispute`.

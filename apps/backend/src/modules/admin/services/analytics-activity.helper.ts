@@ -15,7 +15,9 @@ export interface RecentActivityItem {
 }
 
 /** Maps raw audit log rows to the shape the activity feed endpoint returns. */
-export function toRecentActivityFeed(logs: AdminAuditLog[]): RecentActivityItem[] {
+export function toRecentActivityFeed(
+  logs: AdminAuditLog[],
+): RecentActivityItem[] {
   return logs.map((log) => ({
     id: log.id,
     actorId: log.actorId,

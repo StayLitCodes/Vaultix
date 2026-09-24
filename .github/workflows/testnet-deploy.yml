@@ -1,0 +1,333 @@
+name: Testnet Deploy
+
+# Manual-only workflow: builds the `onchain` Soroban contract, optimizes it,
+# deploys (or upgrades) it on Stellar testnet, initializes roles, runs a
+# post-deploy smoke check, and records the result in
+# apps/onchain/deployments/testnet.json.
+#
+# See docs/contract/DEPLOYMENT.md for the full runbook (how to trigger this,
+# required secrets, and rollback procedure).
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: >-
+          "deploy" installs the wasm and creates a brand-new contract
+          instance (roles are initialized). "upgrade" installs the wasm and
+          calls the existing contract's own upgrade() entrypoint (no
+          re-initialization).
+        type: choice
+        options:
+          - deploy
+          - upgrade
+        default: deploy
+      existing_contract_id:
+        description: >-
+          Contract ID (C...) to upgrade. Required when mode=upgrade, ignored
+          for mode=deploy.
+        type: string
+        required: false
+      treasury_address:
+        description: >-
+          Treasury address (G...) passed to initialize(). deploy mode only;
+          defaults to the deployer account's own address when left blank.
+        type: string
+        required: false
+      operator_address:
+        description: >-
+          Operator address (G...) passed to init(). deploy mode only;
+          defaults to the deployer account's own address when left blank.
+        type: string
+        required: false
+      arbitrator_address:
+        description: >-
+          Arbitrator address (G...) passed to init(). deploy mode only;
+          defaults to the deployer account's own address when left blank.
+        type: string
+        required: false
+      fee_bps:
+        description: "Initial platform fee in basis points. deploy mode only."
+        type: string
+        default: "50"
+        required: false
+
+# Needed so the final step can commit the updated registry file back to the
+# branch the workflow was run from.
+permissions:
+  contents: write
+
+env:
+  # Pinned to the version whose subcommands/flags this workflow was verified
+  # against locally (`stellar contract deploy --help`, `contract upload
+  # --help`, `contract invoke --help`, `contract optimize --help`).
+  STELLAR_CLI_VERSION: "26.0.0"
+  NETWORK: testnet
+  WASM_FILE: onchain.wasm
+  OPTIMIZED_WASM_FILE: onchain.optimized.wasm
+
+jobs:
+  deploy:
+    name: Build, Deploy & Verify (Stellar Testnet)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/onchain
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        # actions/checkout defaults to github.ref, which for a manually
+        # dispatched run is the branch chosen in the "Run workflow" UI. That
+        # gives the registry-commit step a normal branch ref to push back to.
+
+      - name: Validate inputs
+        env:
+          MODE: ${{ inputs.mode }}
+          EXISTING_CONTRACT_ID: ${{ inputs.existing_contract_id }}
+        run: |
+          if [ "$MODE" = "upgrade" ] && [ -z "$EXISTING_CONTRACT_ID" ]; then
+            echo "::error::mode=upgrade requires 'existing_contract_id' to be set to the contract you want to upgrade."
+            exit 1
+          fi
+          echo "Validated inputs: mode=$MODE"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32v1-none
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "apps/onchain"
+
+      # The Soroban CLI binary was renamed to `stellar`. We build it from
+      # crates.io and cache the compiled binary keyed on the pinned version so
+      # repeat manual runs don't pay the ~2-3 minute compile cost every time.
+      - name: Cache Stellar CLI binary
+        id: cache-stellar-cli
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/stellar
+          key: stellar-cli-${{ runner.os }}-${{ env.STELLAR_CLI_VERSION }}
+
+      - name: Install Stellar CLI
+        if: steps.cache-stellar-cli.outputs.cache-hit != 'true'
+        run: cargo install --locked stellar-cli --version "${{ env.STELLAR_CLI_VERSION }}"
+
+      - name: Verify Stellar CLI
+        run: stellar --version
+
+      - name: Build contract
+        run: cargo build --target wasm32v1-none --release
+
+      - name: Optimize wasm
+        run: |
+          stellar contract optimize \
+            --wasm "target/wasm32v1-none/release/${WASM_FILE}" \
+            --wasm-out "target/wasm32v1-none/release/${OPTIMIZED_WASM_FILE}"
+
+      # We register a named CLI identity instead of passing the raw secret on
+      # every command line. `stellar keys add --secret-key` reads the key
+      # from stdin, so nothing sensitive is ever placed in a command argument
+      # (which would be visible in `ps`/step summaries). GitHub Actions
+      # already masks any registered secret value that appears in logs, but
+      # we still avoid echoing it or printing full command lines that embed
+      # it as defense in depth.
+      - name: Register deployer identity
+        env:
+          DEPLOYER_SECRET: ${{ secrets.STELLAR_TESTNET_DEPLOYER_SECRET_KEY }}
+        run: |
+          if [ -z "$DEPLOYER_SECRET" ]; then
+            echo "::error::Secret STELLAR_TESTNET_DEPLOYER_SECRET_KEY is not configured for this repository."
+            exit 1
+          fi
+          echo "$DEPLOYER_SECRET" | stellar keys add ci-deployer --secret-key
+
+      - name: Fund deployer on testnet (friendbot)
+        # Safe to fail if the account already exists/is funded; the deploy
+        # step below will fail loudly on its own if the account truly has no
+        # balance to pay fees with.
+        continue-on-error: true
+        run: stellar keys fund ci-deployer --network "${NETWORK}"
+
+      - name: Resolve role addresses
+        id: roles
+        env:
+          TREASURY_INPUT: ${{ inputs.treasury_address }}
+          OPERATOR_INPUT: ${{ inputs.operator_address }}
+          ARBITRATOR_INPUT: ${{ inputs.arbitrator_address }}
+        run: |
+          DEPLOYER_ADDRESS=$(stellar keys public-key ci-deployer)
+          TREASURY="${TREASURY_INPUT:-$DEPLOYER_ADDRESS}"
+          OPERATOR="${OPERATOR_INPUT:-$DEPLOYER_ADDRESS}"
+          ARBITRATOR="${ARBITRATOR_INPUT:-$DEPLOYER_ADDRESS}"
+          echo "deployer_address=$DEPLOYER_ADDRESS" >> "$GITHUB_OUTPUT"
+          echo "treasury=$TREASURY" >> "$GITHUB_OUTPUT"
+          echo "operator=$OPERATOR" >> "$GITHUB_OUTPUT"
+          echo "arbitrator=$ARBITRATOR" >> "$GITHUB_OUTPUT"
+          echo "Deployer/admin address: $DEPLOYER_ADDRESS"
+
+      # Uploading first (rather than letting `contract deploy` do it
+      # implicitly) gives us the wasm hash up front, which we need for both
+      # the deploy path (--wasm-hash) and the upgrade path (upgrade's
+      # new_wasm_hash argument), and for the registry file either way.
+      - name: Upload wasm to the network
+        id: upload
+        run: |
+          # Only stdout (the wasm hash, printed on its own final line) is
+          # captured here; stderr is left connected to the job log so any
+          # error from the CLI is still visible if this step fails.
+          WASM_HASH=$(stellar contract upload \
+            --wasm "target/wasm32v1-none/release/${OPTIMIZED_WASM_FILE}" \
+            --source-account ci-deployer \
+            --network "${NETWORK}" \
+            | tail -n1)
+          if [ -z "$WASM_HASH" ]; then
+            echo "::error::stellar contract upload did not return a wasm hash."
+            exit 1
+          fi
+          echo "wasm_hash=$WASM_HASH" >> "$GITHUB_OUTPUT"
+          echo "Uploaded wasm hash: $WASM_HASH"
+
+      - name: Deploy new contract instance
+        id: deploy_new
+        if: inputs.mode == 'deploy'
+        env:
+          WASM_HASH: ${{ steps.upload.outputs.wasm_hash }}
+        run: |
+          # As above: only stdout (the contract id) is captured; stderr
+          # stays connected to the job log.
+          CONTRACT_ID=$(stellar contract deploy \
+            --wasm-hash "$WASM_HASH" \
+            --source-account ci-deployer \
+            --network "${NETWORK}" \
+            | tail -n1)
+          if [ -z "$CONTRACT_ID" ]; then
+            echo "::error::stellar contract deploy did not return a contract id."
+            exit 1
+          fi
+          echo "contract_id=$CONTRACT_ID" >> "$GITHUB_OUTPUT"
+          echo "Deployed contract id: $CONTRACT_ID"
+
+      # `upgrade`'s `new_wasm_hash` argument is a raw [u8; 32] (not a named
+      # BytesN type). We pass it as the hex string the CLI prints for
+      # `contract upload`, matching how fixed-size byte arrays are accepted
+      # elsewhere in the soroban-cli implicit-CLI arg parser. This could not
+      # be verified against a live network in the environment this workflow
+      # was authored in -- if this step ever fails on an encoding error, run
+      # `stellar contract invoke --id <id> --network testnet --source-account
+      # ci-deployer -- upgrade --help` to confirm the exact expected format.
+      - name: Upgrade existing contract wasm
+        if: inputs.mode == 'upgrade'
+        env:
+          WASM_HASH: ${{ steps.upload.outputs.wasm_hash }}
+          CONTRACT_ID: ${{ inputs.existing_contract_id }}
+        run: |
+          stellar contract invoke \
+            --id "$CONTRACT_ID" \
+            --source-account ci-deployer \
+            --network "${NETWORK}" \
+            -- upgrade --new_wasm_hash "$WASM_HASH"
+
+      - name: Resolve deployed contract id
+        id: contract
+        env:
+          MODE: ${{ inputs.mode }}
+          NEW_CONTRACT_ID: ${{ steps.deploy_new.outputs.contract_id }}
+          EXISTING_CONTRACT_ID: ${{ inputs.existing_contract_id }}
+        run: |
+          if [ "$MODE" = "deploy" ]; then
+            echo "contract_id=$NEW_CONTRACT_ID" >> "$GITHUB_OUTPUT"
+          else
+            echo "contract_id=$EXISTING_CONTRACT_ID" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Role initialization only makes sense for a fresh instance. An
+      # upgrade reuses the roles already stored in the existing contract's
+      # persistent storage, so this step is skipped for mode=upgrade.
+      - name: Initialize contract roles
+        if: inputs.mode == 'deploy'
+        env:
+          CONTRACT_ID: ${{ steps.contract.outputs.contract_id }}
+          ADMIN: ${{ steps.roles.outputs.deployer_address }}
+          OPERATOR: ${{ steps.roles.outputs.operator }}
+          ARBITRATOR: ${{ steps.roles.outputs.arbitrator }}
+          TREASURY: ${{ steps.roles.outputs.treasury }}
+          FEE_BPS: ${{ inputs.fee_bps }}
+        run: |
+          stellar contract invoke \
+            --id "$CONTRACT_ID" \
+            --source-account ci-deployer \
+            --network "${NETWORK}" \
+            -- init --admin "$ADMIN" --operator "$OPERATOR" --arbitrator "$ARBITRATOR"
+
+          stellar contract invoke \
+            --id "$CONTRACT_ID" \
+            --source-account ci-deployer \
+            --network "${NETWORK}" \
+            -- initialize --treasury "$TREASURY" --fee_bps "$FEE_BPS"
+
+      # Fails the job (non-zero exit, thanks to `set -e`) if either read call
+      # errors out or the contract turns out not to be initialized.
+      - name: Post-deploy smoke check
+        env:
+          CONTRACT_ID: ${{ steps.contract.outputs.contract_id }}
+        run: |
+          set -e
+          echo "Checking get_admin() on $CONTRACT_ID ..."
+          stellar contract invoke \
+            --id "$CONTRACT_ID" \
+            --source-account ci-deployer \
+            --network "${NETWORK}" \
+            -- get_admin
+
+          echo "Checking get_config() on $CONTRACT_ID ..."
+          stellar contract invoke \
+            --id "$CONTRACT_ID" \
+            --source-account ci-deployer \
+            --network "${NETWORK}" \
+            -- get_config
+
+          echo "Smoke check passed: contract is reachable and initialized."
+
+      - name: Update deployment registry
+        env:
+          CONTRACT_ID: ${{ steps.contract.outputs.contract_id }}
+          WASM_HASH: ${{ steps.upload.outputs.wasm_hash }}
+          MODE: ${{ inputs.mode }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          DEPLOYED_AT=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          cat > deployments/testnet.json <<EOF
+          {
+            "contract_id": "$CONTRACT_ID",
+            "wasm_hash": "$WASM_HASH",
+            "network": "testnet",
+            "commit_sha": "$COMMIT_SHA",
+            "deployed_at": "$DEPLOYED_AT",
+            "mode": "$MODE"
+          }
+          EOF
+          cat deployments/testnet.json
+
+      # Push directly to the branch the workflow was dispatched from, rather
+      # than opening a PR: this is an append-only registry of infrastructure
+      # facts (not source code under review), the workflow is manual/
+      # human-triggered already, and a PR would add friction without adding
+      # meaningful review value for a JSON file of IDs/hashes/timestamps.
+      - name: Commit registry update
+        env:
+          MODE: ${{ inputs.mode }}
+          CONTRACT_ID: ${{ steps.contract.outputs.contract_id }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deployments/testnet.json
+          if git diff --cached --quiet; then
+            echo "No changes to the registry file; nothing to commit."
+          else
+            git commit -m "chore(deploy): record testnet ${MODE} for ${CONTRACT_ID}"
+            git push origin HEAD:"${GITHUB_REF_NAME}"
+          fi

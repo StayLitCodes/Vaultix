@@ -43,11 +43,11 @@ export function useEscrowDetailCache(
       if (cached) {
         setData(cached.data);
         setUpdatedAt(cached.updatedAt);
-
-        const age =
-          Date.now() - cached.updatedAt;
-
-        setStale(age > 1000 * 60 * 30);
+        setStale(cached.stale);
+      } else {
+        setData(null);
+        setUpdatedAt(undefined);
+        setStale(false);
       }
 
       return;

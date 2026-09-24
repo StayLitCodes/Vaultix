@@ -15,7 +15,10 @@ export function buildStateDiff(
   newState: Record<string, unknown>,
 ): StateDiff {
   const changed: StateDiff['changed'] = {};
-  const keys = new Set([...Object.keys(previousState), ...Object.keys(newState)]);
+  const keys = new Set([
+    ...Object.keys(previousState),
+    ...Object.keys(newState),
+  ]);
   for (const key of keys) {
     if (previousState[key] !== newState[key]) {
       changed[key] = { from: previousState[key], to: newState[key] };

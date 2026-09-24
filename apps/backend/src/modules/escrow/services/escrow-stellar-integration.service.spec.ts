@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Test, TestingModule } from '@nestjs/testing';
 import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
 import { getRepositoryToken } from '@nestjs/typeorm';

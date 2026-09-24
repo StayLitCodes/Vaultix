@@ -9,7 +9,7 @@ import { NotificationSender } from './interface/notification-sender.interface';
 import { Notification } from './entities/notification.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { WebhookSender } from './senders/webhook.sender';
-import { Repository, IsNull } from 'typeorm';
+import { QueryFailedError, Repository, IsNull } from 'typeorm';
 import { EmailSender } from './senders/email.sender';
 import { PreferenceService } from './preference.service';
 
@@ -35,13 +35,28 @@ export class NotificationService {
     userId: string,
     eventType: NotificationEventType,
     payload: Record<string, unknown>,
+    idempotencyKey?: string,
   ) {
     const prefs = await this.preferenceService.getUserPreferences(userId);
+    const shouldNotify = prefs.some(
+      (pref) => pref.enabled && pref.eventTypes.includes(eventType),
+    );
+    if (!shouldNotify) return;
 
-    for (const pref of prefs) {
-      if (!pref.enabled) continue;
-      if (!pref.eventTypes.includes(eventType)) continue;
+    if (idempotencyKey) {
+      const existing = await this.repo.findOne({ where: { idempotencyKey } });
+      if (existing) {
+        this.logger.debug({
+          msg: 'Duplicate notification prevented by idempotency key',
+          userId,
+          eventType,
+          idempotencyKey,
+        });
+        return;
+      }
+    }
 
+    try {
       await this.repo.save(
         this.repo.create({
           userId,
@@ -49,8 +64,23 @@ export class NotificationService {
           payload,
           escrowId: (payload.escrowId as string) || undefined,
           status: NotificationStatus.PENDING,
+          idempotencyKey,
         }),
       );
+    } catch (error) {
+      const isUniqueViolation =
+        error instanceof QueryFailedError &&
+        /unique|duplicate|constraint/i.test(error.message);
+      if (idempotencyKey && isUniqueViolation) {
+        this.logger.debug({
+          msg: 'Concurrent duplicate notification prevented by idempotency key',
+          userId,
+          eventType,
+          idempotencyKey,
+        });
+        return;
+      }
+      throw error;
     }
   }
 

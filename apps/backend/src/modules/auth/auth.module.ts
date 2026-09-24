@@ -5,6 +5,7 @@ import { AuthController } from './controllers/auth.controller';
 import { AuthService } from './services/auth.service';
 import { AuthGuard } from './middleware/auth.guard';
 import { AdminGuard } from './middleware/admin.guard';
+import { SuperAdminGuard } from './middleware/super-admin.guard';
 import { UserModule } from '../user/user.module';
 import { IpfsModule } from '../ipfs/ipfs.module';
 import { EmailModule } from '../../email/email.module';
@@ -34,7 +35,7 @@ import { validateJwtSecret } from './services/jwt-validation.util';
     ]),
   ],
   controllers: [AuthController],
-  providers: [AuthService, AuthGuard, AdminGuard],
-  exports: [AuthService, AuthGuard, AdminGuard],
+  providers: [AuthService, AuthGuard, AdminGuard, SuperAdminGuard],
+  exports: [AuthService, AuthGuard, AdminGuard, SuperAdminGuard],
 })
 export class AuthModule {}

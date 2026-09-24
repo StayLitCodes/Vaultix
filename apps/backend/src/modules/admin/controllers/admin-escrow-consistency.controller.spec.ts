@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AdminEscrowConsistencyController } from './admin-escrow-consistency.controller';
 import { ConsistencyCheckerService } from '../services/consistency-checker.service';
+import { AuthGuard } from '../../auth/middleware/auth.guard';
+import { AdminGuard } from '../../auth/middleware/admin.guard';
+import { AuthService } from '../../auth/services/auth.service';
+import { UserService } from '../../user/user.service';
 
 describe('AdminEscrowConsistencyController', () => {
   let controller: AdminEscrowConsistencyController;
@@ -15,6 +19,22 @@ describe('AdminEscrowConsistencyController', () => {
           useValue: {
             checkConsistency: jest.fn(),
           },
+        },
+        {
+          provide: AuthGuard,
+          useValue: { canActivate: jest.fn().mockReturnValue(true) },
+        },
+        {
+          provide: AdminGuard,
+          useValue: { canActivate: jest.fn().mockReturnValue(true) },
+        },
+        {
+          provide: AuthService,
+          useValue: { validateToken: jest.fn() },
+        },
+        {
+          provide: UserService,
+          useValue: { findById: jest.fn() },
         },
       ],
     }).compile();

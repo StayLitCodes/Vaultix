@@ -4,16 +4,20 @@ import {
   Post,
   Param,
   Query,
+  Body,
   UseGuards,
   HttpStatus,
   HttpCode,
+  Req,
 } from '@nestjs/common';
 import { AuthGuard } from '../auth/middleware/auth.guard';
 import { AdminGuard } from '../auth/middleware/admin.guard';
+import { SuperAdminGuard } from '../auth/middleware/super-admin.guard';
 import { AdminService } from './admin.service';
 import { AdminAuditLogService } from './services/admin-audit-log.service';
 import { EscrowStatus } from '../escrow/entities/escrow.entity';
 import { EscrowExpirySchedulerService } from '../escrow/services/escrow-expiry-scheduler.service';
+import { RoleChangeDto } from './dto/role-change.dto';
 
 interface AuditLogQuery {
   actorId?: string;
@@ -101,6 +105,33 @@ export class AdminController {
     @Query('actorId') actorId?: string,
   ) {
     return this.adminService.suspendUser(id, actorId);
+  }
+
+  @Post('users/:id/promote')
+  @UseGuards(AuthGuard, SuperAdminGuard)
+  @HttpCode(HttpStatus.OK)
+  async promoteUser(
+    @Param('id') id: string,
+    @Body() body: RoleChangeDto,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.adminService.promoteUser(id, req.user.userId, body.reason);
+  }
+
+  @Post('users/:id/demote')
+  @UseGuards(AuthGuard, SuperAdminGuard)
+  @HttpCode(HttpStatus.OK)
+  async demoteUser(
+    @Param('id') id: string,
+    @Body() body: RoleChangeDto,
+    @Req() req: { user: { userId: string } },
+  ) {
+    return this.adminService.demoteUser(id, req.user.userId, body.reason);
+  }
+
+  @Get('users/:id/roles')
+  async getUserRoles(@Param('id') id: string) {
+    return this.adminService.getUserRoleHistory(id);
   }
 
   @Post('escrows/:id/refund')
