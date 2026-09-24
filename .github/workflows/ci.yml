@@ -1,37 +1,13 @@
 name: CI
-on: [push, pull_request]
-jobs:
-  frontend-build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: apps/frontend/package-lock.json
-      - name: Install dependencies
-        working-directory: apps/frontend
-        run: npm ci
-      - name: Build
-        working-directory: apps/frontend
-        run: npm run build
 
-  backend-test-and-build:
+# The path-scoped workflows own frontend, backend, contract, and mobile checks.
+# Keep this workflow manual so a push or pull request cannot execute those jobs twice.
+on:
+  workflow_dispatch:
+
+jobs:
+  guidance:
+    name: Use path-scoped checks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: apps/backend/package-lock.json
-      - name: Install dependencies
-        working-directory: apps/backend
-        run: npm ci
-      - name: Test
-        working-directory: apps/backend
-        run: npm test -- --runInBand
-      - name: Build
-        working-directory: apps/backend
-        run: npm run build
+      - run: echo "Frontend, backend, contract, mobile, and API smoke checks run in their path-scoped workflows."
