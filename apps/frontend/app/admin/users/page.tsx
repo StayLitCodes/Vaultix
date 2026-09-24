@@ -1,5 +1,6 @@
 'use client';
 
+import { adminMetadata } from '@/lib/admin-metadata';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Users, Search, ChevronLeft, ChevronRight,
@@ -7,6 +8,8 @@ import {
 } from 'lucide-react';
 import { AdminService } from '@/services/admin';
 import { IAdminUser, IAdminUserResponse } from '@/types/admin';
+
+export const metadata = adminMetadata;
 
 function RoleBadge({ role }: { role: string }) {
   const config: Record<string, { color: string; bg: string }> = {

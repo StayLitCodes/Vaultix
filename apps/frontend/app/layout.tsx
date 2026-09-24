@@ -13,8 +13,56 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Vaultix - Secure Escrow Platform",
+  metadataBase: new URL("https://vaultix.io"),
+  title: {
+    default: "Vaultix - Secure Escrow Platform",
+    template: "%s | Vaultix",
+  },
   description: "Decentralized escrow platform built on Stellar blockchain",
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    title: "Vaultix - Secure Escrow Platform",
+    description: "Decentralized escrow platform built on Stellar blockchain",
+    url: "https://vaultix.io",
+    siteName: "Vaultix",
+    images: [
+      {
+        url: "/og-image.svg",
+        width: 1200,
+        height: 630,
+        alt: "Vaultix - Secure Escrow Platform",
+      },
+    ],
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Vaultix - Secure Escrow Platform",
+    description: "Decentralized escrow platform built on Stellar blockchain",
+    images: ["/og-image.svg"],
+    site: "@Vaultix",
+    creator: "@Vaultix",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  themeColor: "#7c3aed",
+  icons: {
+    icon: "/next.svg",
+    apple: "/next.svg",
+  },
+  manifest: "/manifest.json",
 };
 
 export const viewport: Viewport = {

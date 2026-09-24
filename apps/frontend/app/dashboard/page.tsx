@@ -1,5 +1,32 @@
 "use client";
 
+import { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "My Escrows - Vaultix",
+  description: "Manage all your escrow agreements in one place.",
+  alternates: {
+    canonical: "/dashboard",
+  },
+  openGraph: {
+    title: "My Escrows - Vaultix",
+    description: "Manage all your escrow agreements in one place.",
+    images: ["/og-image.svg"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "My Escrows - Vaultix",
+    description: "Manage all your escrow agreements in one place.",
+    images: ["/og-image.svg"],
+    site: "@Vaultix",
+    creator: "@Vaultix",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+};
+
 import { Suspense, useCallback, useState } from "react";
 import { QueryErrorResetBoundary } from "@tanstack/react-query";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
