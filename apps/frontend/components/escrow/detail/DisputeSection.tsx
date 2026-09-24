@@ -213,7 +213,6 @@ const DisputeSection: React.FC<DisputeSectionProps> = ({
                 >
                   {isImage ? (
                     <div className="relative group">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={url}
                         alt={`Evidence ${index + 1}`}

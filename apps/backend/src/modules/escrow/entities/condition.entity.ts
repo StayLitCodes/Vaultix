@@ -65,11 +65,11 @@ export class Condition {
   @Column({ type: 'simple-json', nullable: true })
   metadata?: Record<string, any>;
 
-  @Column({ type: 'decimal', precision: 18, scale: 7, nullable: true })
-  amount?: number;
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  amount?: string;
 
-  @Column({ type: 'decimal', precision: 18, scale: 7, nullable: true })
-  proposedAmount?: number;
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  proposedAmount?: string;
 
   @Column({ type: 'text', nullable: true })
   proposedDescription?: string;

@@ -12,6 +12,7 @@ import {
   ArrayMinSize,
   ValidateIf,
   IsUUID,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { EscrowType } from '../entities/escrow.entity';
@@ -65,9 +66,10 @@ export class CreateEscrowDto {
   @MaxLength(2000)
   description?: string;
 
-  @IsNumber()
+  @IsString()
+  @Matches(/^(?:0|[1-9]\d{0,38})(?:\.\d+)?$/)
   @IsPositive()
-  amount: number;
+  amount: string;
 
   @IsOptional()
   @ValidateNested()

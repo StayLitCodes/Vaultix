@@ -1,0 +1,123 @@
+name: API Escrow Smoke
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'apps/backend/**'
+      - 'apps/onchain/**'
+      - '.github/workflows/api-escrow-smoke.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'apps/backend/**'
+      - 'apps/onchain/**'
+      - '.github/workflows/api-escrow-smoke.yml'
+  workflow_dispatch:
+
+jobs:
+  real-api-escrow:
+    name: Real API escrow lifecycle
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+    env:
+      PORT: 3001
+      NODE_ENV: test
+      DATABASE_PATH: ${{ github.workspace }}/apps/backend/data/ci-smoke.sqlite
+      JWT_SECRET: vaultix-ci-smoke-jwt-secret
+      STELLAR_NETWORK: local
+      STELLAR_NETWORK_PASSPHRASE: Standalone Network ; February 2017
+      HORIZON_URL: http://127.0.0.1:8000
+      STELLAR_RPC_URL: http://127.0.0.1:8000/rpc
+      SMOKE_API_URL: http://127.0.0.1:3001
+      SMOKE_EXPECTED_STATUS: active
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Install Rust and Soroban CLI
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli --version 26.0.0
+
+      - name: Start local Soroban network
+        run: stellar container start --name vaultix-soroban
+
+      - name: Create and fund deterministic smoke wallets
+        run: |
+          echo "SMOKE_BUYER_SECRET=$(node -e \"const {Keypair}=require('@stellar/stellar-sdk'); console.log(Keypair.fromRawEd25519Seed(Buffer.alloc(32, 1)).secret())\")" >> "$GITHUB_ENV"
+          echo "SMOKE_SELLER_SECRET=$(node -e \"const {Keypair}=require('@stellar/stellar-sdk'); console.log(Keypair.fromRawEd25519Seed(Buffer.alloc(32, 2)).secret())\")" >> "$GITHUB_ENV"
+          echo "WALLET_SECRET=$(node -e \"const {Keypair}=require('@stellar/stellar-sdk'); console.log(Keypair.fromRawEd25519Seed(Buffer.alloc(32, 1)).secret())\")" >> "$GITHUB_ENV"
+          curl --fail --silent --show-error --retry 10 --retry-delay 1 \
+            "http://127.0.0.1:8000/friendbot?addr=$(node -e \"const {Keypair}=require('@stellar/stellar-sdk'); console.log(Keypair.fromRawEd25519Seed(Buffer.alloc(32, 1)).publicKey())\")" > /dev/null
+          curl --fail --silent --show-error --retry 10 --retry-delay 1 \
+            "http://127.0.0.1:8000/friendbot?addr=$(node -e \"const {Keypair}=require('@stellar/stellar-sdk'); console.log(Keypair.fromRawEd25519Seed(Buffer.alloc(32, 2)).publicKey())\")" > /dev/null
+
+      - name: Build and deploy contract to local Soroban
+        working-directory: apps/onchain
+        run: |
+          cargo build --target wasm32v1-none --release
+          stellar keys generate smoke-admin --network local --fund
+          stellar contract deploy \
+            --wasm target/wasm32v1-none/release/onchain.wasm \
+            --source-account smoke-admin \
+            --network local > "$RUNNER_TEMP/contract-id"
+          echo "STELLAR_CONTRACT_ID=$(tail -n1 "$RUNNER_TEMP/contract-id")" >> "$GITHUB_ENV"
+
+      - name: Initialize local contract
+        working-directory: apps/onchain
+        run: |
+          stellar contract invoke --id "$STELLAR_CONTRACT_ID" --source-account smoke-admin --network local -- init \
+            --admin "$(stellar keys address smoke-admin)" \
+            --operator "$(stellar keys address smoke-admin)" \
+            --arbitrator "$(stellar keys address smoke-admin)"
+          stellar contract invoke --id "$STELLAR_CONTRACT_ID" --source-account smoke-admin --network local -- initialize \
+            --treasury "$(stellar keys address smoke-admin)" --fee_bps 0
+
+      - name: Build backend
+        run: npm run build
+
+      - name: Start backend
+        run: npm run start:prod > "$RUNNER_TEMP/backend.log" 2>&1 &
+
+      - name: Wait for backend
+        run: |
+          for attempt in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:3001/api/docs-json/v1 > /dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo 'Backend did not become ready' >&2
+          exit 1
+
+      - name: Run real API escrow smoke
+        run: npm run test:smoke
+
+      - name: Upload backend and smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-escrow-smoke-logs
+          path: |
+            ${{ runner.temp }}/backend.log
+            apps/backend/data/ci-smoke.sqlite
+          if-no-files-found: ignore
+
+      - name: Stop local Soroban network
+        if: always()
+        run: stellar container stop vaultix-soroban

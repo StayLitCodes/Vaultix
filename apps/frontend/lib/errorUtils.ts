@@ -24,7 +24,7 @@ const getStatusCode = (error: unknown): number | undefined => {
     const typedError = error as Record<string, unknown>;
     const statusValue = typedError.status ?? typedError.statusCode ?? typedError.code;
     if (typeof statusValue === 'number') return statusValue;
-    if (typeof statusValue === 'string' && /^\\\d{3}\\b$/.test(statusValue)) {
+    if (typeof statusValue === 'string' && /^\b\d{3}\b$/.test(statusValue)) {
       return Number(statusValue);
     }
   }

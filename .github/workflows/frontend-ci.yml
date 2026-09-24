@@ -13,8 +13,8 @@ on:
       - '.github/workflows/frontend-ci.yml'
 
 jobs:
-  build:
-    name: Build and Test
+  frontend-regressions:
+    name: Frontend Unit and Playwright Regressions
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -37,5 +37,24 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Unit tests
+        run: npm test -- --runInBand
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Selected Playwright regressions
+        run: npm run test:e2e -- --project=chromium e2e/core-flows.spec.ts e2e/escrow-flow.spec.ts
+
       - name: Build
         run: npm run build
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-playwright-report
+          path: |
+            apps/frontend/playwright-report
+            apps/frontend/test-results
+          if-no-files-found: ignore

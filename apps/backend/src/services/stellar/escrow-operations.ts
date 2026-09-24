@@ -1,6 +1,7 @@
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { Injectable, Logger } from '@nestjs/common';
 import { normalizeMetadataHash } from '../../modules/escrow/utils/metadata-hash.util';
+import { MAX_I128 } from '../../modules/escrow/utils/amount.util';
 
 @Injectable()
 export class EscrowOperationsService {
@@ -10,6 +11,21 @@ export class EscrowOperationsService {
 
   constructor() {
     this.contractId = process.env.STELLAR_CONTRACT_ID || '';
+  }
+
+  private i128FromBaseUnits(value: string): StellarSdk.xdr.Int128Parts {
+    if (!/^\d+$/.test(value)) {
+      throw new Error('Soroban amount must be an integer base-unit string');
+    }
+    const baseUnits = BigInt(value);
+    if (baseUnits > MAX_I128) {
+      throw new Error('Soroban amount is outside the i128 range');
+    }
+    const lowMask = (1n << 64n) - 1n;
+    return new StellarSdk.xdr.Int128Parts({
+      lo: new StellarSdk.xdr.Uint64((baseUnits & lowMask).toString()),
+      hi: new StellarSdk.xdr.Int64((baseUnits >> 64n).toString()),
+    });
   }
 
   /**
@@ -41,10 +57,7 @@ export class EscrowOperationsService {
             new StellarSdk.xdr.ScMapEntry({
               key: StellarSdk.xdr.ScVal.scvSymbol('amount'),
               val: StellarSdk.xdr.ScVal.scvI128(
-                new StellarSdk.xdr.Int128Parts({
-                  lo: new StellarSdk.xdr.Uint64(m.amount),
-                  hi: new StellarSdk.xdr.Int64('0'),
-                }),
+                this.i128FromBaseUnits(m.amount),
               ),
             }),
             new StellarSdk.xdr.ScMapEntry({
@@ -272,10 +285,7 @@ export class EscrowOperationsService {
         splitWinnerAmount
           ? StellarSdk.xdr.ScVal.scvVec([
               StellarSdk.xdr.ScVal.scvI128(
-                new StellarSdk.xdr.Int128Parts({
-                  lo: new StellarSdk.xdr.Uint64(splitWinnerAmount),
-                  hi: new StellarSdk.xdr.Int64('0'),
-                }),
+                this.i128FromBaseUnits(splitWinnerAmount),
               ),
             ])
           : StellarSdk.xdr.ScVal.scvVec([]), // Option::None

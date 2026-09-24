@@ -69,7 +69,7 @@ const ConditionsList: React.FC<Props> = ({
             onUpdated={onConditionsUpdated}
             isLastOutstandingCondition={
               Boolean(condition.isFulfilled) &&
-              !Boolean(condition.isMet) &&
+              !condition.isMet &&
               remainingConfirmations === 1
             }
           />
