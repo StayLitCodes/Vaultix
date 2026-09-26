@@ -11,6 +11,7 @@ import {
   OnchainEscrow,
 } from '../../../services/stellar/soroban-client.service';
 import { Escrow } from '../../escrow/entities/escrow.entity';
+import { EscrowChainIdService } from '../../escrow/services/escrow-chain-id.service';
 
 @Injectable()
 export class ConsistencyCheckerService {
@@ -19,25 +20,23 @@ export class ConsistencyCheckerService {
   constructor(
     private readonly escrowService: EscrowService,
     private readonly sorobanClient: SorobanClientService,
+    private readonly chainIds: EscrowChainIdService,
   ) {}
 
   async checkConsistency(
     request: ConsistencyCheckRequest,
   ): Promise<ConsistencyCheckResponse> {
-    // ... (rest of the method logic remains similar, but using this.sorobanClient.getEscrow)
-    // I'll replace the loop part below
-    // 1. Resolve escrow IDs
     let escrowIds: string[] = [];
     if ('escrowIds' in request) {
       escrowIds = request.escrowIds.map(String);
     } else if ('fromId' in request && 'toId' in request) {
-      const from = Number(request.fromId);
-      const to = Number(request.toId);
-      if (isNaN(from) || isNaN(to) || from > to) {
+      const from = BigInt(request.fromId);
+      const to = BigInt(request.toId);
+      if (from > to || to - from >= 50n) {
         throw new Error('Invalid fromId/toId');
       }
-      escrowIds = Array.from({ length: to - from + 1 }, (_, i) =>
-        String(from + i),
+      escrowIds = Array.from({ length: Number(to - from + 1n) }, (_, i) =>
+        (from + BigInt(i)).toString(),
       );
     }
     // Limit batch size
@@ -54,30 +53,41 @@ export class ConsistencyCheckerService {
 
     for (const escrowId of escrowIds) {
       try {
-        // Fetch from DB
-        let dbEscrow: unknown = null;
-        try {
-          dbEscrow = await this.escrowService.findOne(escrowId);
-        } catch (error) {
-          this.logger.warn(
-            `Escrow ${escrowId} not found in DB: ${(error as Error).message}`,
+        const isUuid =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            escrowId,
           );
-          dbEscrow = null;
-        }
-        // Fetch from on-chain (Soroban)
-        let onchainEscrow: unknown = null;
-        try {
-          onchainEscrow = await this.sorobanClient.getEscrow(Number(escrowId));
-        } catch (error) {
-          this.logger.warn(
-            `Escrow ${escrowId} not found on-chain: ${(error as Error).message}`,
-          );
-          onchainEscrow = null;
+        const mappingByUuid = isUuid
+          ? await this.chainIds.findByEscrowId(escrowId)
+          : null;
+        const mappedId =
+          mappingByUuid?.onChainId || (!isUuid ? escrowId : null);
+        const dbId =
+          mappingByUuid?.escrowId ||
+          (mappedId ? await this.chainIds.findEscrowId(mappedId) : null);
+        const dbEscrow = dbId
+          ? await this.escrowService.findOne(dbId).catch(() => null)
+          : null;
+        const onchainEscrow = mappedId
+          ? await this.sorobanClient.getEscrow(mappedId).catch(() => null)
+          : null;
+        const reportId = mappedId || escrowId;
+
+        if (isUuid && (!mappingByUuid || !mappingByUuid.onChainId)) {
+          reports.push({
+            escrowId,
+            isConsistent: false,
+            fieldsMismatched: [],
+            unmappedHistorical: true,
+            error: 'Historical escrow has no verified chain ID mapping',
+          });
+          totalErrored++;
+          continue;
         }
 
         if (!dbEscrow && !onchainEscrow) {
           reports.push({
-            escrowId: Number(escrowId),
+            escrowId: reportId,
             isConsistent: false,
             fieldsMismatched: [],
             missingInDb: true,
@@ -89,7 +99,7 @@ export class ConsistencyCheckerService {
         }
         if (!dbEscrow) {
           reports.push({
-            escrowId: Number(escrowId),
+            escrowId: reportId,
             isConsistent: false,
             fieldsMismatched: [],
             missingInDb: true,
@@ -99,7 +109,7 @@ export class ConsistencyCheckerService {
         }
         if (!onchainEscrow) {
           reports.push({
-            escrowId: Number(escrowId),
+            escrowId: reportId,
             isConsistent: false,
             fieldsMismatched: [],
             missingOnChain: true,
@@ -109,21 +119,18 @@ export class ConsistencyCheckerService {
         }
 
         // Compare fields
-        const mismatches = this.compareEscrow(
-          dbEscrow as Escrow,
-          onchainEscrow as OnchainEscrow,
-        );
+        const mismatches = this.compareEscrow(dbEscrow, onchainEscrow);
         const isConsistent = mismatches.length === 0;
         if (!isConsistent) totalInconsistent++;
         reports.push({
-          escrowId: Number(escrowId),
+          escrowId: reportId,
           isConsistent,
           fieldsMismatched: mismatches,
         });
       } catch (err) {
         this.logger.error(`Error checking escrow ${escrowId}: ${err}`);
         reports.push({
-          escrowId: Number(escrowId),
+          escrowId,
           isConsistent: false,
           fieldsMismatched: [],
           error: String(err),

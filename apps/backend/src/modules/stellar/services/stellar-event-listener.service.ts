@@ -37,6 +37,7 @@ import { SorobanClientService } from '../../../services/stellar/soroban-client.s
 import { ConsistencyCheckerService } from '../../admin/services/consistency-checker.service';
 import { AllowedAsset } from '../../assets/entities/allowed-asset.entity';
 import { EscrowGateway } from '../../../gateways/escrow.gateway';
+import { EscrowChainIdService } from '../../escrow/services/escrow-chain-id.service';
 
 @Injectable()
 export class StellarEventListenerService
@@ -67,6 +68,7 @@ export class StellarEventListenerService
     private sorobanClient: SorobanClientService,
     @Inject(forwardRef(() => ConsistencyCheckerService))
     private consistencyChecker: ConsistencyCheckerService,
+    private chainIds: EscrowChainIdService,
     @Optional() private escrowGateway?: EscrowGateway,
   ) {}
 
@@ -377,7 +379,7 @@ export class StellarEventListenerService
       // First topic is always the event name (Symbol)
       // Second topic is usually the escrow ID (U64)
       if (topics.length > 1) {
-        fields.escrowId = topics[1].u64().low.toString();
+        fields.escrowId = topics[1].u64().toString();
       }
 
       switch (eventType) {
@@ -574,16 +576,17 @@ export class StellarEventListenerService
     escrowId: string,
     expectedStatus: EscrowStatus,
   ) {
-    const escrow = await this.escrowRepository.findOne({
-      where: { id: escrowId },
-    });
+    const databaseId = await this.chainIds.findEscrowId(escrowId);
+    const escrow = databaseId
+      ? await this.escrowRepository.findOne({ where: { id: databaseId } })
+      : null;
     if (escrow && escrow.status !== expectedStatus) {
       this.logger.warn(
         `State mismatch detected for escrow ${escrowId}: DB status is '${escrow.status}', but on-chain event indicates status should be '${expectedStatus}'.`,
       );
       try {
         await this.consistencyChecker.checkConsistency({
-          escrowIds: [Number(escrowId)],
+          escrowIds: [databaseId!],
         });
       } catch (err) {
         this.logger.error(
@@ -597,27 +600,16 @@ export class StellarEventListenerService
   private async handleEscrowCreated(event: StellarEvent) {
     if (!event.escrowId) return;
     // Check if escrow already exists
-    const escrow = await this.escrowRepository.findOne({
-      where: { id: event.escrowId },
-    });
+    const databaseId = await this.chainIds.findEscrowId(event.escrowId);
+    const escrow = databaseId
+      ? await this.escrowRepository.findOne({ where: { id: databaseId } })
+      : null;
 
     if (!escrow) {
       // Create new escrow from event data
-      const newEscrow = this.escrowRepository.create({
-        id: event.escrowId,
-        title: `Escrow ${event.escrowId}`, // Extract from event if available
-        amount: event.amount || 0,
-        assetCode: event.assetCode || 'XLM',
-        assetIssuer: event.assetIssuer || null,
-        status: EscrowStatus.PENDING,
-        creatorId: event.fromAddress, // This would need to be mapped to user ID
-        isActive: true,
-        createdAt: event.timestamp,
-        updatedAt: event.timestamp,
-      } as any);
-
-      await this.escrowRepository.save(newEscrow);
-      this.logger.log(`Created new escrow from blockchain: ${event.escrowId}`);
+      this.logger.warn(
+        `On-chain escrow ${event.escrowId} has no verified UUID mapping; leaving it unmapped`,
+      );
     } else {
       await this.checkStateMismatch(event.escrowId, EscrowStatus.PENDING);
     }
@@ -625,9 +617,10 @@ export class StellarEventListenerService
 
   private async handleEscrowFunded(event: StellarEvent) {
     if (!event.escrowId) return;
-    const escrow = await this.escrowRepository.findOne({
-      where: { id: event.escrowId },
-    });
+    const databaseId = await this.chainIds.findEscrowId(event.escrowId);
+    const escrow = databaseId
+      ? await this.escrowRepository.findOne({ where: { id: databaseId } })
+      : null;
 
     if (escrow) {
       await this.checkStateMismatch(event.escrowId, EscrowStatus.ACTIVE);
@@ -646,10 +639,13 @@ export class StellarEventListenerService
     }
 
     // 1. Find escrow by on-chain ID
-    const escrow = await this.escrowRepository.findOne({
-      where: { id: event.escrowId },
-      relations: ['conditions'],
-    });
+    const databaseId = await this.chainIds.findEscrowId(event.escrowId);
+    const escrow = databaseId
+      ? await this.escrowRepository.findOne({
+          where: { id: databaseId },
+          relations: ['conditions'],
+        })
+      : null;
 
     if (!escrow) {
       this.logger.warn(
@@ -745,9 +741,10 @@ export class StellarEventListenerService
 
   private async handleEscrowCompleted(event: StellarEvent) {
     if (!event.escrowId) return;
-    const escrow = await this.escrowRepository.findOne({
-      where: { id: event.escrowId },
-    });
+    const databaseId = await this.chainIds.findEscrowId(event.escrowId);
+    const escrow = databaseId
+      ? await this.escrowRepository.findOne({ where: { id: databaseId } })
+      : null;
 
     if (escrow) {
       await this.checkStateMismatch(event.escrowId, EscrowStatus.COMPLETED);
@@ -762,9 +759,10 @@ export class StellarEventListenerService
 
   private async handleEscrowCancelled(event: StellarEvent) {
     if (!event.escrowId) return;
-    const escrow = await this.escrowRepository.findOne({
-      where: { id: event.escrowId },
-    });
+    const databaseId = await this.chainIds.findEscrowId(event.escrowId);
+    const escrow = databaseId
+      ? await this.escrowRepository.findOne({ where: { id: databaseId } })
+      : null;
 
     if (escrow) {
       await this.checkStateMismatch(event.escrowId, EscrowStatus.CANCELLED);
@@ -779,9 +777,10 @@ export class StellarEventListenerService
 
   private async handleDisputeCreated(event: StellarEvent) {
     if (!event.escrowId) return;
-    const escrow = await this.escrowRepository.findOne({
-      where: { id: event.escrowId },
-    });
+    const databaseId = await this.chainIds.findEscrowId(event.escrowId);
+    const escrow = databaseId
+      ? await this.escrowRepository.findOne({ where: { id: databaseId } })
+      : null;
 
     if (escrow) {
       await this.checkStateMismatch(event.escrowId, EscrowStatus.DISPUTED);
@@ -798,7 +797,7 @@ export class StellarEventListenerService
     this.logger.log(`Dispute resolved for escrow: ${event.escrowId}`);
     try {
       await this.consistencyChecker.checkConsistency({
-        escrowIds: [Number(event.escrowId)],
+        escrowIds: [event.escrowId],
       });
     } catch (err) {
       this.logger.error(

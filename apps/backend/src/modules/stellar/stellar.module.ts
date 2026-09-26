@@ -8,12 +8,14 @@ import { SorobanClientService } from '../../services/stellar/soroban-client.serv
 import { SorobanBridgeService } from '../../services/stellar/soroban-bridge.service';
 import { Escrow } from '../escrow/entities/escrow.entity';
 import { AdminModule } from '../admin/admin.module';
+import { EscrowChainId } from '../escrow/entities/escrow-chain-id.entity';
+import { EscrowChainIdService } from '../escrow/services/escrow-chain-id.service';
 
 @Global()
 @Module({
   imports: [
     ConfigModule.forFeature(stellarConfig),
-    TypeOrmModule.forFeature([Escrow]),
+    TypeOrmModule.forFeature([Escrow, EscrowChainId]),
     forwardRef(() => AdminModule),
   ],
   providers: [
@@ -21,12 +23,14 @@ import { AdminModule } from '../admin/admin.module';
     EscrowOperationsService,
     SorobanClientService,
     SorobanBridgeService,
+    EscrowChainIdService,
   ],
   exports: [
     StellarService,
     EscrowOperationsService,
     SorobanClientService,
     SorobanBridgeService,
+    EscrowChainIdService,
     ConfigModule.forFeature(stellarConfig),
   ],
 })

@@ -2,6 +2,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ConfigType } from '@nestjs/config';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import stellarConfig from '../../config/stellar.config';
+import { validateSorobanU64 } from '../../modules/escrow/utils/soroban-u64.util';
 
 export interface OnchainEscrow {
   status: string;
@@ -40,7 +41,7 @@ export class SorobanClientService {
   /**
    * Fetches the current state of an escrow from the contract storage
    */
-  async getEscrow(escrowId: number): Promise<OnchainEscrow | null> {
+  async getEscrow(escrowId: string): Promise<OnchainEscrow | null> {
     try {
       this.logger.debug(`Fetching escrow ${escrowId} from contract`);
 
@@ -50,7 +51,7 @@ export class SorobanClientService {
       const key = StellarSdk.xdr.ScVal.scvVec([
         StellarSdk.xdr.ScVal.scvSymbol('escrow'),
         StellarSdk.xdr.ScVal.scvU64(
-          new StellarSdk.xdr.Uint64(escrowId.toString()),
+          new StellarSdk.xdr.Uint64(validateSorobanU64(escrowId)),
         ),
       ]);
 

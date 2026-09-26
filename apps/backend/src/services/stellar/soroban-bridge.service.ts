@@ -7,6 +7,7 @@ import { Escrow } from '../../modules/escrow/entities/escrow.entity';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { StellarSubmitTransactionResponse } from '../../types/stellar.types';
 import { ConsistencyCheckerService } from '../../modules/admin/services/consistency-checker.service';
+import { EscrowChainIdService } from '../../modules/escrow/services/escrow-chain-id.service';
 
 @Injectable()
 export class SorobanBridgeService {
@@ -20,6 +21,7 @@ export class SorobanBridgeService {
     @InjectRepository(Escrow)
     private readonly escrowRepository: Repository<Escrow>,
     private readonly consistencyCheckerService: ConsistencyCheckerService,
+    private readonly chainIds: EscrowChainIdService,
   ) {}
 
   /**
@@ -81,7 +83,7 @@ export class SorobanBridgeService {
         `Triggering consistency check for escrow ${escrowId} to sync state.`,
       );
       await this.consistencyCheckerService.checkConsistency({
-        escrowIds: [Number(escrowId)],
+        escrowIds: [escrowId],
       });
     } catch (error) {
       this.logger.error(
@@ -99,9 +101,10 @@ export class SorobanBridgeService {
     deadline: number,
     metadataReference: string,
   ): Promise<string> {
+    const onChainId = await this.chainIds.allocate(escrowId);
     const operations =
       this.escrowOperationsService.createEscrowInitializationOps(
-        escrowId,
+        onChainId,
         depositorPublicKey,
         recipientPublicKey,
         tokenAddress,
@@ -127,7 +130,8 @@ export class SorobanBridgeService {
     escrowId: string,
     funderPublicKey: string,
   ): Promise<string> {
-    const operations = this.escrowOperationsService.createFundingOps(escrowId);
+    const onChainId = await this.chainIds.requireForEscrow(escrowId);
+    const operations = this.escrowOperationsService.createFundingOps(onChainId);
     const transaction = await this.stellarService.buildTransaction(
       funderPublicKey,
       operations,
@@ -146,8 +150,9 @@ export class SorobanBridgeService {
     milestoneId: number,
     releaserPublicKey: string,
   ): Promise<string> {
+    const onChainId = await this.chainIds.requireForEscrow(escrowId);
     const operations = this.escrowOperationsService.createMilestoneReleaseOps(
-      escrowId,
+      onChainId,
       milestoneId,
     );
     const transaction = await this.stellarService.buildTransaction(
@@ -167,8 +172,9 @@ export class SorobanBridgeService {
     escrowId: string,
     callerPublicKey: string,
   ): Promise<string> {
+    const onChainId = await this.chainIds.requireForEscrow(escrowId);
     const operations = this.escrowOperationsService.createDisputeOps(
-      escrowId,
+      onChainId,
       callerPublicKey,
     );
     const transaction = await this.stellarService.buildTransaction(
@@ -191,8 +197,9 @@ export class SorobanBridgeService {
     splitWinnerAmount?: string,
     resolutionEvidenceHash?: string,
   ): Promise<string> {
+    const onChainId = await this.chainIds.requireForEscrow(escrowId);
     const operations = this.escrowOperationsService.createResolveDisputeOps(
-      escrowId,
+      onChainId,
       winnerPublicKey,
       splitWinnerAmount,
       resolutionEvidenceHash,
@@ -214,7 +221,8 @@ export class SorobanBridgeService {
     escrowId: string,
     cancellerPublicKey: string,
   ): Promise<string> {
-    const operations = this.escrowOperationsService.createCancelOps(escrowId);
+    const onChainId = await this.chainIds.requireForEscrow(escrowId);
+    const operations = this.escrowOperationsService.createCancelOps(onChainId);
     const transaction = await this.stellarService.buildTransaction(
       cancellerPublicKey,
       operations,
@@ -235,7 +243,8 @@ export class SorobanBridgeService {
     // Assuming cancel_escrow works for refunds as well on expired escrows, or there's a specific method.
     // Given the available operations, it seems cancelOps or completeOps might be used.
     // If there was a specific refund op, we'd use it. For now we use cancelOps as it's the closest to refund.
-    const operations = this.escrowOperationsService.createCancelOps(escrowId);
+    const onChainId = await this.chainIds.requireForEscrow(escrowId);
+    const operations = this.escrowOperationsService.createCancelOps(onChainId);
     const transaction = await this.stellarService.buildTransaction(
       callerPublicKey,
       operations,

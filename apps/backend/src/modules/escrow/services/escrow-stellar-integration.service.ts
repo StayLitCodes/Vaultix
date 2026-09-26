@@ -13,18 +13,11 @@ import {
   StellarTransactionResponse,
 } from '../../../types/stellar.types';
 import * as StellarSdk from '@stellar/stellar-sdk';
+import { EscrowChainIdService } from './escrow-chain-id.service';
 
 @Injectable()
 export class EscrowStellarIntegrationService {
   private readonly logger = new Logger(EscrowStellarIntegrationService.name);
-
-  private async resolveContractEscrowId(escrowId: string): Promise<string> {
-    const escrow = await this.escrowRepository.findOne({
-      where: { id: escrowId },
-      select: ['id', 'chainEscrowId'],
-    });
-    return escrow?.chainEscrowId || escrowId;
-  }
 
   constructor(
     @Inject(stellarConfig.KEY)
@@ -37,6 +30,7 @@ export class EscrowStellarIntegrationService {
     private partyRepository: Repository<Party>,
     @InjectRepository(Condition)
     private conditionRepository: Repository<Condition>,
+    private chainIds: EscrowChainIdService,
   ) {}
 
   /**
@@ -90,9 +84,10 @@ export class EscrowStellarIntegrationService {
       }));
 
       // Create operations for escrow initialization
+      const onChainId = await this.chainIds.allocate(escrow.id);
       const operations =
         this.escrowOperationsService.createEscrowInitializationOps(
-          escrow.chainEscrowId || escrowId,
+          onChainId,
           depositor.user.walletAddress, // User's Stellar wallet address
           recipient.user.walletAddress, // User's Stellar wallet address
           escrow.assetCode === 'XLM'
@@ -180,9 +175,9 @@ export class EscrowStellarIntegrationService {
       }
 
       // Create funding operations
-      const operations = this.escrowOperationsService.createFundingOps(
-        await this.resolveContractEscrowId(escrowId),
-      );
+      const onChainId = await this.chainIds.requireForEscrow(escrowId);
+      const operations =
+        this.escrowOperationsService.createFundingOps(onChainId);
 
       // Build the transaction
       const transaction = await this.stellarService.buildTransaction(
@@ -230,8 +225,9 @@ export class EscrowStellarIntegrationService {
       );
 
       // Create milestone release operations
+      const onChainId = await this.chainIds.requireForEscrow(escrowId);
       const operations = this.escrowOperationsService.createMilestoneReleaseOps(
-        await this.resolveContractEscrowId(escrowId),
+        onChainId,
         milestoneId,
       );
 
@@ -275,8 +271,9 @@ export class EscrowStellarIntegrationService {
       );
 
       // Create confirmation operations
+      const onChainId = await this.chainIds.requireForEscrow(escrowId);
       const operations = this.escrowOperationsService.createConfirmationOps(
-        await this.resolveContractEscrowId(escrowId),
+        onChainId,
         confirmerPublicKey,
         milestoneId,
       );
@@ -320,9 +317,9 @@ export class EscrowStellarIntegrationService {
       this.logger.log(`Canceling on-chain escrow ${escrowId}`);
 
       // Create cancel operations
-      const operations = this.escrowOperationsService.createCancelOps(
-        await this.resolveContractEscrowId(escrowId),
-      );
+      const onChainId = await this.chainIds.requireForEscrow(escrowId);
+      const operations =
+        this.escrowOperationsService.createCancelOps(onChainId);
 
       // Build the transaction
       const transaction = await this.stellarService.buildTransaction(
@@ -360,9 +357,9 @@ export class EscrowStellarIntegrationService {
       this.logger.log(`Completing on-chain escrow ${escrowId}`);
 
       // Create completion operations
-      const operations = this.escrowOperationsService.createCompletionOps(
-        await this.resolveContractEscrowId(escrowId),
-      );
+      const onChainId = await this.chainIds.requireForEscrow(escrowId);
+      const operations =
+        this.escrowOperationsService.createCompletionOps(onChainId);
 
       // Build the transaction
       const transaction = await this.stellarService.buildTransaction(
@@ -438,8 +435,9 @@ export class EscrowStellarIntegrationService {
         `Resolving on-chain dispute for escrow ${escrowId} in favor of ${winnerPublicKey}`,
       );
 
+      const onChainId = await this.chainIds.requireForEscrow(escrowId);
       const operations = this.escrowOperationsService.createResolveDisputeOps(
-        await this.resolveContractEscrowId(escrowId),
+        onChainId,
         winnerPublicKey,
         splitWinnerAmount,
         resolutionEvidenceHash,

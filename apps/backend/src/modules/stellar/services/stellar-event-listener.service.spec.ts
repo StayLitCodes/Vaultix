@@ -17,6 +17,7 @@ import { ConfigService } from '@nestjs/config';
 import { ConsistencyCheckerService } from '../../admin/services/consistency-checker.service';
 import { EscrowGateway } from '../../../gateways/escrow.gateway';
 import { NotificationService } from '../../../notifications/notifications.service';
+import { EscrowChainIdService } from '../../escrow/services/escrow-chain-id.service';
 
 describe('StellarEventListenerService', () => {
   let service: StellarEventListenerService;
@@ -99,6 +100,13 @@ describe('StellarEventListenerService', () => {
           provide: ConsistencyCheckerService,
           useValue: {
             checkConsistency: jest.fn().mockResolvedValue({}),
+          },
+        },
+        {
+          provide: EscrowChainIdService,
+          useValue: {
+            findEscrowId: jest.fn().mockResolvedValue('escrow-1'),
+            findByEscrowId: jest.fn().mockResolvedValue(null),
           },
         },
         {

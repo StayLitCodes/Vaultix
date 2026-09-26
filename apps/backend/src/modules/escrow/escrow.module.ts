@@ -31,6 +31,8 @@ import { EscrowIpfsSyncService } from './services/escrow-ipfs-sync.service';
 import { EscrowExpirySchedulerService } from './services/escrow-expiry-scheduler.service';
 import { AdminModule } from '../admin/admin.module';
 import { forwardRef } from '@nestjs/common';
+import { EscrowChainId } from './entities/escrow-chain-id.entity';
+import { EscrowChainIdService } from './services/escrow-chain-id.service';
 import { SorobanTxIntent } from './entities/soroban-tx-intent.entity';
 import { SorobanIntentService } from './services/soroban-intent.service';
 
@@ -45,6 +47,7 @@ import { SorobanIntentService } from './services/soroban-intent.service';
       Dispute,
       User,
       AllowedAsset,
+      EscrowChainId,
       SorobanTxIntent,
     ]),
     AuthModule,
@@ -69,6 +72,7 @@ import { SorobanIntentService } from './services/soroban-intent.service';
     EscrowEvidenceService,
     EscrowIpfsSyncService,
     EscrowExpirySchedulerService,
+    EscrowChainIdService,
     SorobanIntentService,
   ],
   exports: [
@@ -81,6 +85,7 @@ import { SorobanIntentService } from './services/soroban-intent.service';
     EscrowEvidenceService,
     EscrowIpfsSyncService,
     EscrowExpirySchedulerService,
+    EscrowChainIdService,
     SorobanIntentService,
   ],
 })

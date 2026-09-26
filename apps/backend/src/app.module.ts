@@ -44,6 +44,7 @@ import { EmailModule } from './email/email.module';
 import { EmailOutbox } from './email/entities/email-outbox.entity';
 import { KycModule } from './modules/kyc/kyc.module';
 import { KycVerification } from './modules/kyc/entities/kyc-verification.entity';
+import { EscrowChainId } from './modules/escrow/entities/escrow-chain-id.entity';
 import stellarConfig from './config/stellar.config';
 import ipfsConfig from './config/ipfs.config';
 import emailConfig from './config/email.config';
@@ -113,6 +114,7 @@ import { BackupRecord } from './modules/backup/entities/backup-record.entity';
           EmailOutbox,
           BackupRecord,
           KycVerification,
+          EscrowChainId,
         ],
         synchronize: configService.get('NODE_ENV') === 'test',
         migrations: [__dirname + '/migrations/*.ts'],

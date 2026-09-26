@@ -7,6 +7,7 @@ import { Condition } from '../entities/condition.entity';
 import { StellarService } from '../../../services/stellar.service';
 import { EscrowOperationsService } from '../../../services/stellar/escrow-operations';
 import stellarConfig from '../../../config/stellar.config';
+import { EscrowChainIdService } from './escrow-chain-id.service';
 
 describe('EscrowStellarIntegrationService', () => {
   let service: EscrowStellarIntegrationService;
@@ -59,6 +60,15 @@ describe('EscrowStellarIntegrationService', () => {
           provide: getRepositoryToken(Condition),
           useValue: {},
         },
+        {
+          provide: EscrowChainIdService,
+          useValue: {
+            allocate: jest.fn().mockResolvedValue('18446744073709551615'),
+            requireForEscrow: jest
+              .fn()
+              .mockResolvedValue('18446744073709551615'),
+          },
+        },
       ],
     }).compile();
 
@@ -108,7 +118,9 @@ describe('EscrowStellarIntegrationService', () => {
         '100',
       );
       expect(hash).toBe('tx-hash');
-      expect(escrowOps.createFundingOps).toHaveBeenCalledWith('e1');
+      expect(escrowOps.createFundingOps).toHaveBeenCalledWith(
+        '18446744073709551615',
+      );
     });
   });
 
@@ -120,7 +132,10 @@ describe('EscrowStellarIntegrationService', () => {
         'releaser-pubkey',
       );
       expect(hash).toBe('tx-hash');
-      expect(escrowOps.createMilestoneReleaseOps).toHaveBeenCalledWith('e1', 0);
+      expect(escrowOps.createMilestoneReleaseOps).toHaveBeenCalledWith(
+        '18446744073709551615',
+        0,
+      );
     });
   });
 
@@ -129,7 +144,7 @@ describe('EscrowStellarIntegrationService', () => {
       const hash = await service.confirmEscrow('e1', 'confirmer-pubkey', 0);
       expect(hash).toBe('tx-hash');
       expect(escrowOps.createConfirmationOps).toHaveBeenCalledWith(
-        'e1',
+        '18446744073709551615',
         'confirmer-pubkey',
         0,
       );
@@ -140,7 +155,9 @@ describe('EscrowStellarIntegrationService', () => {
     it('should cancel successfully', async () => {
       const hash = await service.cancelOnChainEscrow('e1', 'canceller-pubkey');
       expect(hash).toBe('tx-hash');
-      expect(escrowOps.createCancelOps).toHaveBeenCalledWith('e1');
+      expect(escrowOps.createCancelOps).toHaveBeenCalledWith(
+        '18446744073709551615',
+      );
     });
   });
 
@@ -151,7 +168,9 @@ describe('EscrowStellarIntegrationService', () => {
         'completer-pubkey',
       );
       expect(hash).toBe('tx-hash');
-      expect(escrowOps.createCompletionOps).toHaveBeenCalledWith('e1');
+      expect(escrowOps.createCompletionOps).toHaveBeenCalledWith(
+        '18446744073709551615',
+      );
     });
   });
 
@@ -169,14 +188,14 @@ describe('EscrowStellarIntegrationService', () => {
   describe('resolveOnChainDispute', () => {
     it('should resolve dispute successfully', async () => {
       const hash = await service.resolveOnChainDispute(
-        'e1',
+        '18446744073709551615',
         'winner-pubkey',
         'arbitrator-pubkey',
         '50',
       );
       expect(hash).toBe('tx-hash');
       expect(escrowOps.createResolveDisputeOps).toHaveBeenCalledWith(
-        'e1',
+        '18446744073709551615',
         'winner-pubkey',
         '50',
         undefined,
@@ -192,7 +211,7 @@ describe('EscrowStellarIntegrationService', () => {
         'ab'.repeat(32),
       );
       expect(escrowOps.createResolveDisputeOps).toHaveBeenCalledWith(
-        'e1',
+        '18446744073709551615',
         'winner-pubkey',
         '50',
         'ab'.repeat(32),

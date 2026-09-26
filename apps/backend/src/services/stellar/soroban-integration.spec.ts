@@ -55,6 +55,14 @@ describe('EscrowOperationsService Integration', () => {
     expect(ops[0]).toBeDefined();
   });
 
+  it('round-trips a u64 escrow identifier above JavaScript safe integer range', () => {
+    const value = '18446744073709551615';
+    const encoded = new StellarSdk.xdr.Uint64(value);
+    const decoded = StellarSdk.xdr.Uint64.fromXDR(encoded.toXDR()).toString();
+    expect(decoded).toBe(value);
+    expect(service.createFundingOps(decoded)).toHaveLength(1);
+  });
+
   it('should create milestone release operations', () => {
     const ops = service.createMilestoneReleaseOps('123', 1);
     expect(ops.length).toBe(1);
