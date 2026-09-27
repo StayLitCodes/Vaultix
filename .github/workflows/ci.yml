@@ -1,15 +1,21 @@
 name: CI
 on: [push, pull_request]
 jobs:
-  test:
+  backend-test-and-build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [18, 20, 22]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
-      - run: npm ci 2>/dev/null || npm install
-      - run: npm test 2>/dev/null || echo "Tests completed"
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/backend/package-lock.json
+      - name: Install dependencies
+        working-directory: apps/backend
+        run: npm ci
+      - name: Test
+        working-directory: apps/backend
+        run: npm test -- --runInBand
+      - name: Build
+        working-directory: apps/backend
+        run: npm run build

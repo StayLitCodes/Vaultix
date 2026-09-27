@@ -283,12 +283,24 @@ Organize code logically following the existing structure:
 ```
 apps/backend/src/
 ├── modules/        # Feature modules (auth, escrow, stellar, etc.)
-├── entities/       # TypeORM database entities
 ├── guards/         # Auth & authorization guards
 ├── middleware/     # Custom middleware
 ├── services/       # Business logic
 └── utils/          # Shared utilities
 ```
+
+### Entity Locations
+
+The canonical entity files live within each module (co-located with their feature), not in a top-level `src/entities/` directory:
+
+| Entity | Canonical Location |
+|--------|-------------------|
+| Escrow | `src/modules/escrow/entities/escrow.entity.ts` |
+| Dispute | `src/modules/escrow/entities/dispute.entity.ts` |
+| Condition | `src/modules/escrow/entities/condition.entity.ts` |
+| Notification | `src/notifications/entities/notification.entity.ts` |
+
+Do not create or import from `src/entities/` — that directory has been removed. When working with backend entities, always reference the module-co-located canonical file and register it in `src/app.module.ts` / `src/data-source.ts`.
 
 **Frontend:**
 

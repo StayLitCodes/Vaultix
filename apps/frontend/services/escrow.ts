@@ -8,6 +8,13 @@ import {
 } from "@/types/escrow";
 import { EscrowService as ApiEscrowService } from "./escrow-api";
 
+/** Payload accepted by the dispute endpoint. */
+export interface DisputeEscrowPayload {
+  reason: string;
+  description?: string;
+  evidence?: string[];
+}
+
 export class EscrowService {
   static async getEscrows(
     filters: IEscrowFilters = {},
@@ -31,46 +38,38 @@ export class EscrowService {
     return await ApiEscrowService.createEscrow(data);
   }
 
-  static async updateEscrowStatus(
+  static async fundEscrow(
     id: string,
-    status: IEscrow["status"],
-  ): Promise<IEscrow | null> {
-    return await ApiEscrowService.updateEscrowStatus(id, status);
+    fundingData: { amount: string; asset: string },
+  ): Promise<IEscrow> {
+    return await ApiEscrowService.fundEscrow(id, fundingData);
   }
 
-  static async fundEscrow(id: string, fundingData?: any): Promise<IEscrow> {
-    if (typeof (ApiEscrowService as any).fundEscrow === 'function') {
-      return await (ApiEscrowService as any).fundEscrow(id, fundingData);
-    }
-    const res = await ApiEscrowService.updateEscrowStatus(id, "funded");
-    if (!res) throw new Error("Failed to fund escrow");
-    return res;
-  }
-
+  /**
+   * Releases escrow funds via the dedicated release endpoint. The API class
+   * exposes `releaseFunds`, so it is called directly instead of probing for a
+   * non-existent `releaseEscrow` and falling back to a status mutation. The
+   * release endpoint takes no request body.
+   */
   static async releaseEscrow(id: string): Promise<IEscrow> {
-    if (typeof (ApiEscrowService as any).releaseEscrow === 'function') {
-      return await (ApiEscrowService as any).releaseEscrow(id);
-    }
-    const res = await ApiEscrowService.updateEscrowStatus(id, "released");
-    if (!res) throw new Error("Failed to release escrow");
-    return res;
+    return await ApiEscrowService.releaseFunds(id);
   }
 
-  static async cancelEscrow(id: string): Promise<IEscrow> {
-    if (typeof (ApiEscrowService as any).cancelEscrow === 'function') {
-      return await (ApiEscrowService as any).cancelEscrow(id);
-    }
-    const res = await ApiEscrowService.updateEscrowStatus(id, "cancelled");
-    if (!res) throw new Error("Failed to cancel escrow");
-    return res;
+  static async cancelEscrow(id: string, reason?: string): Promise<IEscrow> {
+    return await ApiEscrowService.cancelEscrow(id, reason);
   }
 
-  static async disputeEscrow(id: string, reason?: string): Promise<IEscrow> {
-    if (typeof (ApiEscrowService as any).disputeEscrow === 'function') {
-      return await (ApiEscrowService as any).disputeEscrow(id, reason);
-    }
-    const res = await ApiEscrowService.updateEscrowStatus(id, "disputed");
-    if (!res) throw new Error("Failed to dispute escrow");
-    return res;
+  /**
+   * Files a dispute via the dedicated dispute endpoint. The API class exposes
+   * `fileDispute`, so it is called directly. The old fallback asked
+   * `updateEscrowStatus` for a "disputed" transition that it explicitly did
+   * not support, which always threw; there is no status-mutation path here.
+   * The reason and evidence payload is preserved and sent to the endpoint.
+   */
+  static async disputeEscrow(
+    id: string,
+    payload: DisputeEscrowPayload,
+  ): Promise<IEscrow> {
+    return await ApiEscrowService.fileDispute(id, payload);
   }
 }

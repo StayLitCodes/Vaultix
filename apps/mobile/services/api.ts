@@ -7,10 +7,9 @@ import {
   ReleaseMilestonePayload,
 } from '../types/escrow';
 import { withRetry } from '../utils/retry';
-import { Notification, NotificationsResponse } from '../types/notification';
+import { NotificationsResponse } from '../types/notification';
 import { getAccessToken, getSecureAccessToken } from './session';
-
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
+import { envConfig } from '../security/env';
 
 /**
  * The Nest auth module is URI-versioned (`app.enableVersioning`), so its routes
@@ -20,7 +19,7 @@ const API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? 'http://localhost:3
 const AUTH_PATH_PREFIX = process.env.EXPO_PUBLIC_AUTH_PATH_PREFIX ?? '/v1/auth';
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: envConfig.apiUrl,
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 });
@@ -177,7 +176,33 @@ export const notificationApi = {
     await api.post('/api/notifications/mark-as-read', { notificationId });
   },
 };
+export interface ServerDispute {
+  id: string;
+  escrowId: string;
+  reason: string;
+  status: string;
+  evidence?: string[] | null;
+  outcome?: string | null;
+  resolutionNotes?: string | null;
+  resolvedAt?: string | null;
+}
+
 export const disputeApi = {
+  /** File a dispute against an escrow; evidence holds CIDs from uploadEvidence */
+  file: async (
+    escrowId: string,
+    payload: { reason: string; evidence?: string[] },
+  ): Promise<ServerDispute> => {
+    const { data } = await api.post<ServerDispute>(`/api/escrows/${escrowId}/dispute`, payload);
+    return data;
+  },
+
+  /** Fetch the dispute for an escrow (404 when none exists) */
+  get: async (escrowId: string): Promise<ServerDispute | null> => {
+    const { data } = await api.get<ServerDispute | null>(`/api/escrows/${escrowId}/dispute`);
+    return data;
+  },
+
   /** #409 — upload evidence file for a dispute, returns CID and URL */
   uploadEvidence: async (
     escrowId: string,
@@ -186,11 +211,10 @@ export const disputeApi = {
     mimeType: string,
   ): Promise<{ cid: string; url: string }> => {
     const formData = new FormData();
-    formData.append('file', {
-      uri: fileUri,
-      name: fileName,
-      type: mimeType,
-    } as any);
+    /* React Native's FormData accepts { uri, name, type } but TS types don't reflect it */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fileBlob = { uri: fileUri, name: fileName, type: mimeType } as any;
+    formData.append('files', fileBlob);
 
     const { data } = await api.post<{ cid: string; url: string }>(
       `/api/escrows/${escrowId}/evidence`,

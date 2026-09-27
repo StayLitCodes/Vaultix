@@ -4,6 +4,7 @@ import {
   Entity,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
+  Index,
 } from 'typeorm';
 import {
   NotificationEventType,
@@ -39,6 +40,10 @@ export class Notification {
 
   @Column({ type: 'datetime', nullable: true })
   readAt?: Date;
+
+  @Column({ nullable: true })
+  @Index({ unique: true })
+  idempotencyKey?: string;
 
   @CreateDateColumn()
   createdAt: Date;

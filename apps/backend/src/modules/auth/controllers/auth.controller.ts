@@ -70,6 +70,7 @@ export class AuthController {
       avatarUrl: user.avatarUrl,
       bio: user.bio,
       preferredAsset: user.preferredAsset,
+      kycStatus: user.kycStatus,
     };
   }
 

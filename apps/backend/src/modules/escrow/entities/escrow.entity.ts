@@ -41,6 +41,7 @@ export enum EscrowType {
   'status',
   'createdAt',
 ])
+@Index('IDX_escrows_chainEscrowId', ['chainEscrowId'], { unique: true })
 export class Escrow {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -52,10 +53,11 @@ export class Escrow {
   description?: string;
 
   @Column({ type: 'decimal', precision: 18, scale: 7 })
-  amount: number;
+  /** SQL decimal amounts remain strings to avoid IEEE-754 loss. */
+  amount: string;
 
   @Column({ type: 'decimal', precision: 18, scale: 7, default: 0 })
-  releasedAmount: number;
+  releasedAmount: string;
 
   @Column({ default: 'XLM', name: 'asset_code' })
   assetCode: string;
@@ -88,8 +90,20 @@ export class Escrow {
   @Column({ nullable: true })
   stellarTxHash?: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  chainEscrowId?: string;
+
   @Column({ type: 'datetime', nullable: true })
   fundedAt?: Date;
+
+  /**
+   * The u64 the contract uses for this escrow. The contract takes the escrow id
+   * as an explicit argument, so this is allocated once when the create intent
+   * is prepared and then reused by every later operation. Kept as a string
+   * because u64 exceeds the JS safe-integer range.
+   */
+  @Column({ type: 'varchar', nullable: true, name: 'on_chain_id' })
+  onChainId?: string | null;
 
   @Column({ default: false })
   isReleased: boolean;

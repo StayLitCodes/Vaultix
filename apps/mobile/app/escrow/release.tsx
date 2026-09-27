@@ -5,7 +5,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -61,7 +60,7 @@ function StatusStep({ step, current }: { step: typeof TX_STEPS[number]; current:
 }
 
 export default function ReleaseMilestoneScreen() {
-  const { escrowId, milestoneId } = useLocalSearchParams<{ escrowId: string; milestoneId: string }>();
+  const { escrowId, milestoneId } = useLocalSearchParams<{ escrowId?: string; milestoneId?: string }>();
   const router = useRouter();
   const [tx, setTx] = useState<TxState>({ status: 'idle' });
   const pollCount = useRef(0);
@@ -105,15 +104,6 @@ export default function ReleaseMilestoneScreen() {
 
   useEffect(() => () => stopPolling(), [stopPolling]);
 
-  if (!escrowId || !milestoneId) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Invalid Release Link</Text>
-        <Text style={styles.subtitle}>This milestone release link is missing required information.</Text>
-      </View>
-    );
-  }
-
   const handleRelease = useCallback(async () => {
     if (!escrowId || !milestoneId) return;
     pollCount.current = 0;
@@ -129,8 +119,19 @@ export default function ReleaseMilestoneScreen() {
   }, [escrowId, milestoneId, pollTxStatus]);
 
   const handleRetry = useCallback(() => {
+    if (!escrowId || !milestoneId) return;
     setTx({ status: 'idle' });
-  }, []);
+  }, [escrowId, milestoneId]);
+
+  // All hooks must run before this return: params can arrive after the first render
+  if (!escrowId || !milestoneId) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>Invalid Release Link</Text>
+        <Text style={styles.subtitle}>This milestone release link is missing required information.</Text>
+      </View>
+    );
+  }
 
   const visibleSteps = TX_STEPS.filter((s) => s.status !== 'failed');
 

@@ -4,18 +4,6 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 
-interface NetInfoState {
-  isConnected: boolean | null;
-  isInternetReachable: boolean | null;
-  type: string;
-}
-
-const DEFAULT_STATE: NetInfoState = {
-  isConnected: null,
-  isInternetReachable: null,
-  type: 'unknown',
-};
-
 let NetInfoModule: typeof import('@react-native-community/netinfo') | null = null;
 
 try {

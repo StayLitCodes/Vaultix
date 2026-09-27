@@ -16,6 +16,8 @@ import { User } from './modules/user/entities/user.entity';
 import { RefreshToken } from './modules/user/entities/refresh-token.entity';
 import { EmailVerification } from './modules/user/entities/email-verification.entity';
 import { Escrow } from './modules/escrow/entities/escrow.entity';
+import { EscrowCreationIntent } from './modules/escrow/entities/escrow-creation-intent.entity';
+import { SorobanTxIntent } from './modules/escrow/entities/soroban-tx-intent.entity';
 import { Party } from './modules/escrow/entities/party.entity';
 import { Condition } from './modules/escrow/entities/condition.entity';
 import { EscrowEvent } from './modules/escrow/entities/escrow-event.entity';
@@ -40,11 +42,16 @@ import { HealthModule } from './modules/health/health.module';
 import { AppVersionModule } from './app-version/app-version.module';
 import { EmailModule } from './email/email.module';
 import { EmailOutbox } from './email/entities/email-outbox.entity';
+import { KycModule } from './modules/kyc/kyc.module';
+import { KycVerification } from './modules/kyc/entities/kyc-verification.entity';
+import { EscrowChainId } from './modules/escrow/entities/escrow-chain-id.entity';
 import stellarConfig from './config/stellar.config';
 import ipfsConfig from './config/ipfs.config';
 import emailConfig from './config/email.config';
 import webhookConfig from './config/webhook.config';
 import { ApiV2Module } from './modules/versioning/api-v2.module';
+import { BackupModule } from './modules/backup/backup.module';
+import { BackupRecord } from './modules/backup/entities/backup-record.entity';
 
 @Module({
   imports: [
@@ -89,6 +96,7 @@ import { ApiV2Module } from './modules/versioning/api-v2.module';
           RefreshToken,
           EmailVerification,
           Escrow,
+          EscrowCreationIntent,
           Party,
           Condition,
           EscrowEvent,
@@ -102,11 +110,15 @@ import { ApiV2Module } from './modules/versioning/api-v2.module';
           WebhookDeadLetter,
           StellarEvent,
           AllowedAsset,
+          SorobanTxIntent,
           EmailOutbox,
+          BackupRecord,
+          KycVerification,
+          EscrowChainId,
         ],
-        synchronize: false,
+        synchronize: configService.get('NODE_ENV') === 'test',
         migrations: [__dirname + '/migrations/*.ts'],
-        migrationsRun: true,
+        migrationsRun: configService.get('NODE_ENV') !== 'test',
       }),
       inject: [ConfigService],
     }),
@@ -125,6 +137,8 @@ import { ApiV2Module } from './modules/versioning/api-v2.module';
     AppVersionModule,
     EmailModule,
     ApiV2Module,
+    BackupModule,
+    KycModule,
     JwtModule.registerAsync({
       useFactory: (configService: ConfigService) => ({
         secret: validateJwtSecret(configService.get<string>('JWT_SECRET')),

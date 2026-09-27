@@ -16,6 +16,7 @@ import FileDisputeModal from "@/components/escrow/detail/file-dispute-modal";
 import DisputeSection from "@/components/escrow/detail/DisputeSection";
 import ArbitratorResolutionModal from "@/components/escrow/detail/ArbitratorResolutionModal";
 import { EscrowDetailSkeleton } from "@/components/ui/EscrowDetailSkeleton";
+import { CanonicalEscrowStatus } from '@/utils/escrowStatus';
 
 const EscrowDetailPage = () => {
   const { id } = useParams();
@@ -49,7 +50,7 @@ const EscrowDetailPage = () => {
   }, [escrow, publicKey]);
 
   const fetchDisputeData = useCallback(async () => {
-    if (escrow?.status !== "DISPUTED") {
+    if (escrow?.status !== CanonicalEscrowStatus.DISPUTED) {
       setDispute(null);
       return;
     }
@@ -136,7 +137,7 @@ const EscrowDetailPage = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mt-4 sm:mt-8">
           <div className="lg:col-span-2 space-y-4 sm:space-y-6">
-            {escrow.status === "DISPUTED" && (
+            {escrow.status === CanonicalEscrowStatus.DISPUTED && (
               <DisputeSection
                 escrowId={escrow.id}
                 escrowStatus={escrow.status}

@@ -46,6 +46,7 @@ export default function TransactionTracker({
         }
 
         if (!res.ok) {
+          if (intervalId) clearInterval(intervalId)
           const text = await res.text()
           setError(`Horizon error: ${res.status} ${text}`)
           setStatus('failed')
@@ -58,9 +59,11 @@ export default function TransactionTracker({
         // Horizon transaction object includes `successful` boolean
         if (body && typeof body.successful === 'boolean') {
           if (body.successful) {
+            if (intervalId) clearInterval(intervalId)
             setStatus('confirmed')
             onStatusChange?.('confirmed')
           } else {
+            if (intervalId) clearInterval(intervalId)
             setStatus('failed')
             onStatusChange?.('failed')
             setError('Transaction failed on-chain')
@@ -72,6 +75,7 @@ export default function TransactionTracker({
         }
       } catch (err: any) {
         if (!mounted) return
+        if (intervalId) clearInterval(intervalId)
         setError(err?.message || String(err))
         setStatus('failed')
         onStatusChange?.('failed')

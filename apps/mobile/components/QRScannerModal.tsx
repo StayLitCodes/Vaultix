@@ -6,11 +6,13 @@ import {
   Text,
   TouchableOpacity,
 } from "react-native";
+import * as StellarSdk from "@stellar/stellar-sdk";
 
 import {
-  BarCodeScanner,
-  BarCodeScannerResult,
-} from "expo-barcode-scanner";
+  BarcodeScanningResult,
+  CameraView,
+  useCameraPermissions,
+} from "expo-camera";
 
 import { processScannedQRCode } from "../services/qrScanner";
 import ScanResultBanner from "./ScanResultBanner";
@@ -29,8 +31,7 @@ export default function QRScannerModal({
   onEscrowScanned,
 }: Props) {
 
-  const [permission, setPermission] =
-    useState<boolean | null>(null);
+  const [permission, requestPermission] = useCameraPermissions();
 
   const [hasScanned, setHasScanned] = useState(false);
 
@@ -38,17 +39,14 @@ export default function QRScannerModal({
     useState<string | null>(null);
 
   useEffect(() => {
-    (async () => {
-      const { status } =
-        await BarCodeScanner.requestPermissionsAsync();
-
-      setPermission(status === "granted");
-    })();
-  }, []);
+    if (visible && permission?.status === "undetermined") {
+      void requestPermission();
+    }
+  }, [visible, permission?.status, requestPermission]);
 
   const handleScan = ({
     data,
-  }: BarCodeScannerResult) => {
+  }: BarcodeScanningResult) => {
 
     if (hasScanned) return;
 
@@ -57,6 +55,14 @@ export default function QRScannerModal({
     const result = processScannedQRCode(data);
 
     if (result.type === "stellar_address") {
+      if (!StellarSdk.StrKey.isValidEd25519PublicKey(result.value)) {
+        setErrorMessage("Invalid Stellar address format.");
+        setTimeout(() => {
+          setHasScanned(false);
+          setErrorMessage(null);
+        }, 2000);
+        return;
+      }
       onAddressScanned?.(result.value);
       onClose();
       return;
@@ -78,7 +84,7 @@ export default function QRScannerModal({
     }, 2000);
   };
 
-  if (permission === false) {
+  if (permission && !permission.granted) {
     return (
       <Modal visible={visible} transparent>
         <View style={styles.permissionBackdrop}>
@@ -105,10 +111,13 @@ export default function QRScannerModal({
     <Modal visible={visible} animationType="slide">
       <View style={styles.scannerContainer}>
 
-        <BarCodeScanner
-          onBarCodeScanned={handleScan}
-          style={{ flex: 1 }}
-        />
+        {permission?.granted && (
+          <CameraView
+            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+            onBarcodeScanned={handleScan}
+            style={{ flex: 1 }}
+          />
+        )}
 
         <View style={styles.header}>
           <Text style={styles.headerText}>

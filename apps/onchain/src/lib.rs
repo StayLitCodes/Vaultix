@@ -23,10 +23,7 @@ impl VaultixEscrow {
         // Emit ContractUpgraded event
         publish_event(
             &env,
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "ContractUpgraded"),
-            ),
+            event_topic(&env, "ContractUpgraded"),
             hash_bytes.clone(),
         );
 
@@ -95,6 +92,8 @@ pub struct Escrow {
     pub required_signatures: u32, // Number of signatures required for release
     pub collected_signatures: Vec<Address>, // Addresses that have signed for release
     pub metadata_hash: BytesN<32>, // Raw SHA-256 digest bytes for escrow metadata
+    pub funded_amount: i128,    // Actual tokens deposited (0 until deposit_funds succeeds)
+    pub approved_signers: Vec<Address>, // Addresses approved to sign for multisig release
 }
 
 #[contracttype]
@@ -113,6 +112,8 @@ pub(crate) struct EscrowEntryV2 {
     collected_signatures: Vec<Address>,
     fee_override_bps: i128,
     metadata_hash: BytesN<32>,
+    funded_amount: i128,
+    approved_signers: Vec<Address>,
 }
 
 #[contracttype]
@@ -175,6 +176,34 @@ pub struct RoleUpdatedEvent {
     pub had_old_address: bool,
     pub old_address: Address,
     pub new_address: Address,
+    pub timestamp: u64,
+}
+
+/// A pending admin-transfer proposal created by `propose_admin`.
+///
+/// `expires_at` is a ledger timestamp (`env.ledger().timestamp()`, in seconds)
+/// marking the end of the `ADMIN_PROPOSAL_WINDOW_SECS` acceptance window.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct AdminProposal {
+    pub new_admin: Address,
+    pub expires_at: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct AdminProposedEvent {
+    pub caller: Address,
+    pub new_admin: Address,
+    pub expires_at: u64,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct AdminProposalCancelledEvent {
+    pub caller: Address,
+    pub new_admin: Address,
     pub timestamp: u64,
 }
 
@@ -401,11 +430,26 @@ pub enum Error {
     InvalidMetadataHash = 30,
     UnsupportedEscrowVersion = 31,
     DisputeEvidenceNotFound = 32,
+    AdminProposalNotFound = 33,
+    AdminProposalExpired = 34,
+    InvalidAdminProposal = 35,
+    ContractNotInitialized = 36,
+    InvalidSignerConfiguration = 37,
 }
 
 const DEFAULT_FEE_BPS: i128 = 50;
 const BPS_DENOMINATOR: i128 = 10000;
+/// Ledger-seconds window that a pending admin proposal remains acceptable.
+///
+/// A proposal created by `propose_admin` can only be accepted by the pending
+/// admin within this window; once it elapses the proposal expires and the
+/// current admin remains in force. See "Admin Transfer (Two-Step Handshake)"
+/// in `docs/contract/README.md` for the full flow.
+const ADMIN_PROPOSAL_WINDOW_SECS: u64 = 7 * 24 * 60 * 60; // 7 days
 const MAX_BATCH_SIZE: u32 = 20;
+/// Minimum number of seconds a deadline must be in the future at creation time.
+/// Prevents escrows that expire within the same ledger or within a trivially short window.
+const MIN_DEADLINE_LEAD_SECS: u64 = 60;
 const ESCROW_ENTRY_STORAGE_VERSION: i128 = 2;
 const EVENT_NAMESPACE: &str = "Vaultix";
 const EVENT_SCHEMA_VERSION: &str = "v1";
@@ -432,28 +476,48 @@ pub struct VaultixEscrow;
 
 #[contractimpl]
 impl VaultixEscrow {
-    pub fn initialize(env: Env, treasury: Address, fee_bps: Option<i128>) -> Result<(), Error> {
-        if env.storage().instance().has(&symbol_short!("treasury")) {
-            return Err(Error::AlreadyInitialized);
-        }
-
-        treasury.require_auth();
-
+    /// Atomic constructor — runs exactly once at deploy time.
+    ///
+    /// Sets all roles (admin, operator, arbitrator, treasury) and the global
+    /// fee in a single transaction, eliminating the permissionless-initializer
+    /// window that existed with the old `init()` / `initialize()` pair.
+    ///
+    /// BREAKING CHANGE (issue #621): replaces `init()` and `initialize()`.
+    pub fn __constructor(
+        env: Env,
+        admin: Address,
+        operator: Address,
+        arbitrator: Address,
+        treasury: Address,
+        fee_bps: Option<i128>,
+    ) {
         let fee = fee_bps.unwrap_or(DEFAULT_FEE_BPS);
+        assert!(
+            (0..=BPS_DENOMINATOR).contains(&fee),
+            "fee_bps must be in [0, 10000]"
+        );
 
-        if !(0..=BPS_DENOMINATOR).contains(&fee) {
-            return Err(Error::InvalidFeeConfiguration);
-        }
-
+        env.storage().persistent().set(&admin_storage_key(), &admin);
+        env.storage()
+            .persistent()
+            .set(&operator_storage_key(), &operator);
+        env.storage()
+            .persistent()
+            .set(&arbitrator_storage_key(), &arbitrator);
         env.storage()
             .instance()
             .set(&symbol_short!("treasury"), &treasury);
         env.storage()
             .instance()
             .set(&symbol_short!("fee_bps"), &fee);
+        env.storage().instance().set(&symbol_short!("init"), &true);
+        extend_roles_ttl(&env);
 
         let timestamp = current_timestamp(&env);
 
+        emit_role_updated(&env, Role::Admin, None, admin, timestamp);
+        emit_role_updated(&env, Role::Operator, None, operator, timestamp);
+        emit_role_updated(&env, Role::Arbitrator, None, arbitrator, timestamp);
         emit_role_updated(&env, Role::Treasury, None, treasury.clone(), timestamp);
 
         publish_event(
@@ -470,8 +534,13 @@ impl VaultixEscrow {
                 timestamp,
             },
         );
+    }
 
-        Ok(())
+    /// Returns `true` once the contract has been fully initialized via the
+    /// constructor. Deploy workflows (issue #575) can call this as a smoke
+    /// check.
+    pub fn is_initialized(env: Env) -> bool {
+        env.storage().instance().has(&symbol_short!("init"))
     }
 
     pub fn update_fee(env: Env, new_fee_bps: i128) -> Result<(), Error> {
@@ -690,19 +759,137 @@ impl VaultixEscrow {
         Ok(treasury)
     }
 
-    pub fn set_admin(env: Env, new_admin: Address) -> Result<(), Error> {
+    /// Propose a new admin as part of the two-step admin transfer handshake.
+    ///
+    /// Only the current admin may propose. The current admin stays in force
+    /// until the pending admin proves control of their key by calling
+    /// `accept_admin`. Proposing again replaces any existing pending proposal
+    /// and restarts its expiry window. Emits an `AdminProposed` event.
+    pub fn propose_admin(env: Env, new_admin: Address) -> Result<(), Error> {
         let current_admin = get_admin_internal(&env)?;
         current_admin.require_auth();
 
+        if new_admin == current_admin {
+            return Err(Error::InvalidAdminProposal);
+        }
+
         let timestamp = current_timestamp(&env);
+
+        let proposal = AdminProposal {
+            new_admin: new_admin.clone(),
+            expires_at: timestamp.saturating_add(ADMIN_PROPOSAL_WINDOW_SECS),
+        };
 
         env.storage()
             .persistent()
-            .set(&admin_storage_key(), &new_admin);
-        extend_roles_ttl(&env);
-        emit_role_updated(&env, Role::Admin, Some(current_admin), new_admin, timestamp);
+            .set(&admin_proposal_storage_key(), &proposal);
+        extend_admin_proposal_ttl(&env);
+
+        publish_event(
+            &env,
+            event_topic(&env, "AdminProposed"),
+            AdminProposedEvent {
+                caller: current_admin,
+                new_admin,
+                expires_at: proposal.expires_at,
+                timestamp,
+            },
+        );
 
         Ok(())
+    }
+
+    /// Complete a pending admin transfer.
+    ///
+    /// Only the pending admin themselves can accept; this proves control of the
+    /// key and immediately promotes them, emitting the existing `RoleUpdated`
+    /// event. A proposal can only be accepted within `ADMIN_PROPOSAL_WINDOW_SECS`
+    /// of being proposed; once that window passes the proposal is inert — it
+    /// can never be accepted — and the current admin remains in force until it
+    /// is withdrawn via `cancel_admin_proposal` or replaced by a new proposal.
+    pub fn accept_admin(env: Env) -> Result<(), Error> {
+        let proposal = load_admin_proposal(&env)?;
+        let timestamp = current_timestamp(&env);
+
+        if timestamp > proposal.expires_at {
+            // An expired proposal can never complete the handshake. (Storage
+            // writes are reverted when a contract returns an error, so the
+            // stale entry stays in place, inert, until the admin cancels it or
+            // proposes again.)
+            return Err(Error::AdminProposalExpired);
+        }
+
+        proposal.new_admin.require_auth();
+
+        let current_admin = get_admin_internal(&env)?;
+
+        env.storage()
+            .persistent()
+            .set(&admin_storage_key(), &proposal.new_admin);
+        env.storage()
+            .persistent()
+            .remove(&admin_proposal_storage_key());
+        extend_roles_ttl(&env);
+        emit_role_updated(
+            &env,
+            Role::Admin,
+            Some(current_admin),
+            proposal.new_admin,
+            timestamp,
+        );
+
+        Ok(())
+    }
+
+    /// Withdraw a pending admin proposal. Only the current admin may cancel.
+    /// Emits an `AdminProposalCancelled` event.
+    pub fn cancel_admin_proposal(env: Env) -> Result<(), Error> {
+        let current_admin = get_admin_internal(&env)?;
+        current_admin.require_auth();
+
+        let proposal = load_admin_proposal(&env)?;
+
+        env.storage()
+            .persistent()
+            .remove(&admin_proposal_storage_key());
+
+        publish_event(
+            &env,
+            event_topic(&env, "AdminProposalCancelled"),
+            AdminProposalCancelledEvent {
+                caller: current_admin,
+                new_admin: proposal.new_admin,
+                timestamp: current_timestamp(&env),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Returns the currently pending admin proposal, if any.
+    ///
+    /// The returned `expires_at` is a ledger timestamp; a proposal whose window
+    /// has elapsed can no longer be accepted.
+    pub fn get_pending_admin(env: Env) -> Option<AdminProposal> {
+        let proposal: Option<AdminProposal> = env
+            .storage()
+            .persistent()
+            .get(&admin_proposal_storage_key());
+        if proposal.is_some() {
+            extend_admin_proposal_ttl(&env);
+        }
+        proposal
+    }
+
+    /// BREAKING CHANGE (issue #570): two-step admin transfer.
+    ///
+    /// This no longer transfers the admin role immediately. It now delegates to
+    /// `propose_admin`, so the address is only stored as a *pending* proposal
+    /// and the current admin stays in force until that address proves control of
+    /// its key by calling `accept_admin`. Kept as a compatibility shim for
+    /// existing callers; new integrations should call `propose_admin` directly.
+    pub fn set_admin(env: Env, new_admin: Address) -> Result<(), Error> {
+        Self::propose_admin(env, new_admin)
     }
 
     pub fn set_operator(env: Env, new_operator: Address) -> Result<(), Error> {
@@ -762,35 +949,7 @@ impl VaultixEscrow {
         Ok(())
     }
 
-    pub fn init(
-        env: Env,
-        admin: Address,
-        operator: Address,
-        arbitrator: Address,
-    ) -> Result<(), Error> {
-        if env.storage().persistent().has(&admin_storage_key()) {
-            return Err(Error::AlreadyInitialized);
-        }
-
-        admin.require_auth();
-
-        env.storage().persistent().set(&admin_storage_key(), &admin);
-        env.storage()
-            .persistent()
-            .set(&operator_storage_key(), &operator);
-        env.storage()
-            .persistent()
-            .set(&arbitrator_storage_key(), &arbitrator);
-        extend_roles_ttl(&env);
-
-        let timestamp = current_timestamp(&env);
-
-        emit_role_updated(&env, Role::Admin, None, admin, timestamp);
-        emit_role_updated(&env, Role::Operator, None, operator, timestamp);
-        emit_role_updated(&env, Role::Arbitrator, None, arbitrator, timestamp);
-
-        Ok(())
-    }
+    // init() and initialize() removed — replaced by __constructor (issue #621).
 
     /// Test-only helper: set a legacy `Escrow` record and optional escrow fee directly into persistent storage.
     /// Compiled only for test builds to avoid exposing in production.
@@ -919,16 +1078,21 @@ impl VaultixEscrow {
             collected_signatures: escrow.collected_signatures,
             fee_override_bps: -1,
             metadata_hash: escrow.metadata_hash,
+            funded_amount: escrow.funded_amount,
+            approved_signers: escrow.approved_signers,
         }
     }
 
-    /// Configure the threshold amount and required signatures for an escrow
-    /// Only the depositor can call this function
+    /// Configure the threshold amount, required signatures, and approved signer
+    /// set for an escrow. Only the depositor can call this function.
+    ///
+    /// BREAKING CHANGE (issue #622): now requires an explicit `signers` list.
     pub fn configure_multisig(
         env: Env,
         escrow_id: u64,
         threshold_amount: i128,
         required_signatures: u32,
+        signers: Vec<Address>,
     ) -> Result<(), Error> {
         ensure_not_paused(&env)?;
 
@@ -941,20 +1105,27 @@ impl VaultixEscrow {
             return Err(Error::InvalidEscrowStatus);
         }
 
+        if threshold_amount < 0 {
+            return Err(Error::InvalidSignerConfiguration);
+        }
+        if required_signatures == 0 {
+            return Err(Error::InvalidSignerConfiguration);
+        }
+        if required_signatures > signers.len() {
+            return Err(Error::InvalidSignerConfiguration);
+        }
+
         escrow.threshold_amount = threshold_amount;
         escrow.required_signatures = required_signatures;
+        escrow.approved_signers = signers;
 
         store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
         // Emit event
         publish_event(
             &env,
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "MultisigConfigured"),
-                escrow_id,
-            ),
-            (threshold_amount, required_signatures),
+            event_topic(&env, "MultisigConfigured"),
+            (escrow_id, threshold_amount, required_signatures),
         );
 
         Ok(())
@@ -971,11 +1142,18 @@ impl VaultixEscrow {
         deadline: u64,
         metadata_hash: BytesN<32>,
     ) -> Result<(), Error> {
+        ensure_initialized(&env)?;
         depositor.require_auth();
         ensure_not_paused(&env)?;
 
         if depositor == recipient {
             return Err(Error::SelfDealing);
+        }
+
+        // Deadline must be strictly in the future with minimum lead time (#623)
+        let now = env.ledger().timestamp();
+        if deadline <= now.saturating_add(MIN_DEADLINE_LEAD_SECS) {
+            return Err(Error::InvalidDeadline);
         }
 
         validate_hash(&metadata_hash)?;
@@ -1021,11 +1199,13 @@ impl VaultixEscrow {
             milestones: initialized_milestones,
             packed_state: pack_escrow_state(EscrowStatus::Created, Resolution::None),
             deadline,
-            threshold_amount: 10000,
+            threshold_amount: i128::MAX, // safe default: all milestones take depositor-auth path
             required_signatures: 1,
             collected_signatures: Vec::new(&env),
             fee_override_bps,
             metadata_hash: metadata_hash.clone(),
+            funded_amount: 0,
+            approved_signers: Vec::new(&env),
         };
 
         store_escrow_entry_v2(&env, escrow_id, &escrow)?;
@@ -1055,11 +1235,14 @@ impl VaultixEscrow {
     }
 
     pub fn create_escrows_batch(env: Env, requests: Vec<CreateEscrowRequest>) -> Result<(), Error> {
+        ensure_initialized(&env)?;
         ensure_not_paused(&env)?;
 
         if requests.len() > MAX_BATCH_SIZE {
             return Err(Error::VectorTooLarge);
         }
+
+        let now = env.ledger().timestamp();
 
         let mut created_items: Vec<EscrowCreatedBatchEventItem> = Vec::new(&env);
         let mut pending_entries: Vec<(u64, EscrowEntryV2, bool)> = Vec::new(&env);
@@ -1077,6 +1260,11 @@ impl VaultixEscrow {
 
             if depositor == recipient {
                 return Err(Error::SelfDealing);
+            }
+
+            // Deadline must be strictly in the future with minimum lead time (#623)
+            if deadline <= now.saturating_add(MIN_DEADLINE_LEAD_SECS) {
+                return Err(Error::InvalidDeadline);
             }
 
             validate_hash(&metadata_hash)?;
@@ -1136,11 +1324,13 @@ impl VaultixEscrow {
                 milestones: initialized_milestones,
                 packed_state: pack_escrow_state(EscrowStatus::Created, Resolution::None),
                 deadline,
-                threshold_amount: 10000,
+                threshold_amount: i128::MAX,
                 required_signatures: 1,
                 collected_signatures: Vec::new(&env),
                 fee_override_bps,
                 metadata_hash,
+                funded_amount: 0,
+                approved_signers: Vec::new(&env),
             };
 
             pending_entries.push_back((escrow_id, escrow, fee_override_bps >= 0));
@@ -1202,6 +1392,7 @@ impl VaultixEscrow {
     }
 
     pub fn deposit_funds(env: Env, escrow_id: u64) -> Result<(), Error> {
+        ensure_initialized(&env)?;
         ensure_not_paused(&env)?;
 
         let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
@@ -1232,6 +1423,9 @@ impl VaultixEscrow {
         // Safe to call transfer_from now that basic preconditions hold.
         token_client.transfer_from(&spender, &escrow.depositor, &spender, &escrow.total_amount);
 
+        // Record the actual deposited amount so payouts never exceed funds on hand (#620)
+        escrow.funded_amount = escrow.total_amount;
+
         set_escrow_status(&mut escrow, EscrowStatus::Active)?;
         store_escrow_entry_v2(&env, escrow_id, &escrow)?;
 
@@ -1254,8 +1448,11 @@ impl VaultixEscrow {
         Ok(())
     }
 
-    /// Collect a signature for releasing funds
-    /// The signature can come from either the depositor or a designated third party
+    /// Collect a signature for releasing funds.
+    ///
+    /// Only addresses in the escrow's `approved_signers` set (configured via
+    /// `configure_multisig`) are accepted. An arbitrary third party that is not
+    /// in the approved set is rejected with `UnauthorizedAccess` (#622).
     pub fn collect_signature(env: Env, escrow_id: u64, signer: Address) -> Result<(), Error> {
         ensure_not_paused(&env)?;
 
@@ -1263,6 +1460,18 @@ impl VaultixEscrow {
 
         // Require authentication from the signer
         signer.require_auth();
+
+        // Verify signer is in the approved set (#622)
+        let mut approved = false;
+        for s in escrow.approved_signers.iter() {
+            if s == signer {
+                approved = true;
+                break;
+            }
+        }
+        if !approved {
+            return Err(Error::UnauthorizedAccess);
+        }
 
         // Check if this signer has already signed
         for existing_signer in escrow.collected_signatures.iter() {
@@ -1279,12 +1488,8 @@ impl VaultixEscrow {
         // Emit event
         publish_event(
             &env,
-            (
-                Symbol::new(&env, "Vaultix"),
-                Symbol::new(&env, "SignatureCollected"),
-                escrow_id,
-            ),
-            signer,
+            event_topic(&env, "SignatureCollected"),
+            (escrow_id, signer),
         );
 
         Ok(())
@@ -1421,7 +1626,8 @@ impl VaultixEscrow {
             .ok_or(Error::MilestoneNotFound)?;
 
         if milestone.amount > escrow.threshold_amount {
-            // Check if we have enough signatures
+            // Above threshold: require depositor auth AND sufficient approved signatures (#622)
+            escrow.depositor.require_auth();
             if escrow.collected_signatures.len() < escrow.required_signatures {
                 return Err(Error::UnauthorizedAccess);
             }
@@ -1501,7 +1707,7 @@ impl VaultixEscrow {
         }
 
         if milestone.amount > escrow.threshold_amount {
-            // Check if we have enough signatures
+            // Above threshold: depositor already authed above; also require approved signatures (#622)
             if escrow.collected_signatures.len() < escrow.required_signatures {
                 return Err(Error::UnauthorizedAccess);
             }
@@ -1561,9 +1767,10 @@ impl VaultixEscrow {
         if escrow_status(&escrow) == EscrowStatus::Disputed {
             return Err(Error::AlreadyInDispute);
         }
-        if escrow_status(&escrow) != EscrowStatus::Active
-            && escrow_status(&escrow) != EscrowStatus::Created
-        {
+        // Only funded (Active) escrows can be disputed (#620).
+        // Created escrows hold no funds; disputing them would allow resolution
+        // payouts from other escrows' pooled balance.
+        if escrow_status(&escrow) != EscrowStatus::Active {
             return Err(Error::InvalidEscrowStatus);
         }
 
@@ -1631,10 +1838,18 @@ impl VaultixEscrow {
             return Err(Error::InvalidWinner);
         }
 
-        let outstanding = escrow
+        // Cap the distributable amount at the actual funded balance (#620).
+        // This prevents resolve_dispute from spending other escrows' pooled funds
+        // when an escrow was never properly funded.
+        let nominal_outstanding = escrow
             .total_amount
             .checked_sub(escrow.total_released)
             .ok_or(Error::InvalidMilestoneAmount)?;
+        let funded_outstanding = escrow
+            .funded_amount
+            .checked_sub(escrow.total_released)
+            .ok_or(Error::InvalidMilestoneAmount)?;
+        let outstanding = core::cmp::min(nominal_outstanding, funded_outstanding);
 
         if outstanding < 0 {
             return Err(Error::InvalidMilestoneAmount);
@@ -2374,8 +2589,42 @@ fn ensure_not_paused(env: &Env) -> Result<(), Error> {
     Ok(())
 }
 
+/// Verifies the contract has been initialized via `__constructor`.
+///
+/// Returns `ContractNotInitialized` when `create_escrow`, `create_escrows_batch`,
+/// or `deposit_funds` is called on a contract that was deployed without
+/// constructor args (#621).
+fn ensure_initialized(env: &Env) -> Result<(), Error> {
+    if !env.storage().instance().has(&symbol_short!("init")) {
+        return Err(Error::ContractNotInitialized);
+    }
+    Ok(())
+}
+
 fn admin_storage_key() -> Symbol {
     symbol_short!("admin")
+}
+
+fn admin_proposal_storage_key() -> Symbol {
+    symbol_short!("admprop")
+}
+
+fn extend_admin_proposal_ttl(env: &Env) {
+    let key = admin_proposal_storage_key();
+    if env.storage().persistent().has(&key) {
+        env.storage().persistent().extend_ttl(&key, 100, 2_000_000);
+    }
+}
+
+fn load_admin_proposal(env: &Env) -> Result<AdminProposal, Error> {
+    let key = admin_proposal_storage_key();
+    let proposal = env
+        .storage()
+        .persistent()
+        .get::<Symbol, AdminProposal>(&key)
+        .ok_or(Error::AdminProposalNotFound)?;
+    extend_admin_proposal_ttl(env);
+    Ok(proposal)
 }
 
 fn operator_storage_key() -> Symbol {
@@ -2716,6 +2965,18 @@ fn load_escrow_entry_v2(env: &Env, escrow_id: u64) -> Result<EscrowEntryV2, Erro
         collected_signatures: legacy.collected_signatures,
         fee_override_bps,
         metadata_hash: legacy.metadata_hash,
+        // Infer funded_amount from status: if the legacy escrow was ever
+        // funded (Active, Disputed, Completed, Resolved, Expired) the
+        // total_amount was deposited; otherwise 0.
+        funded_amount: match legacy.status {
+            EscrowStatus::Active
+            | EscrowStatus::Disputed
+            | EscrowStatus::Completed
+            | EscrowStatus::Resolved
+            | EscrowStatus::Expired => legacy.total_amount,
+            _ => 0,
+        },
+        approved_signers: Vec::new(env),
     };
 
     env.storage().persistent().remove(&legacy_key);
@@ -2744,6 +3005,8 @@ fn escrow_entry_to_public(escrow: EscrowEntryV2) -> Escrow {
         required_signatures: escrow.required_signatures,
         collected_signatures: escrow.collected_signatures,
         metadata_hash: escrow.metadata_hash,
+        funded_amount: escrow.funded_amount,
+        approved_signers: escrow.approved_signers,
     }
 }
 

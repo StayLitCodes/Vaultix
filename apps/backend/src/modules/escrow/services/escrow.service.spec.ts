@@ -331,6 +331,9 @@ describe('EscrowService', () => {
         'user-123',
         NotificationEventType.PARTY_ACCEPTED,
         expect.objectContaining({ escrowId: 'escrow-123' }),
+        expect.stringMatching(
+          /^PARTY_ACCEPTED:escrow-123:user-456:user-123:\d+$/,
+        ),
       );
     });
 

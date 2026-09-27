@@ -3,6 +3,7 @@ import { config } from 'dotenv';
 import { User } from './modules/user/entities/user.entity';
 import { RefreshToken } from './modules/user/entities/refresh-token.entity';
 import { Escrow } from './modules/escrow/entities/escrow.entity';
+import { EscrowCreationIntent } from './modules/escrow/entities/escrow-creation-intent.entity';
 import { Party } from './modules/escrow/entities/party.entity';
 import { Condition } from './modules/escrow/entities/condition.entity';
 import { EscrowEvent } from './modules/escrow/entities/escrow-event.entity';
@@ -17,6 +18,9 @@ import { WebhookDeadLetter } from './modules/webhook/entities/webhook-dead-lette
 import { StellarEvent } from './modules/stellar/entities/stellar-event.entity';
 import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
 import { EmailOutbox } from './email/entities/email-outbox.entity';
+import { BackupRecord } from './modules/backup/entities/backup-record.entity';
+import { KycVerification } from './modules/kyc/entities/kyc-verification.entity';
+import { EscrowChainId } from './modules/escrow/entities/escrow-chain-id.entity';
 
 config(); // Load .env file
 
@@ -27,6 +31,7 @@ export default new DataSource({
     User,
     RefreshToken,
     Escrow,
+    EscrowCreationIntent,
     Party,
     Condition,
     EscrowEvent,
@@ -41,6 +46,9 @@ export default new DataSource({
     StellarEvent,
     AllowedAsset,
     EmailOutbox,
+    BackupRecord,
+    KycVerification,
+    EscrowChainId,
   ],
   migrations: ['./src/migrations/*.ts'],
   synchronize: false,

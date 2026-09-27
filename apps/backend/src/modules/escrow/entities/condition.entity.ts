@@ -66,10 +66,10 @@ export class Condition {
   metadata?: Record<string, any>;
 
   @Column({ type: 'decimal', precision: 18, scale: 7, nullable: true })
-  amount?: number;
+  amount?: string;
 
   @Column({ type: 'decimal', precision: 18, scale: 7, nullable: true })
-  proposedAmount?: number;
+  proposedAmount?: string;
 
   @Column({ type: 'text', nullable: true })
   proposedDescription?: string;

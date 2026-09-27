@@ -8,6 +8,14 @@ import {
 import { UserRole } from './user-role.enum';
 export { UserRole } from './user-role.enum';
 
+export enum KycStatus {
+  NOT_STARTED = 'not_started',
+  PENDING = 'pending',
+  VERIFIED = 'verified',
+  REJECTED = 'rejected',
+  EXPIRED = 'expired',
+}
+
 @Entity('users')
 export class User {
   @PrimaryGeneratedColumn('uuid')
@@ -16,8 +24,11 @@ export class User {
   @Column({ unique: true })
   walletAddress!: string;
 
-  @Column({ nullable: true })
-  nonce?: string;
+  @Column({ type: 'varchar', nullable: true })
+  nonce?: string | null;
+
+  @Column({ type: 'datetime', nullable: true })
+  nonceExpiresAt?: Date | null;
 
   @Column({ default: true })
   isActive!: boolean;
@@ -47,6 +58,18 @@ export class User {
 
   @Column({ type: 'varchar', length: 20, default: 'XLM' })
   preferredAsset!: string;
+
+  @Column({
+    type: 'varchar',
+    default: KycStatus.NOT_STARTED,
+  })
+  kycStatus!: KycStatus;
+
+  @Column({ type: 'varchar', nullable: true })
+  kycRejectionReason?: string;
+
+  @Column({ type: 'datetime', nullable: true })
+  kycVerifiedAt?: Date;
 
   // @ManyToOne(() => Organization, (org: Organization) => org.users, { nullable: false })
   // @JoinColumn({ name: 'org_id' })

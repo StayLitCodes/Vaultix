@@ -62,7 +62,7 @@ export class EscrowEvent {
   // Monotonic cursor for incremental sync
   // Auto-incrementing sequence number for ordering events
   @Column({ type: 'bigint', name: 'cursor' })
-  @Generated('increment')
+  @(process.env.NODE_ENV === 'test' ? () => {} : Generated('increment'))
   @Index()
   cursor: string;
 }

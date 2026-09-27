@@ -62,11 +62,7 @@ describe('ConnectWalletModal', () => {
 
   it('calls onClose when close button is clicked', () => {
     render(<ConnectWalletModal isOpen={true} onClose={mockOnClose} />);
-    const closeButton = screen.getByRole('button', { name: '' }); // The X icon button
-    // Alternatively, find by the SVG class or similar if name is empty
-    // Let's use the first button which is the close button in our case
-    const buttons = screen.getAllByRole('button');
-    fireEvent.click(buttons[0]);
+    fireEvent.click(screen.getByRole('button', { name: /close modal/i }));
     expect(mockOnClose).toHaveBeenCalled();
   });
 });

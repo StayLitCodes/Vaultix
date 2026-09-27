@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ToastProvider } from '../components/Toast';
 import { hydrateSession } from '../services/session';
+import { validateEnv } from '../security/env';
 
 import { AppState, AppStateStatus } from 'react-native';
 import { useBiometricLock } from '../hooks/useBiometricLock';
@@ -17,9 +18,8 @@ export default function RootLayout() {
   const appState = useRef(AppState.currentState);
   const [updateDismissed, setUpdateDismissed] = useState(false);
 
-  // #550 – read the persisted JWT back out of SecureStore before any route
-  // guard runs, so a cold start into a deep link keeps the user signed in.
   useEffect(() => {
+    validateEnv();
     hydrateSession();
   }, []);
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { notificationService, NotificationPreference, UpdatePreferenceDto } from '@/services/notification';
 import { Notification } from '@/types/notification';
-import { io, Socket } from 'socket.io-client';
+import { useWebSocket } from '@/app/contexts/WebSocketContext';
 import { toast } from 'sonner';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -46,8 +46,14 @@ interface UseNotificationsReturn {
   preferencesLoading: boolean;
   /** True while preferences are being saved to the backend */
   savingPreferences: boolean;
+  /** Server-persisted notification sound toggle */
+  soundEnabled: boolean;
+  /** Set when the initial preference fetch failed */
+  preferencesError: Error | null;
+  /** Re-fetch preferences from the backend */
+  refetchPreferences: () => Promise<void>;
   /** Persist preference changes to the backend. Returns true on success, false on failure. */
-  updatePreferences: (prefs: UserPreferences) => Promise<boolean>;
+  updatePreferences: (prefs: UserPreferences, soundEnabled?: boolean) => Promise<boolean>;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -75,7 +81,7 @@ function backendToUserPreferences(backendPrefs: NotificationPreference[]): UserP
 }
 
 /** Transform UI-friendly UserPreferences map into backend UpdatePreferenceDto array */
-function userPreferencesToBackend(prefs: UserPreferences): UpdatePreferenceDto[] {
+function userPreferencesToBackend(prefs: UserPreferences, soundEnabled: boolean): UpdatePreferenceDto[] {
   const emailEventTypes: string[] = [];
   const inAppEventTypes: string[] = [];
 
@@ -85,8 +91,8 @@ function userPreferencesToBackend(prefs: UserPreferences): UpdatePreferenceDto[]
   }
 
   return [
-    { channel: 'email', enabled: emailEventTypes.length > 0, eventTypes: emailEventTypes },
-    { channel: 'webhook', enabled: inAppEventTypes.length > 0, eventTypes: inAppEventTypes },
+    { channel: 'email', enabled: emailEventTypes.length > 0, eventTypes: emailEventTypes, soundEnabled },
+    { channel: 'webhook', enabled: inAppEventTypes.length > 0, eventTypes: inAppEventTypes, soundEnabled },
   ];
 }
 
@@ -100,6 +106,15 @@ function getDefaultPreferences(): UserPreferences {
 }
 
 // ── Sound ──────────────────────────────────────────────────────────────────
+
+/** localStorage mirror of the server value so the WebSocket handler can read it synchronously */
+const cacheSoundEnabled = (enabled: boolean) => {
+  try {
+    localStorage.setItem('vaultix_sound_enabled', String(enabled));
+  } catch {
+    // Storage unavailable — server value still applies on next load
+  }
+};
 
 const playNotificationSound = () => {
   try {
@@ -140,6 +155,10 @@ export const useNotifications = (): UseNotificationsReturn => {
   const [preferences, setPreferences] = useState<UserPreferences>(getDefaultPreferences());
   const [preferencesLoading, setPreferencesLoading] = useState<boolean>(true);
   const [savingPreferences, setSavingPreferences] = useState<boolean>(false);
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [preferencesError, setPreferencesError] = useState<Error | null>(null);
+  const soundEnabledRef = useRef<boolean>(true);
+  const { socket, isConnected } = useWebSocket();
 
   // Track whether initial fetch has happened to avoid double-fetch in StrictMode
   const initialFetchDone = useRef(false);
@@ -147,6 +166,7 @@ export const useNotifications = (): UseNotificationsReturn => {
   // Debounce state for API calls
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingPrefsRef = useRef<UserPreferences | null>(null);
+  const pendingSoundRef = useRef<boolean | null>(null);
 
   // ── Fetch notifications ────────────────────────────────────────────────
 
@@ -174,28 +194,45 @@ export const useNotifications = (): UseNotificationsReturn => {
 
   // ── Fetch preferences from backend ─────────────────────────────────────
 
+  const applyBackendPreferences = useCallback((backendPrefs: NotificationPreference[]) => {
+    if (!backendPrefs || backendPrefs.length === 0) return;
+    setPreferences(backendToUserPreferences(backendPrefs));
+    const sound = backendPrefs[0].soundEnabled !== false;
+    soundEnabledRef.current = sound;
+    setSoundEnabled(sound);
+    cacheSoundEnabled(sound);
+  }, []);
+
   const fetchPreferences = useCallback(async () => {
     try {
       setPreferencesLoading(true);
-      const backendPrefs = await notificationService.getPreferences();
-      if (backendPrefs && backendPrefs.length > 0) {
-        setPreferences(backendToUserPreferences(backendPrefs));
-      }
+      setPreferencesError(null);
+      applyBackendPreferences(await notificationService.getPreferences());
     } catch (err) {
-      // Offline / error — keep defaults, don't show toast on initial load
       console.error('Failed to fetch notification preferences:', err);
+      setPreferencesError(err instanceof Error ? err : new Error('Failed to load preferences'));
+      toast.error('Failed to load notification preferences.', {
+        action: { label: 'Retry', onClick: () => void fetchPreferencesRef.current() },
+      });
     } finally {
       setPreferencesLoading(false);
     }
-  }, []);
+  }, [applyBackendPreferences]);
+
+  const fetchPreferencesRef = useRef(fetchPreferences);
+  fetchPreferencesRef.current = fetchPreferences;
 
   // ── Persist preferences to backend ─────────────────────────────────────
 
   const updatePreferences = useCallback(
-    (prefs: UserPreferences): Promise<boolean> => {
+    (prefs: UserPreferences, sound?: boolean): Promise<boolean> => {
       // Optimistically update local state immediately — no delay
       setPreferences(prefs);
       pendingPrefsRef.current = prefs;
+      if (sound !== undefined) {
+        setSoundEnabled(sound);
+        pendingSoundRef.current = sound;
+      }
 
       return new Promise<boolean>((resolve) => {
         // Clear any pending debounced save
@@ -204,6 +241,7 @@ export const useNotifications = (): UseNotificationsReturn => {
         // Debounce the API call: wait 400ms after last toggle before saving
         debounceTimerRef.current = setTimeout(async () => {
           const toSave = pendingPrefsRef.current;
+          const soundToSave = pendingSoundRef.current ?? soundEnabledRef.current;
           if (!toSave) {
             resolve(false);
             return;
@@ -211,19 +249,24 @@ export const useNotifications = (): UseNotificationsReturn => {
 
           try {
             setSavingPreferences(true);
-            const dto = userPreferencesToBackend(toSave);
-            await notificationService.updatePreferences(dto);
+            const dto = userPreferencesToBackend(toSave, soundToSave);
+            const saved = await notificationService.updatePreferences(dto);
+            // Reconcile with what the server actually stored
+            applyBackendPreferences(saved);
             toast.success('Notification preferences saved');
             resolve(true);
           } catch (err) {
             // Revert to previous state on failure by re-fetching
-            toast.error('Failed to save preferences. Please try again.');
+            toast.error('Failed to save preferences.', {
+              action: {
+                label: 'Retry',
+                onClick: () => void updatePreferencesRef.current(toSave, soundToSave),
+              },
+            });
             console.error('Failed to update notification preferences:', err);
             try {
               const backendPrefs = await notificationService.getPreferences();
-              if (backendPrefs && backendPrefs.length > 0) {
-                setPreferences(backendToUserPreferences(backendPrefs));
-              }
+              applyBackendPreferences(backendPrefs);
             } catch {
               // If even re-fetch fails, keep the optimistic update
             }
@@ -231,12 +274,16 @@ export const useNotifications = (): UseNotificationsReturn => {
           } finally {
             setSavingPreferences(false);
             pendingPrefsRef.current = null;
+            pendingSoundRef.current = null;
           }
         }, 400);
       });
     },
-    [],
+    [applyBackendPreferences],
   );
+
+  const updatePreferencesRef = useRef(updatePreferences);
+  updatePreferencesRef.current = updatePreferences;
 
   // ── Mark as read ───────────────────────────────────────────────────────
 
@@ -277,26 +324,14 @@ export const useNotifications = (): UseNotificationsReturn => {
     if (initialFetchDone.current) return;
     initialFetchDone.current = true;
 
-    fetchNotifications();
-    fetchPreferences();
+    void fetchNotifications();
+    void fetchPreferences();
+  }, [fetchNotifications, fetchPreferences]);
 
-    // ── WebSocket Integration ──
-    const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3000';
-    const WS_URL = `${WS_BASE_URL.replace(/\/$/, '')}/escrow`;
-    const token = localStorage.getItem('vaultix_token') || localStorage.getItem('authToken');
+  useEffect(() => {
+    if (!socket || !isConnected) return;
 
-    const socket = io(WS_URL, {
-      transports: ['websocket'],
-      auth: { token },
-      autoConnect: true,
-      reconnectionAttempts: 5,
-    });
-
-    socket.on('connect', () => {
-      console.log('Notifications WebSocket connected');
-    });
-
-    socket.on('notification:new', (data: any) => {
+    const handleNewNotification = (data: any) => {
       console.log('Real-time notification received via WebSocket:', data);
       playNotificationSound();
 
@@ -335,12 +370,14 @@ export const useNotifications = (): UseNotificationsReturn => {
       toast.success(msg, {
         description: newNotification.escrowId ? `Escrow ID: ${newNotification.escrowId.slice(0, 8)}...` : undefined,
       });
-    });
+    };
+
+    socket.on('notification:new', handleNewNotification);
 
     return () => {
-      socket.disconnect();
+      socket.off('notification:new', handleNewNotification);
     };
-  }, [fetchNotifications, fetchPreferences]);
+  }, [socket, isConnected]);
 
   return {
     notifications,
@@ -353,6 +390,9 @@ export const useNotifications = (): UseNotificationsReturn => {
     preferences,
     preferencesLoading,
     savingPreferences,
+    soundEnabled,
+    preferencesError,
+    refetchPreferences: fetchPreferences,
     updatePreferences,
   };
 };

@@ -17,7 +17,17 @@
       },
       "package": "io.vaultix.mobile"
     },
-    "plugins": ["expo-router"],
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Vaultix to access your camera to scan Stellar addresses and escrow IDs.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": true
     }

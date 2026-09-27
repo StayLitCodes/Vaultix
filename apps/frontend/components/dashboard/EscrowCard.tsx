@@ -1,45 +1,26 @@
 import React from 'react';
 import Link from 'next/link';
-
-interface IEscrow {
-  id: string;
-  title: string;
-  description: string;
-  amount: string;
-  asset: string;
-  creatorAddress: string;
-  counterpartyAddress: string;
-  deadline: string;
-  status: 'created' | 'funded' | 'confirmed' | 'released' | 'completed' | 'cancelled' | 'disputed';
-  createdAt: string;
-  updatedAt: string;
-  milestones?: Array<{ id: string; title: string; amount: string; status: 'pending' | 'released' }>;
-}
+import type { IEscrow } from '@/types/escrow';
+import { CanonicalEscrowStatus, canTakeFinancialAction, escrowStatusLabel } from '@/utils/escrowStatus';
 
 interface EscrowCardProps {
   escrow: IEscrow;
   searchedAddress?: string;
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  created: 'bg-blue-100 text-blue-800',
-  funded: 'bg-blue-100 text-blue-800',
-  confirmed: 'bg-yellow-100 text-yellow-800',
-  released: 'bg-green-100 text-green-800',
-  completed: 'bg-green-100 text-green-800',
-  cancelled: 'bg-gray-100 text-gray-800',
-  disputed: 'bg-red-100 text-red-800',
+const STATUS_STYLES: Record<CanonicalEscrowStatus, string> = {
+  [CanonicalEscrowStatus.CREATED]: 'bg-blue-100 text-blue-800',
+  [CanonicalEscrowStatus.FUNDED]: 'bg-blue-100 text-blue-800',
+  [CanonicalEscrowStatus.ACTIVE]: 'bg-blue-100 text-blue-800',
+  [CanonicalEscrowStatus.DISPUTED]: 'bg-red-100 text-red-800',
+  [CanonicalEscrowStatus.RESOLVED]: 'bg-green-100 text-green-800',
+  [CanonicalEscrowStatus.REFUNDED]: 'bg-gray-100 text-gray-800',
+  [CanonicalEscrowStatus.CANCELLED]: 'bg-gray-100 text-gray-800',
+  [CanonicalEscrowStatus.COMPLETED]: 'bg-green-100 text-green-800',
+  [CanonicalEscrowStatus.EXPIRED]: 'bg-amber-100 text-amber-800',
+  [CanonicalEscrowStatus.UNKNOWN]: 'bg-gray-100 text-gray-800',
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  created: 'Created',
-  funded: 'Funded',
-  confirmed: 'Confirmed',
-  released: 'Released',
-  completed: 'Completed',
-  cancelled: 'Cancelled',
-  disputed: 'Disputed',
-};
 
 const formatDate = (dateString: string) =>
   new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
@@ -47,8 +28,10 @@ const formatDate = (dateString: string) =>
 const truncateAddress = (addr: string) => `${addr.substring(0, 6)}...${addr.slice(-4)}`;
 
 const EscrowCard: React.FC<EscrowCardProps> = ({ escrow, searchedAddress }) => {
-  const statusStyle = STATUS_STYLES[escrow.status] || 'bg-gray-100 text-gray-800';
-  const statusLabel = STATUS_LABELS[escrow.status] || escrow.status;
+  const statusStyle = STATUS_STYLES[escrow.status];
+  const statusLabel = escrowStatusLabel(escrow.status);
+  // Financial actions are offered only for a live, recognized escrow.
+  const canAct = canTakeFinancialAction(escrow.status);
 
   let roleBadge = null;
   if (searchedAddress) {
@@ -112,7 +95,7 @@ const EscrowCard: React.FC<EscrowCardProps> = ({ escrow, searchedAddress }) => {
         >
           View Details
         </Link>
-        {escrow.status === 'confirmed' && (
+        {canAct && escrow.status === CanonicalEscrowStatus.ACTIVE && (
           <div className="flex gap-2">
             <Link
               href={`/escrow/${escrow.id}/confirm`}

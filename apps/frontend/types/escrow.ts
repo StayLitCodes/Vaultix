@@ -1,3 +1,5 @@
+import { CanonicalEscrowStatus } from '@/utils/escrowStatus';
+
 export interface IEscrow {
   id: string;
   title: string;
@@ -7,21 +9,11 @@ export interface IEscrow {
   creatorAddress: string;
   counterpartyAddress: string;
   deadline: string;
-  status:
-    | "created"
-    | "funded"
-    | "confirmed"
-    | "released"
-    | "completed"
-    | "cancelled"
-    | "disputed"
-    | "expired"
-    | "PENDING"
-    | "ACTIVE"
-    | "COMPLETED"
-    | "CANCELLED"
-    | "DISPUTED"
-    | "EXPIRED";
+  /**
+   * Canonical status. Values crossing the API boundary are normalized once
+   * (see `utils/escrowStatus.ts`), so consumers never see the raw wire casing.
+   */
+  status: CanonicalEscrowStatus;
   createdAt: string;
   updatedAt: string;
   milestones?: Array<{
@@ -126,6 +118,21 @@ export interface IEscrowResponse {
   totalPages?: number;
   totalCount?: number;
 }
+
+/**
+ * Wire shape of an escrow as returned by the API. The backend sends lowercase
+ * status values and may add new ones, so the status is typed loosely here and
+ * narrowed by `normalizeEscrowStatus` at the boundary.
+ */
+export type RawEscrow = Omit<IEscrow, 'status'> & { status: string };
+
+export type RawEscrowExtended = Omit<IEscrowExtended, 'status'> & {
+  status: string;
+};
+
+export type RawEscrowResponse = Omit<IEscrowResponse, 'escrows'> & {
+  escrows: RawEscrow[];
+};
 
 export interface IEscrowFilters {
   status?: string;

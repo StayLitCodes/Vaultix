@@ -37,5 +37,47 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Unit tests
+        run: npm test -- --ci --coverage=false
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
       - name: Build
         run: npm run build
+
+      - name: Start production server
+        run: |
+          node ./node_modules/next/dist/bin/next start --hostname 127.0.0.1 > "$RUNNER_TEMP/vaultix-frontend-server.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/vaultix-frontend-server.pid"
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000/ > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat "$RUNNER_TEMP/vaultix-frontend-server.log"
+          exit 1
+
+      - name: Playwright regressions
+        env:
+          VAULTIX_E2E_EXTERNAL_SERVER: 'true'
+        run: npm run test:e2e:ci
+
+      - name: Stop production server
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/vaultix-frontend-server.pid" ]; then
+            kill "$(cat "$RUNNER_TEMP/vaultix-frontend-server.pid")" 2>/dev/null || true
+          fi
+
+      - name: Upload Playwright failure artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-playwright-results
+          path: |
+            apps/frontend/test-results/
+            apps/frontend/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7

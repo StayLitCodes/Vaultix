@@ -36,6 +36,6 @@ import { validateJwtSecret } from './services/jwt-validation.util';
   ],
   controllers: [AuthController],
   providers: [AuthService, AuthGuard, AdminGuard, SuperAdminGuard],
-  exports: [AuthService, AuthGuard, AdminGuard, SuperAdminGuard],
+  exports: [AuthService, AuthGuard, AdminGuard, SuperAdminGuard, UserModule],
 })
 export class AuthModule {}

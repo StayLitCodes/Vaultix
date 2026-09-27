@@ -99,12 +99,17 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       const filtered = connectedAccounts.filter((acc) => acc.publicKey !== publicKey);
       const updatedAccounts = [newConnection, ...filtered];
 
+      const previousActiveKey = activeAccount?.publicKey;
       setConnectedAccounts(updatedAccounts);
       setActiveAccount(newConnection);
       window.localStorage.setItem('vaultix_connected_wallets', JSON.stringify(updatedAccounts));
       
       // Keep legacy key in sync for backward compatibility
       window.localStorage.setItem('vaultix_wallet', JSON.stringify(newConnection));
+
+      if (previousActiveKey !== publicKey) {
+        window.dispatchEvent(new CustomEvent('wallet:switched', { detail: newConnection }));
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to connect wallet');
       throw err;
@@ -127,11 +132,16 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       const updated = connectedAccounts.filter((acc) => acc.publicKey !== publicKey);
       saveToStorage(updated);
       if (activeAccount?.publicKey === publicKey) {
-        setActiveAccount(updated.length > 0 ? updated[0] : null);
+        const nextActive = updated.length > 0 ? updated[0] : null;
+        setActiveAccount(nextActive);
         if (updated.length > 0) {
           window.localStorage.setItem('vaultix_wallet', JSON.stringify(updated[0]));
+          window.dispatchEvent(
+            new CustomEvent('wallet:switched', { detail: updated[0] }),
+          );
         } else {
           window.localStorage.removeItem('vaultix_wallet');
+          window.dispatchEvent(new CustomEvent('wallet:disconnected'));
         }
       }
     } else {
@@ -140,6 +150,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       setActiveAccount(null);
       window.localStorage.removeItem('vaultix_connected_wallets');
       window.localStorage.removeItem('vaultix_wallet');
+      window.dispatchEvent(new CustomEvent('wallet:disconnected'));
     }
     setError(null);
   };
