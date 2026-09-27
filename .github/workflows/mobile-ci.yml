@@ -37,7 +37,7 @@ jobs:
           cache-dependency-path: apps/mobile/pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile -r
 
       - name: Lint
         run: pnpm run lint
