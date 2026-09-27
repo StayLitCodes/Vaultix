@@ -75,13 +75,11 @@ export default function TabLayout() {
             },
           }}
         />
-        {/* #552 – Settings was unreachable until this entry existed */}
         <Tabs.Screen
           name="settings"
           options={{
             title: 'Settings',
             tabBarLabel: 'Settings',
-            tabBarAccessibilityLabel: 'Settings tab',
             tabBarIcon: ({ color, size }) => (
               <TabIcon name="gear" color={color} size={size} />
             ),
