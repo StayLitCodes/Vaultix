@@ -13,94 +13,98 @@ import {
   ArrowRight
 } from 'lucide-react';
 import { IEscrowEvent } from '@/types/escrow';
-import { formatDistanceToNow } from '@/utils/date';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatLocaleNumber, formatRelativeTime, type Locale } from '@/lib/i18n';
 
 interface ActivityItemProps {
   event: IEscrowEvent;
 }
 
 const ActivityItem: React.FC<ActivityItemProps> = ({ event }) => {
+  const t = useTranslations('activity.events');
+  const feedT = useTranslations('activity');
+  const locale = useLocale() as Locale;
   const config = useMemo(() => {
     switch (event.eventType) {
       case 'CREATED':
         return {
           icon: <PlusCircle className="w-5 h-5 text-blue-500" />,
-          title: 'Escrow Created',
-          description: 'A new escrow agreement was initiated.',
+          title: t('createdTitle'),
+          description: t('createdDescription'),
           color: 'bg-blue-50'
         };
       case 'PARTY_ADDED':
         return {
           icon: <UserPlus className="w-5 h-5 text-indigo-500" />,
-          title: 'Party Added',
-          description: `User ${event.actorId?.slice(0, 6)}... was added to the escrow.`,
+          title: t('partyAddedTitle'),
+          description: t('partyAddedDescription', { user: `${event.actorId?.slice(0, 6)}...` }),
           color: 'bg-indigo-50'
         };
       case 'PARTY_ACCEPTED':
         return {
           icon: <CheckCircle2 className="w-5 h-5 text-green-500" />,
-          title: 'Party Accepted',
-          description: 'A participant has accepted the terms.',
+          title: t('partyAcceptedTitle'),
+          description: t('partyAcceptedDescription'),
           color: 'bg-green-50'
         };
       case 'PARTY_REJECTED':
         return {
           icon: <XCircle className="w-5 h-5 text-red-500" />,
-          title: 'Party Rejected',
-          description: 'A participant has rejected the terms.',
+          title: t('partyRejectedTitle'),
+          description: t('partyRejectedDescription'),
           color: 'bg-red-50'
         };
       case 'FUNDED':
         return {
           icon: <Wallet className="w-5 h-5 text-emerald-500" />,
-          title: 'Funds Deposited',
-          description: 'The escrow has been funded and is now active.',
+          title: t('fundedTitle'),
+          description: t('fundedDescription'),
           color: 'bg-emerald-50'
         };
       case 'CONDITION_MET':
         return {
           icon: <Activity className="w-5 h-5 text-amber-500" />,
-          title: 'Condition Met',
-          description: 'One of the release conditions has been satisfied.',
+          title: t('conditionMetTitle'),
+          description: t('conditionMetDescription'),
           color: 'bg-amber-50'
         };
       case 'COMPLETED':
         return {
           icon: <CheckCircle2 className="w-5 h-5 text-green-600" />,
-          title: 'Escrow Completed',
-          description: 'Funds have been released and the escrow is finished.',
+          title: t('completedTitle'),
+          description: t('completedDescription'),
           color: 'bg-green-100'
         };
       case 'CANCELLED':
         return {
           icon: <XCircle className="w-5 h-5 text-gray-500" />,
-          title: 'Escrow Cancelled',
-          description: 'The escrow has been aborted and funds returned.',
+          title: t('cancelledTitle'),
+          description: t('cancelledDescription'),
           color: 'bg-gray-100'
         };
       case 'DISPUTED':
         return {
           icon: <AlertTriangle className="w-5 h-5 text-rose-500" />,
-          title: 'Dispute Raised',
-          description: 'A dispute has been opened regarding this escrow.',
+          title: t('disputedTitle'),
+          description: t('disputedDescription'),
           color: 'bg-rose-50'
         };
       case 'UPDATED':
         return {
           icon: <RefreshCw className="w-5 h-5 text-sky-500" />,
-          title: 'Escrow Updated',
-          description: 'Terms or details have been modified.',
+          title: t('updatedTitle'),
+          description: t('updatedDescription'),
           color: 'bg-sky-50'
         };
       default:
         return {
           icon: <Activity className="w-5 h-5 text-gray-400" />,
-          title: 'Activity Detected',
-          description: 'A system event occurred.',
+          title: t('defaultTitle'),
+          description: t('defaultDescription'),
           color: 'bg-gray-50'
         };
     }
-  }, [event.eventType, event.actorId]);
+  }, [event.eventType, event.actorId, t]);
 
   return (
     <motion.div 
@@ -119,22 +123,22 @@ const ActivityItem: React.FC<ActivityItemProps> = ({ event }) => {
           </h4>
           <span className="text-[10px] uppercase font-medium text-gray-400 flex items-center gap-1">
             <Clock className="w-3 h-3" />
-            {formatDistanceToNow(new Date(event.createdAt))}
+            {formatRelativeTime(new Date(event.createdAt), locale)}
           </span>
         </div>
-        <p className="text-xs text-gray-500 leading-relaxed">
+          <p className="text-xs text-gray-500 leading-relaxed">
           {config.description}
         </p>
         
         {event.data?.amount && (
           <div className="mt-2 text-xs font-mono text-emerald-600 bg-emerald-50 px-2 py-1 rounded inline-block">
-            {event.data.amount} {event.data.asset}
+            {formatLocaleNumber(Number(event.data.amount), locale)} {event.data.asset}
           </div>
         )}
       </div>
 
       <div className="flex-shrink-0 self-center opacity-0 group-hover:opacity-100 transition-opacity">
-        <button className="p-1 hover:bg-gray-100 rounded-full transition-colors text-gray-400" aria-label="View Details">
+        <button className="p-1 hover:bg-gray-100 rounded-full transition-colors text-gray-400" aria-label={feedT('viewDetails')}>
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>

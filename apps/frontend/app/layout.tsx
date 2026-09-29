@@ -4,6 +4,9 @@ import Providers from "@/components/Providers";
 import Navbar from "@/components/layout/Navbar";
 import MobileNav from "@/components/layout/MobileNav";
 import { headers } from "next/headers";
+import { NextIntlClientProvider } from "next-intl";
+import { getLocale, getMessages } from "next-intl/server";
+import { isRtlLocale } from "@/lib/i18n";
 
 export const metadata: Metadata = {
   title: "Vaultix - Secure Escrow Platform",
@@ -23,9 +26,11 @@ export default async function RootLayout({
   const headersList = await headers();
   const pathname = headersList.get("x-invoke-path") || "";
   const isLandingPage = pathname === "/" || pathname === "/landing";
+  const locale = await getLocale();
+  const messages = await getMessages();
 
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={locale} dir={isRtlLocale(locale) ? "rtl" : "ltr"} suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -54,13 +59,15 @@ export default async function RootLayout({
         />
       </head>
       <body className="antialiased overflow-x-hidden">
-        <Providers>
-          <Navbar />
-          <main className={`pt-16 min-w-0 overflow-x-hidden ${!isLandingPage ? 'pb-20 md:pb-0' : ''}`}>
-            {children}
-          </main>
-          {!isLandingPage && <MobileNav />}
-        </Providers>
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          <Providers>
+            <Navbar />
+            <main className={`pt-16 min-w-0 overflow-x-hidden ${!isLandingPage ? 'pb-20 md:pb-0' : ''}`}>
+              {children}
+            </main>
+            {!isLandingPage && <MobileNav />}
+          </Providers>
+        </NextIntlClientProvider>
       </body>
     </html>
   );

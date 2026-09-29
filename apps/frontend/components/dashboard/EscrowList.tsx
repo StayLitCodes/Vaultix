@@ -6,6 +6,7 @@ import { EscrowCardSkeleton } from '@/components/ui/EscrowCardSkeleton';
 import { ErrorFallback } from '@/components/ErrorFallback';
 import type { IEscrow } from '@/types/escrow';
 import { CanonicalEscrowStatus } from '@/utils/escrowStatus';
+import { useTranslations } from 'next-intl';
 
 interface EscrowListProps {
   escrows: IEscrow[];
@@ -32,6 +33,7 @@ const EscrowList: React.FC<EscrowListProps> = ({
   isFetchingNextPage,
   searchedAddress,
 }) => {
+  const t = useTranslations('dashboard');
   // Show loading skeletons when data is loading
   if (isLoading && escrows.length === 0) {
     return (
@@ -54,11 +56,11 @@ const EscrowList: React.FC<EscrowListProps> = ({
             : new Error(
                 typeof error === 'string'
                   ? error
-                  : 'Failed to load escrows',
+                  : t('failedEscrows'),
               )
         }
         reset={() => refetch?.()}
-        title="Failed to load escrows"
+        title={t('failedEscrows')}
         compact
       />
     );
@@ -69,45 +71,45 @@ const EscrowList: React.FC<EscrowListProps> = ({
     let emptyMessage = '';
     switch (activeTab) {
       case 'all':
-        emptyMessage = 'You have no escrow agreements yet.';
+        emptyMessage = t('noAgreements');
         break;
       case CanonicalEscrowStatus.ACTIVE:
       case CanonicalEscrowStatus.FUNDED:
-        emptyMessage = 'You have no active escrow agreements.';
+        emptyMessage = t('noActiveAgreements');
         break;
       case CanonicalEscrowStatus.CREATED:
-        emptyMessage = 'You have no escrows pending confirmation.';
+        emptyMessage = t('noPendingAgreements');
         break;
       case CanonicalEscrowStatus.COMPLETED:
       case CanonicalEscrowStatus.RESOLVED:
-        emptyMessage = 'You have no completed escrow agreements.';
+        emptyMessage = t('noCompletedAgreements');
         break;
       case CanonicalEscrowStatus.DISPUTED:
-        emptyMessage = 'You have no disputed escrow agreements.';
+        emptyMessage = t('noDisputedAgreements');
         break;
       case CanonicalEscrowStatus.EXPIRED:
-        emptyMessage = 'You have no expired escrow agreements.';
+        emptyMessage = t('noExpiredAgreements');
         break;
       case CanonicalEscrowStatus.REFUNDED:
-        emptyMessage = 'You have no refunded escrow agreements.';
+        emptyMessage = t('noRefundedAgreements');
         break;
       case CanonicalEscrowStatus.CANCELLED:
-        emptyMessage = 'You have no cancelled escrow agreements.';
+        emptyMessage = t('noCancelledAgreements');
         break;
       default:
-        emptyMessage = 'No escrow agreements found.';
+        emptyMessage = t('noMatchingAgreements');
     }
 
     return (
       <div className="text-center py-10">
-        <h3 className="text-lg font-medium text-gray-900">No Escrows Found</h3>
+        <h3 className="text-lg font-medium text-gray-900">{t('noEscrows')}</h3>
         <p className="text-gray-500 mt-2">{emptyMessage}</p>
         <div className="mt-6">
           <Link
             href="/escrow/create"
             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
-            Create New Escrow
+            {t('createNewEscrow')}
           </Link>
         </div>
       </div>
@@ -128,7 +130,7 @@ const EscrowList: React.FC<EscrowListProps> = ({
             disabled={isFetchingNextPage}
             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
           >
-            {isFetchingNextPage ? 'Loading...' : 'Load More'}
+            {isFetchingNextPage ? t('loading') : t('loadMore')}
           </button>
         </div>
       )}

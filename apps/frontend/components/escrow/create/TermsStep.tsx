@@ -6,8 +6,10 @@ import { CreateEscrowFormData } from "@/lib/escrow-schema";
 import { Input } from "@/components/ui/input";
 import AssetSelector from "@/components/stellar/AssetSelector";
 import { AssetService, IAllowedAsset } from "@/services/assets";
+import { useTranslations } from 'next-intl';
 
 export default function TermsStep() {
+  const t = useTranslations('createEscrow');
   const {
     register,
     watch,
@@ -41,16 +43,16 @@ export default function TermsStep() {
   return (
     <div className="space-y-6">
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-gray-900">Escrow Terms</h2>
+        <h2 className="text-xl font-semibold text-gray-900">{t('termsTitle')}</h2>
         <p className="text-sm text-gray-500">
-          Define the financial terms and deadlines for this agreement.
+          {t('termsHelp')}
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
           {/* Amount Field */}
           <div className="relative">
             <Input
-              label="Amount"
+              label={t('amount')}
               placeholder="0.00"
               error={errors.amount?.message}
               {...register("amount")}
@@ -70,9 +72,9 @@ export default function TermsStep() {
 
         {/* Deadline Field */}
         <Input
-          label="Deadline"
+          label={t('deadline')}
           type="datetime-local"
-          helperText="The date and time by which the terms must be met."
+          helperText={t('deadlineHelp')}
           error={errors.deadline?.message}
           {...register("deadline", { valueAsDate: true })}
         />
