@@ -12,23 +12,41 @@ import { ExportDropdown, ExportFormat } from "@/components/ExportDropdown";
 import { ExportModal } from "@/components/ExportModal";
 import { useToast } from "@/hooks/useToast";
 import { TransactionTableSkeleton } from "@/components/ui/TransactionTableSkeleton";
-import { CanonicalEscrowStatus, escrowStatusLabel } from '@/utils/escrowStatus';
+import { CanonicalEscrowStatus } from '@/utils/escrowStatus';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatLocaleDate, type Locale } from '@/lib/i18n';
 
 const EVENT_TYPES = [
-  { value: "", label: "All Events" },
-  { value: "FUNDED", label: "Funding" },
-  { value: "COMPLETED", label: "Release" },
-  { value: "CANCELLED", label: "Refund" },
-  { value: "DISPUTED", label: "Dispute" },
-  { value: "DISPUTE_FILED", label: "Dispute Filed" },
-  { value: "DISPUTE_RESOLVED", label: "Dispute Resolved" },
-  { value: "CREATED", label: "Created" },
-  { value: "EXPIRED", label: "Expired" },
-];
+  { value: "", label: "allEvents" },
+  { value: "FUNDED", label: "funding" },
+  { value: "COMPLETED", label: "release" },
+  { value: "CANCELLED", label: "refund" },
+  { value: "DISPUTED", label: "dispute" },
+  { value: "DISPUTE_FILED", label: "disputeFiled" },
+  { value: "DISPUTE_RESOLVED", label: "disputeResolved" },
+  { value: "CREATED", label: "created" },
+  { value: "EXPIRED", label: "expired" },
+] as const;
+
+const STATUS_MESSAGE_KEYS: Record<CanonicalEscrowStatus, string> = {
+  [CanonicalEscrowStatus.CREATED]: 'pending',
+  [CanonicalEscrowStatus.FUNDED]: 'funded',
+  [CanonicalEscrowStatus.ACTIVE]: 'active',
+  [CanonicalEscrowStatus.DISPUTED]: 'disputed',
+  [CanonicalEscrowStatus.RESOLVED]: 'resolved',
+  [CanonicalEscrowStatus.REFUNDED]: 'refunded',
+  [CanonicalEscrowStatus.CANCELLED]: 'cancelled',
+  [CanonicalEscrowStatus.COMPLETED]: 'completed',
+  [CanonicalEscrowStatus.EXPIRED]: 'expired',
+  [CanonicalEscrowStatus.UNKNOWN]: 'unknown',
+};
 
 const PAGE_SIZE = 20;
 
 export default function TransactionsPage() {
+  const t = useTranslations("transactions");
+  const statusT = useTranslations('dashboardCards.status');
+  const locale = useLocale() as Locale;
   const [events, setEvents] = useState<IEventResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -134,21 +152,21 @@ export default function TransactionsPage() {
           if (exportFormat === "csv") {
             const csvContent = convertEventsToCSV(response.data);
             downloadCSV(csvContent, filename);
-            success(`Successfully exported ${response.data.length} transactions to CSV`);
+            success(t("exportedCsv", { count: response.data.length }));
           } else {
             const pdfDoc = convertEventsToPDF(response.data);
             downloadPDF(pdfDoc, filename);
-            success(`Successfully exported ${response.data.length} transactions to PDF`);
+            success(t("exportedPdf", { count: response.data.length }));
           }
         } catch (err) {
-          error("Failed to generate export file");
+          error(t("exportFailed"));
           console.error("Export error:", err);
         } finally {
           setIsExporting(false);
         }
       }, 100);
     } catch (err) {
-      error("Failed to fetch data for export");
+      error(t("fetchExportFailed"));
       console.error("Fetch error:", err);
       setIsExporting(false);
     }
@@ -182,7 +200,8 @@ export default function TransactionsPage() {
   };
 
   const formatEventType = (eventType: string) => {
-    return eventType.replace(/_/g, " ").toLowerCase();
+    const eventLabel = EVENT_TYPES.find((type) => type.value === eventType)?.label;
+    return eventLabel ? t(eventLabel) : t("unknown");
   };
 
   const getExplorerUrl = (txHash: string) => {
@@ -195,8 +214,8 @@ export default function TransactionsPage() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Transaction History</h1>
-          <p className="text-muted-foreground">View and export all your escrow-related transactions</p>
+          <h1 className="text-3xl font-bold text-foreground mb-2">{t("title")}</h1>
+          <p className="text-muted-foreground">{t("subtitle")}</p>
         </div>
 
         {/* Running Totals */}
@@ -204,9 +223,9 @@ export default function TransactionsPage() {
           <div className="bg-card rounded-lg shadow p-6 border-l-4 border-blue-500 border border-border">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground mb-1">Total Funded</p>
+                <p className="text-sm text-muted-foreground mb-1">{t("totalFunded")}</p>
                 <p className="text-2xl font-bold text-foreground">
-                  {totals.totalFunded.toLocaleString(undefined, {
+                  {totals.totalFunded.toLocaleString(locale, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 7,
                   })}{" "}
@@ -220,9 +239,9 @@ export default function TransactionsPage() {
           <div className="bg-card rounded-lg shadow p-6 border-l-4 border-green-500 border border-border">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground mb-1">Total Released</p>
+                <p className="text-sm text-muted-foreground mb-1">{t("totalReleased")}</p>
                 <p className="text-2xl font-bold text-foreground">
-                  {totals.totalReleased.toLocaleString(undefined, {
+                  {totals.totalReleased.toLocaleString(locale, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 7,
                   })}{" "}
@@ -236,9 +255,9 @@ export default function TransactionsPage() {
           <div className="bg-card rounded-lg shadow p-6 border-l-4 border-orange-500 border border-border">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground mb-1">Total In Escrow</p>
+                <p className="text-sm text-muted-foreground mb-1">{t("totalInEscrow")}</p>
                 <p className="text-2xl font-bold text-foreground">
-                  {totals.totalInEscrow.toLocaleString(undefined, {
+                  {totals.totalInEscrow.toLocaleString(locale, {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 7,
                   })}{" "}
@@ -255,7 +274,7 @@ export default function TransactionsPage() {
           <div className="flex flex-wrap gap-4 items-end">
             {/* Event Type Filter */}
             <div className="flex-1 min-w-[200px]">
-              <label className="text-sm font-medium text-foreground mb-1 block">Event Type</label>
+              <label className="text-sm font-medium text-foreground mb-1 block">{t("eventType")}</label>
               <select
                 value={eventType}
                 onChange={(e) => {
@@ -265,8 +284,8 @@ export default function TransactionsPage() {
                 className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 {EVENT_TYPES.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
+                    <option key={type.value} value={type.value}>
+                    {t(type.label)}
                   </option>
                 ))}
               </select>
@@ -274,7 +293,7 @@ export default function TransactionsPage() {
 
             {/* Date From */}
             <div className="flex-1 min-w-[180px]">
-              <label className="text-sm font-medium text-foreground mb-1 block">From Date</label>
+              <label className="text-sm font-medium text-foreground mb-1 block">{t("fromDate")}</label>
               <Input
                 type="date"
                 value={dateFrom}
@@ -288,7 +307,7 @@ export default function TransactionsPage() {
 
             {/* Date To */}
             <div className="flex-1 min-w-[180px]">
-              <label className="text-sm font-medium text-foreground mb-1 block">To Date</label>
+              <label className="text-sm font-medium text-foreground mb-1 block">{t("toDate")}</label>
               <Input
                 type="date"
                 value={dateTo}
@@ -302,7 +321,7 @@ export default function TransactionsPage() {
 
             {/* Sort Order */}
             <div className="flex-1 min-w-[180px]">
-              <label className="text-sm font-medium text-foreground mb-1 block">Sort By</label>
+              <label className="text-sm font-medium text-foreground mb-1 block">{t("sortBy")}</label>
               <select
                 value={`${sortBy}-${sortOrder}`}
                 onChange={(e) => {
@@ -313,15 +332,15 @@ export default function TransactionsPage() {
                 }}
                 className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="createdAt-DESC">Newest First</option>
-                <option value="createdAt-ASC">Oldest First</option>
+                <option value="createdAt-DESC">{t("newestFirst")}</option>
+                <option value="createdAt-ASC">{t("oldestFirst")}</option>
               </select>
             </div>
 
             {/* Clear Filters */}
             <Button variant="outline" onClick={clearFilters} className="flex items-center gap-1">
               <Filter className="w-4 h-4" />
-              Clear
+              {t("clear")}
             </Button>
 
             {/* Export */}
@@ -336,8 +355,8 @@ export default function TransactionsPage() {
           ) : events.length === 0 ? (
             <div className="text-center py-16">
               <Calendar className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-              <p className="text-foreground text-lg">No transactions found</p>
-              <p className="text-muted-foreground text-sm mt-1">Try adjusting your filters or date range</p>
+              <p className="text-foreground text-lg">{t("noTransactions")}</p>
+              <p className="text-muted-foreground text-sm mt-1">{t("adjustFilters")}</p>
             </div>
           ) : (
             <>
@@ -345,12 +364,12 @@ export default function TransactionsPage() {
                 <table className="min-w-full divide-y divide-border">
                   <thead className="bg-muted">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Escrow</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Event Type</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Amount</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">Tx Hash</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">{t("date")}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">{t("escrow")}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">{t("eventType")}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">{t("amount")}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">{t("status")}</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">{t("txHash")}</th>
                     </tr>
                   </thead>
                   <tbody className="bg-card divide-y divide-border">
@@ -360,11 +379,11 @@ export default function TransactionsPage() {
                       return (
                         <tr key={event.id} className="hover:bg-accent/50">
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-foreground">
-                            {new Date(event.createdAt).toLocaleDateString()}
-                            <div className="text-xs text-muted-foreground">{new Date(event.createdAt).toLocaleTimeString()}</div>
+                            {formatLocaleDate(new Date(event.createdAt), locale)}
+                            <div className="text-xs text-muted-foreground">{formatLocaleDate(new Date(event.createdAt), locale, { hour: "2-digit", minute: "2-digit" })}</div>
                           </td>
                           <td className="px-6 py-4">
-                            <div className="text-sm font-medium text-foreground">{event.escrow?.title || "Unknown"}</div>
+                            <div className="text-sm font-medium text-foreground">{event.escrow?.title || t("unknown")}</div>
                             <div className="text-xs text-muted-foreground font-mono">{event.escrowId.slice(0, 8)}...</div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -374,7 +393,7 @@ export default function TransactionsPage() {
                             {event.escrow ? (
                               <div>
                                 <div className="font-medium">
-                                  {Number(event.escrow.amount).toLocaleString(undefined, {
+                                  {Number(event.escrow.amount).toLocaleString(locale, {
                                     minimumFractionDigits: 2,
                                     maximumFractionDigits: 7,
                                   })}
@@ -384,7 +403,7 @@ export default function TransactionsPage() {
                                 </div>
                               </div>
                             ) : (
-                              <span className="text-muted-foreground">N/A</span>
+                              <span className="text-muted-foreground">{t("notAvailable")}</span>
                             )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -399,7 +418,7 @@ export default function TransactionsPage() {
                                       : "bg-gray-100 text-gray-800"
                               }
                             >
-                              {event.escrow ? escrowStatusLabel(event.escrow.status) : "N/A"}
+                              {event.escrow ? statusT(STATUS_MESSAGE_KEYS[event.escrow.status]) : t("notAvailable")}
                             </Badge>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm">
@@ -414,7 +433,7 @@ export default function TransactionsPage() {
                                 <ExternalLink className="w-3 h-3" />
                               </a>
                             ) : (
-                              <span className="text-muted-foreground">N/A</span>
+                              <span className="text-muted-foreground">{t("notAvailable")}</span>
                             )}
                           </td>
                         </tr>
@@ -428,15 +447,15 @@ export default function TransactionsPage() {
               <div className="bg-muted/50 px-6 py-4 border-t border-border">
                 <div className="flex items-center justify-between">
                   <div className="text-sm text-foreground">
-                    Showing <span className="font-medium">{(page - 1) * PAGE_SIZE + 1}</span> to <span className="font-medium">{Math.min(page * PAGE_SIZE, total)}</span>{" "}
-                    of <span className="font-medium">{total}</span> results
+                    {t("showing")} <span className="font-medium">{((page - 1) * PAGE_SIZE + 1).toLocaleString(locale)}</span> {t("to")} <span className="font-medium">{Math.min(page * PAGE_SIZE, total).toLocaleString(locale)}</span>{" "}
+                    {t("of")} <span className="font-medium">{total.toLocaleString(locale)}</span> {t("results")}
                   </div>
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
-                      Previous
+                      {t("previous")}
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
-                      Next
+                      {t("next")}
                     </Button>
                   </div>
                 </div>

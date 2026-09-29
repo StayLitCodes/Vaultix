@@ -3,14 +3,10 @@
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import { CreateEscrowFormData } from '@/lib/escrow-schema';
 import { PlusCircle, Trash2 } from 'lucide-react';
-
-const CONDITION_TYPES = [
-  { value: 'manual', label: 'Manual — a party manually confirms completion' },
-  { value: 'time', label: 'Time-based — releases after a specific date/time' },
-  { value: 'oracle', label: 'Oracle — an external oracle signals completion' },
-];
+import { useTranslations } from 'next-intl';
 
 export default function ConditionsStep() {
+  const t = useTranslations('createEscrow');
   const {
     register,
     control,
@@ -19,18 +15,23 @@ export default function ConditionsStep() {
   } = useFormContext<CreateEscrowFormData>();
 
   const { fields, append, remove } = useFieldArray({ control, name: 'conditions' });
+  const conditionTypes = [
+    { value: 'manual', label: t('manualCondition') },
+    { value: 'time', label: t('timeCondition') },
+    { value: 'oracle', label: t('oracleCondition') },
+  ];
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold text-gray-900">Release Conditions</h2>
+        <h2 className="text-xl font-semibold text-gray-900">{t('conditionsTitle')}</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Define the conditions that must be met before funds are released. Leave empty for a fully manual escrow.
+          {t('conditionsHelp')}
         </p>
       </div>
 
       {fields.length === 0 && (
-        <p className="text-sm text-gray-400 italic">No conditions added. Funds will be released manually by the parties.</p>
+        <p className="text-sm text-gray-400 italic">{t('noConditions')}</p>
       )}
 
       <div className="space-y-4">
@@ -39,7 +40,7 @@ export default function ConditionsStep() {
           return (
             <div key={field.id} className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-700">Condition {index + 1}</span>
+                <span className="text-sm font-medium text-gray-700">{t('conditionNumber', { number: index + 1 })}</span>
                 <button
                   type="button"
                   onClick={() => remove(index)}
@@ -50,29 +51,29 @@ export default function ConditionsStep() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Type</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">{t('conditionType')}</label>
                 <select
                   {...register(`conditions.${index}.type`)}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
                 >
-                  {CONDITION_TYPES.map((ct) => (
+                  {conditionTypes.map((ct) => (
                     <option key={ct.value} value={ct.value}>{ct.label}</option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">{t('description')}</label>
                 <input
                   {...register(`conditions.${index}.description`)}
-                  placeholder="Describe the condition"
+                  placeholder={t('conditionPlaceholder')}
                   className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
 
               {conditionType === 'time' && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Release Date</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">{t('releaseDate')}</label>
                   <input
                     {...register(`conditions.${index}.releaseDate`)}
                     type="datetime-local"
@@ -91,7 +92,7 @@ export default function ConditionsStep() {
         className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
       >
         <PlusCircle className="w-4 h-4" />
-        <span>Add Condition</span>
+        <span>{t('addCondition')}</span>
       </button>
     </div>
   );

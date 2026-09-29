@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Download, FileText, FileSpreadsheet, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useTranslations } from 'next-intl';
 
 export type ExportFormat = "csv" | "pdf";
 
@@ -13,6 +14,7 @@ interface ExportDropdownProps {
 }
 
 export function ExportDropdown({ onExport, disabled = false, isLoading = false }: ExportDropdownProps) {
+  const t = useTranslations('transactionTools');
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -44,7 +46,7 @@ export function ExportDropdown({ onExport, disabled = false, isLoading = false }
         ) : (
           <Download className="w-4 h-4" />
         )}
-        Export
+        {t('export')}
         <ChevronDown className="w-4 h-4" />
       </Button>
 
@@ -57,7 +59,7 @@ export function ExportDropdown({ onExport, disabled = false, isLoading = false }
               className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <FileSpreadsheet className="w-4 h-4 text-green-600" />
-              Export as CSV
+              {t('exportCsv')}
             </button>
             <button
               onClick={() => handleExport("pdf")}
@@ -65,7 +67,7 @@ export function ExportDropdown({ onExport, disabled = false, isLoading = false }
               className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <FileText className="w-4 h-4 text-red-600" />
-              Export as PDF
+              {t('exportPdf')}
             </button>
           </div>
         </div>

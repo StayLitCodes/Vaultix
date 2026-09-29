@@ -2,45 +2,60 @@
 
 import { useFormContext } from 'react-hook-form';
 import { CreateEscrowFormData } from '@/lib/escrow-schema';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatLocaleDate, formatLocaleNumber, type Locale } from '@/lib/i18n';
 
 export default function ReviewStep() {
+  const t = useTranslations('createEscrow');
+  const locale = useLocale() as Locale;
   const { getValues } = useFormContext<CreateEscrowFormData>();
   const values = getValues();
 
   const formatDate = (date: Date) => {
-    if (!date) return 'Not set';
-    return new Intl.DateTimeFormat('en-US', {
+    if (!date) return t('notSet');
+    return formatLocaleDate(date, locale, {
       dateStyle: 'medium',
       timeStyle: 'short',
-    }).format(date);
+    });
   };
 
   const milestones = values.milestones ?? [];
   const conditions = values.conditions ?? [];
+  const categoryKeys: Record<string, string> = {
+    service: 'service',
+    goods: 'goods',
+    milestone: 'milestoneBased',
+    other: 'other',
+  };
+  const conditionTypeKeys: Record<string, string> = {
+    manual: 'manualType',
+    time: 'timeType',
+    oracle: 'oracleType',
+  };
 
   return (
     <div className="space-y-6">
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold text-gray-900">Review & Confirm</h2>
+        <h2 className="text-xl font-semibold text-gray-900">{t('reviewTitle')}</h2>
         <p className="text-sm text-gray-500">
-          Please review the details below carefully before creating the escrow.
+          {t('reviewHelp')}
         </p>
 
         <div className="bg-gray-50 rounded-lg p-6 space-y-4 border border-gray-200">
           {/* Basic Info */}
           <div>
-            <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider">Basic Info</h3>
+            <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider">{t('basicTitle')}</h3>
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div>
-                <span className="block text-xs text-gray-400">Title</span>
+                <span className="block text-xs text-gray-400">{t('title')}</span>
                 <span className="block text-sm text-gray-900 font-medium">{values.title}</span>
               </div>
               <div>
-                <span className="block text-xs text-gray-400">Category</span>
-                <span className="block text-sm text-gray-900 font-medium capitalize">{values.category}</span>
+                <span className="block text-xs text-gray-400">{t('category')}</span>
+                <span className="block text-sm text-gray-900 font-medium">{t(categoryKeys[values.category] ?? 'other')}</span>
               </div>
               <div className="sm:col-span-2">
-                <span className="block text-xs text-gray-400">Description</span>
+                <span className="block text-xs text-gray-400">{t('description')}</span>
                 <span className="block text-sm text-gray-900 mt-1">{values.description}</span>
               </div>
             </div>
@@ -48,25 +63,25 @@ export default function ReviewStep() {
 
           {/* Parties */}
           <div className="border-t border-gray-200 pt-4">
-            <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider">Parties</h3>
+            <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider">{t('parties')}</h3>
             <div className="mt-2">
-              <span className="block text-xs text-gray-400">Counterparty Address</span>
+              <span className="block text-xs text-gray-400">{t('counterpartyAddress')}</span>
               <span className="block text-sm text-gray-900 font-mono break-all">{values.counterpartyAddress}</span>
             </div>
           </div>
 
           {/* Terms */}
           <div className="border-t border-gray-200 pt-4">
-            <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider">Terms</h3>
+            <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider">{t('terms')}</h3>
             <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <div>
-                <span className="block text-xs text-gray-400">Amount</span>
+                <span className="block text-xs text-gray-400">{t('amount')}</span>
                 <span className="block text-lg text-blue-600 font-bold">
-                  {values.amount} {values.asset}
+                  {formatLocaleNumber(Number(values.amount), locale, { minimumFractionDigits: 2, maximumFractionDigits: 7 })} {values.asset}
                 </span>
               </div>
               <div>
-                <span className="block text-xs text-gray-400">Deadline</span>
+                <span className="block text-xs text-gray-400">{t('deadline')}</span>
                 <span className="block text-sm text-gray-900 font-medium">
                   {values.deadline ? formatDate(values.deadline) : '-'}
                 </span>
@@ -77,12 +92,12 @@ export default function ReviewStep() {
           {/* Milestones */}
           {milestones.length > 0 && (
             <div className="border-t border-gray-200 pt-4">
-              <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider">Milestones</h3>
+              <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider">{t('milestonesTitle')}</h3>
               <ul className="mt-2 space-y-2">
                 {milestones.map((m, i) => (
                   <li key={i} className="flex justify-between text-sm text-gray-700">
                     <span>{m.description}</span>
-                    <span className="font-medium text-blue-600">{m.amount} XLM</span>
+                    <span className="font-medium text-blue-600">{formatLocaleNumber(Number(m.amount), locale)} XLM</span>
                   </li>
                 ))}
               </ul>
@@ -92,14 +107,14 @@ export default function ReviewStep() {
           {/* Conditions */}
           {conditions.length > 0 && (
             <div className="border-t border-gray-200 pt-4">
-              <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider">Conditions</h3>
+              <h3 className="text-sm font-medium text-gray-500 uppercase tracking-wider">{t('conditionsTitle')}</h3>
               <ul className="mt-2 space-y-2">
                 {conditions.map((c, i) => (
                   <li key={i} className="text-sm text-gray-700">
-                    <span className="font-medium capitalize">{c.type}</span>
+                    <span className="font-medium">{t(conditionTypeKeys[c.type] ?? 'conditionType')}</span>
                     {c.description && ` — ${c.description}`}
                     {c.releaseDate && (
-                      <span className="ml-1 text-gray-500 text-xs">({c.releaseDate})</span>
+                      <span className="ml-1 text-gray-500 text-xs">({formatLocaleDate(new Date(c.releaseDate), locale, { dateStyle: 'medium', timeStyle: 'short' })})</span>
                     )}
                   </li>
                 ))}
@@ -116,9 +131,9 @@ export default function ReviewStep() {
               </svg>
             </div>
             <div className="ml-3">
-              <h3 className="text-sm font-medium text-yellow-800">Review carefully</h3>
+              <h3 className="text-sm font-medium text-yellow-800">{t('reviewWarningTitle')}</h3>
               <p className="mt-2 text-sm text-yellow-700">
-                Once deployed on-chain, some parameters cannot be changed. Ensure the counterparty address is correct.
+                {t('reviewWarning')}
               </p>
             </div>
           </div>

@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { X, Calendar, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useTranslations } from 'next-intl';
 
 interface ExportModalProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ interface ExportModalProps {
 }
 
 export function ExportModal({ isOpen, onClose, onConfirm, isLoading = false }: ExportModalProps) {
+  const t = useTranslations('transactionTools');
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -34,11 +36,12 @@ export function ExportModal({ isOpen, onClose, onConfirm, isLoading = false }: E
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
             <Calendar className="w-5 h-5" />
-            Select Date Range
+            {t('selectDateRange')}
           </h3>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
+            aria-label={t('close')}
           >
             <X className="w-5 h-5" />
           </button>
@@ -47,7 +50,7 @@ export function ExportModal({ isOpen, onClose, onConfirm, isLoading = false }: E
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              From Date
+              {t('fromDate')}
             </label>
             <Input
               type="date"
@@ -59,7 +62,7 @@ export function ExportModal({ isOpen, onClose, onConfirm, isLoading = false }: E
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              To Date
+              {t('toDate')}
             </label>
             <Input
               type="date"
@@ -70,7 +73,7 @@ export function ExportModal({ isOpen, onClose, onConfirm, isLoading = false }: E
           </div>
 
           <p className="text-xs text-gray-500">
-            Leave both fields empty to export all transactions
+            {t('emptyDates')}
           </p>
         </div>
 
@@ -81,7 +84,7 @@ export function ExportModal({ isOpen, onClose, onConfirm, isLoading = false }: E
             disabled={isLoading}
             className="flex-1"
           >
-            Clear Dates
+            {t('clearDates')}
           </Button>
           <Button
             onClick={handleConfirm}
@@ -91,10 +94,10 @@ export function ExportModal({ isOpen, onClose, onConfirm, isLoading = false }: E
             {isLoading ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Exporting...
+                {t('exporting')}
               </>
             ) : (
-              "Export"
+              t('export')
             )}
           </Button>
         </div>

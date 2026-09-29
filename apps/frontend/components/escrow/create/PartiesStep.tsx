@@ -3,8 +3,10 @@
 import { useFormContext } from "react-hook-form";
 import { CreateEscrowFormData } from "@/lib/escrow-schema";
 import Input from "@/components/ui/input";
+import { useTranslations } from 'next-intl';
 
 export default function PartiesStep() {
+  const t = useTranslations('createEscrow');
   const {
     register,
     formState: { errors },
@@ -14,18 +16,17 @@ export default function PartiesStep() {
     <div className="space-y-6">
       <div className="space-y-4">
         <h2 className="text-xl font-semibold text-gray-900">
-          Parties Involved
+          {t('partiesTitle')}
         </h2>
         <p className="text-sm text-gray-500">
-          Specify the counterparty for this escrow. This is the address that
-          will receive the funds or provide the service.
+          {t('partiesHelp')}
         </p>
 
         {/* Counterparty Address Field */}
         <Input
-          label="Counterparty Address"
-          placeholder="G..."
-          helperText="Enter the public key (starts with G) of the other party."
+          label={t('counterpartyAddress')}
+          placeholder={t('counterpartyPlaceholder')}
+          helperText={t('counterpartyHelp')}
           error={errors.counterpartyAddress?.message}
           {...register("counterpartyAddress")}
         />

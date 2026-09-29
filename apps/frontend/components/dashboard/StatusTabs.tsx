@@ -1,5 +1,6 @@
 import React from 'react';
 import { CanonicalEscrowStatus } from '@/utils/escrowStatus';
+import { useTranslations } from 'next-intl';
 
 type StatusTabId = CanonicalEscrowStatus | 'all';
 
@@ -8,24 +9,24 @@ interface StatusTabsProps {
   onToggleStatus: (status: StatusTabId) => void;
 }
 
-const TABS: Array<{ id: StatusTabId; label: string }> = [
-  { id: 'all', label: 'All' },
-  { id: CanonicalEscrowStatus.ACTIVE, label: 'Active' },
-  { id: CanonicalEscrowStatus.CREATED, label: 'Pending' },
-  { id: CanonicalEscrowStatus.COMPLETED, label: 'Completed' },
-  { id: CanonicalEscrowStatus.DISPUTED, label: 'Disputed' },
-  { id: CanonicalEscrowStatus.EXPIRED, label: 'Expired' },
-];
-
 const StatusTabs: React.FC<StatusTabsProps> = ({ activeStatuses, onToggleStatus }) => {
+  const t = useTranslations('dashboard');
+  const tabs: Array<{ id: StatusTabId; label: string }> = [
+    { id: 'all', label: t('all') },
+    { id: CanonicalEscrowStatus.ACTIVE, label: t('active') },
+    { id: CanonicalEscrowStatus.CREATED, label: t('pending') },
+    { id: CanonicalEscrowStatus.COMPLETED, label: t('completed') },
+    { id: CanonicalEscrowStatus.DISPUTED, label: t('disputed') },
+    { id: CanonicalEscrowStatus.EXPIRED, label: t('expired') },
+  ];
   const isActive = (id: StatusTabId) => id === 'all' ? activeStatuses.length === 0 : activeStatuses.includes(id);
 
   return (
     <div className="mb-5 -mx-1">
       {/* Scrollable tab strip — no horizontal scroll bleed on the page */}
       <div className="overflow-x-auto scrollbar-none pb-1">
-        <nav className="flex items-center gap-1 min-w-max px-1" aria-label="Escrow status filter">
-          {TABS.map((tab) => (
+        <nav className="flex items-center gap-1 min-w-max px-1" aria-label={t('yourEscrows')}>
+          {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => onToggleStatus(tab.id)}

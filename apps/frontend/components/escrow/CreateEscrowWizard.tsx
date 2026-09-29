@@ -2,6 +2,7 @@
 
 import { useRef, useState } from 'react';
 import Link from 'next/link';
+import { useTranslations } from 'next-intl';
 import { useForm, FormProvider } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { createEscrowSchema, CreateEscrowFormData } from '@/lib/escrow-schema';
@@ -19,17 +20,17 @@ import { useTemplates } from '@/hooks/useTemplates';
 import { formDataToTemplateData } from '@/lib/templates';
 import { useToast } from '@/hooks/useToast';
 
-const STEPS = [
-  { id: 'template', title: 'Template', shortTitle: 'Template', fields: [] },
-  { id: 'basic', title: 'Basic Info', shortTitle: 'Info', fields: ['title', 'description', 'category'] },
-  { id: 'parties', title: 'Parties', shortTitle: 'Parties', fields: ['counterpartyAddress'] },
-  { id: 'terms', title: 'Terms', shortTitle: 'Terms', fields: ['amount', 'deadline', 'asset'] },
-  { id: 'milestones', title: 'Milestones', shortTitle: 'Miles.', fields: [] },
-  { id: 'conditions', title: 'Conditions', shortTitle: 'Conds.', fields: [] },
-  { id: 'review', title: 'Review', shortTitle: 'Review', fields: [] },
-];
-
 export default function CreateEscrowWizard() {
+  const t = useTranslations('createEscrow');
+  const steps = [
+    { id: 'template', title: t('steps.template'), shortTitle: t('steps.template'), fields: [] },
+    { id: 'basic', title: t('steps.basic'), shortTitle: t('steps.info'), fields: ['title', 'description', 'category'] },
+    { id: 'parties', title: t('steps.parties'), shortTitle: t('steps.parties'), fields: ['counterpartyAddress'] },
+    { id: 'terms', title: t('steps.terms'), shortTitle: t('steps.terms'), fields: ['amount', 'deadline', 'asset'] },
+    { id: 'milestones', title: t('steps.milestones'), shortTitle: t('steps.shortMilestones'), fields: [] },
+    { id: 'conditions', title: t('steps.conditions'), shortTitle: t('steps.shortConditions'), fields: [] },
+    { id: 'review', title: t('steps.review'), shortTitle: t('steps.review'), fields: [] },
+  ];
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [hasSignedIntent, setHasSignedIntent] = useState(false);
@@ -68,10 +69,10 @@ export default function CreateEscrowWizard() {
       setCurrentStep((prev) => prev + 1);
       return;
     }
-    const fields = STEPS[currentStep].fields as any[];
+    const fields = steps[currentStep].fields as any[];
     const isValid = await trigger(fields);
     if (isValid) {
-      setCurrentStep((prev) => Math.min(prev + 1, STEPS.length - 1));
+      setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
       setSubmitError(null);
     }
   };
@@ -86,7 +87,7 @@ export default function CreateEscrowWizard() {
     setSubmitError(null);
     try {
       if (!activeAccount) {
-        throw new Error('Connect a Stellar wallet before creating an escrow.');
+        throw new Error(t('connectWallet'));
       }
 
       const payload: CreateEscrowPayload = {
@@ -113,23 +114,23 @@ export default function CreateEscrowWizard() {
       if (!signedXdr) {
         const prepared = await prepareEscrowCreation(intent.id, intent.payload);
         if (prepared.intentId !== intent.id || !prepared.unsignedXdr) {
-          throw new Error('The API returned an invalid escrow transaction.');
+          throw new Error(t('invalidTransaction'));
         }
         signedXdr = await signTransaction(prepared.unsignedXdr);
-        if (!signedXdr) throw new Error('The wallet did not return a signed transaction.');
+        if (!signedXdr) throw new Error(t('unsignedTransaction'));
         intent.signedXdr = signedXdr;
         setHasSignedIntent(true);
       }
 
       const settled = await submitEscrowCreation(intent.id, signedXdr);
       if (settled.status !== 'confirmed' || !settled.escrowId || !settled.transactionHash) {
-        throw new Error('The network has not confirmed this escrow yet. Retry to check the same submission.');
+        throw new Error(t('unconfirmedTransaction'));
       }
       setCreatedEscrowId(settled.escrowId);
       setTxHash(settled.transactionHash);
-      success('Escrow creation confirmed on Stellar.');
+      success(t('creationConfirmed'));
     } catch (error: any) {
-      const message = error?.message || 'Failed to create escrow. Please try again.';
+      const message = error?.message || t('creationFailed');
       if (/transaction failed on stellar|rpc rejected the signed transaction/i.test(message)) {
         // The network reported a terminal result, so a new attempt needs a new sequence and intent.
         creationIntent.current = null;
@@ -149,7 +150,7 @@ export default function CreateEscrowWizard() {
       icon: 'Settings',
       data: formDataToTemplateData(formData),
     });
-    success('Template saved successfully!');
+    success(t('templateSaved'));
     setShowSaveTemplate(false);
     setTemplateName('');
     setTemplateDescription('');
@@ -161,12 +162,12 @@ export default function CreateEscrowWizard() {
         <div className="flex justify-center">
           <CheckCircle2 className="h-14 w-14 text-emerald-500" />
         </div>
-        <h2 className="text-xl sm:text-2xl font-bold">Escrow Created Successfully!</h2>
-        <p className="text-muted-foreground text-sm sm:text-base">Your escrow agreement has been confirmed on Stellar.</p>
+        <h2 className="text-xl sm:text-2xl font-bold">{t('createdTitle')}</h2>
+        <p className="text-muted-foreground text-sm sm:text-base">{t('createdDescription')}</p>
         <div className="bg-muted/50 border border-border p-4 rounded-lg break-all text-left">
-          <p className="text-xs text-muted-foreground uppercase mb-1 font-mono">Escrow ID</p>
+          <p className="text-xs text-muted-foreground uppercase mb-1 font-mono">{t('escrowId')}</p>
           <p className="font-mono text-sm mb-4">{createdEscrowId}</p>
-          <p className="text-xs text-muted-foreground uppercase mb-1 font-mono">Transaction Hash</p>
+          <p className="text-xs text-muted-foreground uppercase mb-1 font-mono">{t('transactionHash')}</p>
           <p className="font-mono text-sm">{txHash}</p>
         </div>
 
@@ -177,37 +178,37 @@ export default function CreateEscrowWizard() {
               className="min-h-[44px] inline-flex items-center gap-2 px-6 py-2.5 border border-border rounded-lg hover:bg-muted text-sm font-medium transition-colors"
             >
               <Save className="w-4 h-4" />
-              Save as Template
+              {t('saveAsTemplate')}
             </button>
             <br />
             <Link
               href="/dashboard"
               className="min-h-[44px] inline-flex items-center px-6 py-2.5 bg-primary text-primary-foreground rounded-lg hover:opacity-90 text-sm font-medium transition-colors"
             >
-              Return to Dashboard
+              {t('returnDashboard')}
             </Link>
           </div>
         ) : (
           <div className="space-y-4">
             <div className="space-y-3 text-left">
               <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Template Name</label>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">{t('templateName')}</label>
                 <input
                   type="text"
                   value={templateName}
                   onChange={(e) => setTemplateName(e.target.value)}
                   className="w-full px-3 py-2 border border-input bg-background rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
-                  placeholder="My Custom Template"
+                  placeholder={t('customTemplatePlaceholder')}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-muted-foreground mb-1">Description (Optional)</label>
+                <label className="block text-sm font-medium text-muted-foreground mb-1">{t('optionalDescription')}</label>
                 <textarea
                   value={templateDescription}
                   onChange={(e) => setTemplateDescription(e.target.value)}
                   className="w-full px-3 py-2 border border-input bg-background rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
                   rows={3}
-                  placeholder="Describe what this template is for..."
+                  placeholder={t('templateDescriptionPlaceholder')}
                 />
               </div>
             </div>
@@ -216,14 +217,14 @@ export default function CreateEscrowWizard() {
                 onClick={() => setShowSaveTemplate(false)}
                 className="min-h-[44px] px-4 py-2 border border-border rounded-lg hover:bg-muted text-sm font-medium transition-colors"
               >
-                Cancel
+                {t('cancel')}
               </button>
               <button
                 onClick={handleSaveAsTemplate}
                 disabled={!templateName}
                 className="min-h-[44px] px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 text-sm font-medium transition-colors disabled:opacity-50"
               >
-                Save Template
+                {t('saveTemplate')}
               </button>
             </div>
           </div>
@@ -239,25 +240,25 @@ export default function CreateEscrowWizard() {
         <div className="px-4 sm:px-8 pt-6 pb-2 border-b border-border">
           <div className="flex items-center justify-between mb-3 sm:hidden">
             <span className="text-sm font-medium text-muted-foreground">
-              Step {currentStep + 1} of {STEPS.length}
+              {t('stepProgress', { current: currentStep + 1, total: steps.length })}
             </span>
-            <span className="text-sm font-semibold text-primary">{STEPS[currentStep].title}</span>
+            <span className="text-sm font-semibold text-primary">{steps[currentStep].title}</span>
           </div>
 
           <div className="sm:hidden mb-4">
             <div className="h-1.5 bg-muted rounded-full overflow-hidden">
               <div
                 className="h-full bg-primary rounded-full transition-all duration-300"
-                style={{ width: `${((currentStep + 1) / STEPS.length) * 100}%` }}
+                style={{ width: `${((currentStep + 1) / steps.length) * 100}%` }}
               />
             </div>
           </div>
 
-          <nav aria-label="Progress" className="hidden sm:block mb-6">
+          <nav aria-label={t('progressLabel')} className="hidden sm:block mb-6">
             <ol role="list" className="flex items-center w-full">
-              {STEPS.map((step, idx) => (
+              {steps.map((step, idx) => (
                 <li key={step.id} className="relative flex-1">
-                  {idx !== STEPS.length - 1 && (
+                  {idx !== steps.length - 1 && (
                     <div className="absolute top-5 left-1/2 w-full flex items-center" aria-hidden="true">
                       <div className={`h-0.5 w-full transition-colors duration-300 ${idx < currentStep ? 'bg-primary' : 'bg-border'}`} />
                     </div>
@@ -322,19 +323,19 @@ export default function CreateEscrowWizard() {
                 className={`min-h-[44px] flex items-center gap-1.5 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50 ${currentStep === 0 ? 'invisible' : ''}`}
               >
                 <ChevronLeft className="h-4 w-4" />
-                Back
+                {t('back')}
               </button>
 
-              {currentStep === STEPS.length - 1 ? (
+              {currentStep === steps.length - 1 ? (
                 <button
                   type="submit"
                   disabled={isSubmitting}
                   className="min-h-[44px] flex items-center gap-1.5 px-5 py-2 border border-transparent rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:opacity-90 transition-colors disabled:opacity-50"
                 >
                   {isSubmitting ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</>
+                    <><Loader2 className="h-4 w-4 animate-spin" /> {t('creating')}</>
                   ) : (
-                    <><CheckCircle2 className="h-4 w-4" /> Create Escrow</>
+                    <><CheckCircle2 className="h-4 w-4" /> {t('create')}</>
                   )}
                 </button>
               ) : (
@@ -343,7 +344,7 @@ export default function CreateEscrowWizard() {
                   onClick={nextStep}
                   className="min-h-[44px] flex items-center gap-1.5 px-5 py-2 border border-transparent rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:opacity-90 transition-colors"
                 >
-                  Next
+                  {t('next')}
                   <ChevronRight className="h-4 w-4" />
                 </button>
               )}

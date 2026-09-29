@@ -13,6 +13,7 @@ import {
 import { useTemplates } from '@/hooks/useTemplates';
 import { EscrowTemplate, templateToFormData } from '@/lib/templates';
 import { CreateEscrowFormData } from '@/lib/escrow-schema';
+import { useTranslations } from 'next-intl';
 
 const iconMap: Record<string, React.ElementType> = {
   Briefcase,
@@ -29,6 +30,7 @@ interface TemplateCardProps {
 }
 
 function TemplateCard({ template, isSelected, onClick, isRecent }: TemplateCardProps) {
+  const t = useTranslations('createEscrow');
   const Icon = template.icon ? iconMap[template.icon] || Settings : Settings;
 
   return (
@@ -55,7 +57,7 @@ function TemplateCard({ template, isSelected, onClick, isRecent }: TemplateCardP
             {isRecent && <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />}
             {template.isBuiltIn && (
               <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
-                Built-in
+                {t('builtIn')}
               </span>
             )}
           </div>
@@ -63,7 +65,7 @@ function TemplateCard({ template, isSelected, onClick, isRecent }: TemplateCardP
           {template.data.milestones && template.data.milestones.length > 0 && (
             <div className="mt-2 flex items-center gap-1 text-xs text-gray-400">
               <Clock className="w-3 h-3" />
-              <span>{template.data.milestones.length} milestone{template.data.milestones.length > 1 ? 's' : ''}</span>
+              <span>{t('milestoneCount', { count: template.data.milestones.length })}</span>
             </div>
           )}
         </div>
@@ -83,6 +85,7 @@ interface TemplateSelectorProps {
 }
 
 export default function TemplateSelector({ onSelect, selectedTemplateId }: TemplateSelectorProps) {
+  const t = useTranslations('createEscrow');
   const { allTemplates, recentTemplates, markAsRecentlyUsed } = useTemplates();
   const [selectedId, setSelectedId] = React.useState<string | undefined>(selectedTemplateId);
 
@@ -98,9 +101,9 @@ export default function TemplateSelector({ onSelect, selectedTemplateId }: Templ
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Choose a Template</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">{t('templateTitle')}</h2>
         <p className="text-gray-500 text-sm mb-6">
-          Select a template to pre-fill your escrow configuration, or start from scratch.
+          {t('templateHelp')}
         </p>
       </div>
 
@@ -108,7 +111,7 @@ export default function TemplateSelector({ onSelect, selectedTemplateId }: Templ
         <div>
           <div className="flex items-center gap-2 mb-3">
             <Star className="w-4 h-4 text-yellow-500" />
-            <h3 className="font-medium text-gray-800">Recently Used</h3>
+            <h3 className="font-medium text-gray-800">{t('recentlyUsed')}</h3>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {recentTemplates.map(template => (
@@ -125,7 +128,7 @@ export default function TemplateSelector({ onSelect, selectedTemplateId }: Templ
       )}
 
       <div>
-        <h3 className="font-medium text-gray-800 mb-3">Built-in Templates</h3>
+        <h3 className="font-medium text-gray-800 mb-3">{t('builtInTemplates')}</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {builtInTemplates.map(template => (
             <TemplateCard
@@ -140,7 +143,7 @@ export default function TemplateSelector({ onSelect, selectedTemplateId }: Templ
 
       {customTemplates.length > 0 && (
         <div>
-          <h3 className="font-medium text-gray-800 mb-3">Custom Templates</h3>
+          <h3 className="font-medium text-gray-800 mb-3">{t('customTemplates')}</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {customTemplates.map(template => (
               <TemplateCard

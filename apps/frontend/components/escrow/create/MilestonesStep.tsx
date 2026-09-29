@@ -3,8 +3,10 @@
 import { useFormContext, useFieldArray } from 'react-hook-form';
 import { CreateEscrowFormData } from '@/lib/escrow-schema';
 import { PlusCircle, Trash2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 export default function MilestonesStep() {
+  const t = useTranslations('createEscrow');
   const {
     register,
     control,
@@ -16,21 +18,21 @@ export default function MilestonesStep() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold text-gray-900">Milestones</h2>
+        <h2 className="text-xl font-semibold text-gray-900">{t('milestonesTitle')}</h2>
         <p className="mt-1 text-sm text-gray-500">
-          Break the escrow into milestones. Each milestone amount will be released when its condition is met.
+          {t('milestonesHelp')}
         </p>
       </div>
 
       {fields.length === 0 && (
-        <p className="text-sm text-gray-400 italic">No milestones added yet. Add one below, or skip to use a single-payment escrow.</p>
+        <p className="text-sm text-gray-400 italic">{t('noMilestones')}</p>
       )}
 
       <div className="space-y-4">
         {fields.map((field, index) => (
           <div key={field.id} className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700">Milestone {index + 1}</span>
+              <span className="text-sm font-medium text-gray-700">{t('milestoneNumber', { number: index + 1 })}</span>
               <button
                 type="button"
                 onClick={() => remove(index)}
@@ -41,10 +43,10 @@ export default function MilestonesStep() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t('description')}</label>
               <input
                 {...register(`milestones.${index}.description`)}
-                placeholder="e.g. Initial design delivered"
+                placeholder={t('descriptionPlaceholder')}
                 className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               {errors.milestones?.[index]?.description && (
@@ -53,7 +55,7 @@ export default function MilestonesStep() {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Amount (XLM)</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">{t('amount')} (XLM)</label>
               <input
                 {...register(`milestones.${index}.amount`)}
                 placeholder="0.00"
@@ -76,7 +78,7 @@ export default function MilestonesStep() {
         className="flex items-center space-x-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
       >
         <PlusCircle className="w-4 h-4" />
-        <span>Add Milestone</span>
+        <span>{t('addMilestone')}</span>
       </button>
     </div>
   );

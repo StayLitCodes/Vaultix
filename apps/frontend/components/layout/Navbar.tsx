@@ -6,20 +6,22 @@ import { Menu, X, Sun, Moon, Monitor, ChevronDown } from "lucide-react";
 import NotificationBell from "@/components/common/NotificationBell";
 import ConnectionStatusIndicator from "@/components/common/ConnectionStatusIndicator";
 import { useTheme } from "@/components/ThemeProvider";
-
-const NAV_LINKS = [
-  { href: "/", label: "Home" },
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/transactions", label: "Transactions" },
-  { href: "/escrow/create", label: "Create Escrow" },
-  { href: "https://github.com/Vaultix", label: "GitHub", external: true },
-];
+import { useTranslations } from "next-intl";
+import LanguageSwitcher from "@/components/layout/LanguageSwitcher";
 
 export default function Navbar(): JSX.Element {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const { theme, setTheme, resolvedTheme } = useTheme();
+  const t = useTranslations("navigation");
+  const navLinks = [
+    { href: "/", label: t("home") },
+    { href: "/dashboard", label: t("dashboard") },
+    { href: "/transactions", label: t("transactions") },
+    { href: "/escrow/create", label: t("createEscrow") },
+    { href: "https://github.com/Vaultix", label: t("github"), external: true },
+  ];
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 10);
@@ -76,7 +78,7 @@ export default function Navbar(): JSX.Element {
 
             {/* Desktop nav */}
             <div className="hidden md:flex items-center gap-6">
-              {NAV_LINKS.map(({ href, label, external }) => (
+              {navLinks.map(({ href, label, external }) => (
                 <Link
                   key={href}
                   href={href}
@@ -90,7 +92,7 @@ export default function Navbar(): JSX.Element {
                 <button
                   onClick={() => setIsThemeMenuOpen(!isThemeMenuOpen)}
                   className="p-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white rounded-lg focus:outline-none transition-colors cursor-pointer flex items-center gap-2"
-                  aria-label="Theme Menu"
+                  aria-label={t("themeMenu")}
                 >
                   {resolvedTheme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
                   <ChevronDown size={16} />
@@ -105,7 +107,7 @@ export default function Navbar(): JSX.Element {
                       className={`w-full px-4 py-3 text-left flex items-center gap-3 text-sm transition-colors ${theme === "light" ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50"}`}
                     >
                       <Sun size={18} />
-                      <span>Light</span>
+                      <span>{t("light")}</span>
                     </button>
                     <button
                       onClick={() => {
@@ -115,7 +117,7 @@ export default function Navbar(): JSX.Element {
                       className={`w-full px-4 py-3 text-left flex items-center gap-3 text-sm transition-colors ${theme === "dark" ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50"}`}
                     >
                       <Moon size={18} />
-                      <span>Dark</span>
+                      <span>{t("dark")}</span>
                     </button>
                     <button
                       onClick={() => {
@@ -125,11 +127,12 @@ export default function Navbar(): JSX.Element {
                       className={`w-full px-4 py-3 text-left flex items-center gap-3 text-sm transition-colors ${theme === "system" ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50"}`}
                     >
                       <Monitor size={18} />
-                      <span>System</span>
+                      <span>{t("system")}</span>
                     </button>
                   </div>
                 )}
               </div>
+              <LanguageSwitcher />
               <ConnectionStatusIndicator />
               <NotificationBell />
             </div>
@@ -140,7 +143,7 @@ export default function Navbar(): JSX.Element {
                 <button
                   onClick={() => setIsThemeMenuOpen(!isThemeMenuOpen)}
                   className="p-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white rounded-lg focus:outline-none transition-colors cursor-pointer"
-                  aria-label="Theme Menu"
+                  aria-label={t("themeMenu")}
                 >
                   {resolvedTheme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
                 </button>
@@ -154,7 +157,7 @@ export default function Navbar(): JSX.Element {
                       className={`w-full px-4 py-3 text-left flex items-center gap-3 text-sm transition-colors ${theme === "light" ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50"}`}
                     >
                       <Sun size={18} />
-                      <span>Light</span>
+                      <span>{t("light")}</span>
                     </button>
                     <button
                       onClick={() => {
@@ -164,7 +167,7 @@ export default function Navbar(): JSX.Element {
                       className={`w-full px-4 py-3 text-left flex items-center gap-3 text-sm transition-colors ${theme === "dark" ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50"}`}
                     >
                       <Moon size={18} />
-                      <span>Dark</span>
+                      <span>{t("dark")}</span>
                     </button>
                     <button
                       onClick={() => {
@@ -174,16 +177,17 @@ export default function Navbar(): JSX.Element {
                       className={`w-full px-4 py-3 text-left flex items-center gap-3 text-sm transition-colors ${theme === "system" ? "bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white" : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50"}`}
                     >
                       <Monitor size={18} />
-                      <span>System</span>
+                      <span>{t("system")}</span>
                     </button>
                   </div>
                 )}
               </div>
+              <LanguageSwitcher />
               <NotificationBell />
               <button
                 onClick={() => setIsMenuOpen((v) => !v)}
                 className="min-w-[44px] min-h-[44px] flex items-center justify-center text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white focus:outline-none rounded-lg"
-                aria-label={isMenuOpen ? "Close menu" : "Open menu"}
+                aria-label={isMenuOpen ? t("closeMenu") : t("openMenu")}
                 aria-expanded={isMenuOpen}
               >
                 {isMenuOpen ? <X size={22} /> : <Menu size={22} />}
@@ -202,7 +206,7 @@ export default function Navbar(): JSX.Element {
           />
           <div className="absolute top-0 right-0 h-full w-72 bg-white dark:bg-gray-900 backdrop-blur-xl flex flex-col pt-20 pb-8 px-6 shadow-2xl">
             <nav className="flex flex-col gap-1">
-              {NAV_LINKS.map(({ href, label, external }) => (
+              {navLinks.map(({ href, label, external }) => (
                 <Link
                   key={href}
                   href={href}

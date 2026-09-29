@@ -7,6 +7,7 @@ import { useEvents } from '@/hooks/useEvents';
 import ActivityItem from './ActivityItem';
 import { IEscrowEvent } from '@/types/escrow';
 import { ActivityFeedSkeleton } from '../ui/ActivityFeedSkeleton';
+import { useTranslations } from 'next-intl';
 
 interface ActivityFeedProps {
     escrowId?: string;
@@ -14,19 +15,19 @@ interface ActivityFeedProps {
     className?: string;
 }
 
-const EVENT_FILTERS = [
-    { label: 'All', value: 'ALL' },
-    { label: 'Founding', value: 'FUNDED' },
-    { label: 'Conditions', value: 'CONDITION_MET' },
-    { label: 'Completion', value: 'COMPLETED' },
-    { label: 'Conflicts', value: 'DISPUTED' },
-];
-
 const ActivityFeed: React.FC<ActivityFeedProps> = ({
     escrowId,
     maxNotifications = 20,
     className = ""
 }) => {
+    const t = useTranslations('activity');
+    const eventFilters = [
+        { label: t('filters.all'), value: 'ALL' },
+        { label: t('filters.funding'), value: 'FUNDED' },
+        { label: t('filters.conditions'), value: 'CONDITION_MET' },
+        { label: t('filters.completion'), value: 'COMPLETED' },
+        { label: t('filters.conflicts'), value: 'DISPUTED' },
+    ];
     const [filter, setFilter] = useState('ALL');
     const [isRefreshing, setIsRefreshing] = useState(false);
     const loadMoreRef = useRef<HTMLDivElement>(null);
@@ -84,7 +85,7 @@ const ActivityFeed: React.FC<ActivityFeedProps> = ({
                         <Zap className="w-4 h-4" />
                     </div>
                     <h3 className="font-bold text-gray-900 text-sm italic tracking-tight uppercase">
-                        Live Activity
+                        {t('header')}
                     </h3>
                     {isFetching && !isFetchingNextPage && (
                         <Loader2 className="w-3 h-3 text-blue-500 animate-spin" />
@@ -94,6 +95,7 @@ const ActivityFeed: React.FC<ActivityFeedProps> = ({
                 <button
                     onClick={handleRefresh}
                     disabled={isRefreshing}
+                    aria-label={t('refresh')}
                     className={`p-1.5 hover:bg-white rounded-lg border border-transparent hover:border-gray-200 transition-all text-gray-400 hover:text-blue-500 ${isRefreshing ? 'animate-spin' : ''}`}
                 >
                     <RefreshCw className="w-4 h-4" />
@@ -103,7 +105,7 @@ const ActivityFeed: React.FC<ActivityFeedProps> = ({
             {/* Filters */}
             <div className="px-4 py-2 border-b border-gray-50 flex items-center gap-2 overflow-x-auto no-scrollbar">
                 <Filter className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                {EVENT_FILTERS.map((f) => (
+                {eventFilters.map((f) => (
                     <button
                         key={f.value}
                         onClick={() => setFilter(f.value)}
@@ -128,8 +130,8 @@ const ActivityFeed: React.FC<ActivityFeedProps> = ({
                         <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mb-3">
                             <Activity className="w-6 h-6 text-gray-300" />
                         </div>
-                        <h4 className="text-sm font-semibold text-gray-900 mb-1">No activity yet</h4>
-                        <p className="text-xs text-gray-500">Events related to your escrows will appear here in real-time.</p>
+                        <h4 className="text-sm font-semibold text-gray-900 mb-1">{t('emptyTitle')}</h4>
+                        <p className="text-xs text-gray-500">{t('emptyDescription')}</p>
                     </div>
                 ) : (
                     <div className="space-y-1">
@@ -155,12 +157,12 @@ const ActivityFeed: React.FC<ActivityFeedProps> = ({
             {/* Footer */}
             <div className="p-3 bg-gray-50/30 border-t border-gray-50 flex items-center justify-between">
                 <span className="text-[10px] font-medium text-gray-400">
-                    Showing {allEvents.length} events
+                    {t('showingEvents', { count: allEvents.length })}
                 </span>
                 <div className="flex items-center gap-1">
                     <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
                     <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">
-                        Live
+                        {t('live')}
                     </span>
                 </div>
             </div>

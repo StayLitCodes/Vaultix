@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, SlidersHorizontal, ChevronDown, ChevronUp } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 interface EscrowFiltersProps {
   searchQuery: string;
@@ -28,6 +29,7 @@ const EscrowFilters: React.FC<EscrowFiltersProps> = ({
   toDate = '',
   onDateChange,
 }) => {
+  const t = useTranslations('dashboard');
   const [localSearch, setLocalSearch] = useState(searchQuery);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -45,7 +47,7 @@ const EscrowFilters: React.FC<EscrowFiltersProps> = ({
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           <input
             type="text"
-            placeholder="Search escrows…"
+            placeholder={t('searchEscrows')}
             value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
             className="w-full min-h-[44px] pl-9 pr-3 rounded-lg border border-gray-300 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -60,21 +62,21 @@ const EscrowFilters: React.FC<EscrowFiltersProps> = ({
             onSortChange(field, order);
           }}
           className="min-h-[44px] rounded-lg border border-gray-300 text-sm text-gray-900 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white shrink-0"
-          aria-label="Sort escrows"
+          aria-label={t('sortEscrows')}
         >
-          <option value="date-desc">Newest first</option>
-          <option value="date-asc">Oldest first</option>
-          <option value="amount-desc">Amount ↓</option>
-          <option value="amount-asc">Amount ↑</option>
-          <option value="deadline-asc">Deadline soon</option>
-          <option value="deadline-desc">Deadline later</option>
+          <option value="date-desc">{t('newestFirst')}</option>
+          <option value="date-asc">{t('oldestFirst')}</option>
+          <option value="amount-desc">{t('amountDescending')}</option>
+          <option value="amount-asc">{t('amountAscending')}</option>
+          <option value="deadline-asc">{t('deadlineSoon')}</option>
+          <option value="deadline-desc">{t('deadlineLater')}</option>
         </select>
 
         {/* Advanced toggle */}
         <button
           onClick={() => setShowAdvanced((v) => !v)}
           className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
-          aria-label="Toggle advanced filters"
+          aria-label={t('advancedFilters')}
           aria-expanded={showAdvanced}
         >
           <SlidersHorizontal className="w-4 h-4" />
@@ -85,7 +87,7 @@ const EscrowFilters: React.FC<EscrowFiltersProps> = ({
       {showAdvanced && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Min Amount</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{t('minimumAmount')}</label>
             <input
               type="number"
               placeholder="0"
@@ -95,17 +97,17 @@ const EscrowFilters: React.FC<EscrowFiltersProps> = ({
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Max Amount</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{t('maximumAmount')}</label>
             <input
               type="number"
-              placeholder="Any"
+              placeholder={t('any')}
               value={maxAmount}
               onChange={(e) => onAmountChange?.(minAmount, e.target.value)}
               className="w-full min-h-[44px] px-3 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">From Date</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{t('fromDate')}</label>
             <input
               type="date"
               value={fromDate}
@@ -114,7 +116,7 @@ const EscrowFilters: React.FC<EscrowFiltersProps> = ({
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">To Date</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">{t('toDate')}</label>
             <input
               type="date"
               value={toDate}

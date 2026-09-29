@@ -1,7 +1,9 @@
 import React from 'react';
 import Link from 'next/link';
 import type { IEscrow } from '@/types/escrow';
-import { CanonicalEscrowStatus, canTakeFinancialAction, escrowStatusLabel } from '@/utils/escrowStatus';
+import { CanonicalEscrowStatus, canTakeFinancialAction } from '@/utils/escrowStatus';
+import { useLocale, useTranslations } from 'next-intl';
+import { formatLocaleDate, formatLocaleNumber, type Locale } from '@/lib/i18n';
 
 interface EscrowCardProps {
   escrow: IEscrow;
@@ -22,14 +24,25 @@ const STATUS_STYLES: Record<CanonicalEscrowStatus, string> = {
 };
 
 
-const formatDate = (dateString: string) =>
-  new Date(dateString).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-
 const truncateAddress = (addr: string) => `${addr.substring(0, 6)}...${addr.slice(-4)}`;
 
 const EscrowCard: React.FC<EscrowCardProps> = ({ escrow, searchedAddress }) => {
+  const t = useTranslations('dashboardCards');
+  const locale = useLocale() as Locale;
   const statusStyle = STATUS_STYLES[escrow.status];
-  const statusLabel = escrowStatusLabel(escrow.status);
+  const statusLabels: Record<CanonicalEscrowStatus, string> = {
+    [CanonicalEscrowStatus.CREATED]: t('status.pending'),
+    [CanonicalEscrowStatus.FUNDED]: t('status.funded'),
+    [CanonicalEscrowStatus.ACTIVE]: t('status.active'),
+    [CanonicalEscrowStatus.DISPUTED]: t('status.disputed'),
+    [CanonicalEscrowStatus.RESOLVED]: t('status.resolved'),
+    [CanonicalEscrowStatus.REFUNDED]: t('status.refunded'),
+    [CanonicalEscrowStatus.CANCELLED]: t('status.cancelled'),
+    [CanonicalEscrowStatus.COMPLETED]: t('status.completed'),
+    [CanonicalEscrowStatus.EXPIRED]: t('status.expired'),
+    [CanonicalEscrowStatus.UNKNOWN]: t('status.unknown'),
+  };
+  const statusLabel = statusLabels[escrow.status] ?? t('status.unknown');
   // Financial actions are offered only for a live, recognized escrow.
   const canAct = canTakeFinancialAction(escrow.status);
 
@@ -37,9 +50,9 @@ const EscrowCard: React.FC<EscrowCardProps> = ({ escrow, searchedAddress }) => {
   if (searchedAddress) {
     const searchLower = searchedAddress.toLowerCase();
     if (escrow.creatorAddress?.toLowerCase() === searchLower) {
-      roleBadge = 'Buyer';
+      roleBadge = 'buyer';
     } else if (escrow.counterpartyAddress?.toLowerCase() === searchLower) {
-      roleBadge = 'Seller';
+      roleBadge = 'seller';
     }
   }
 
@@ -57,7 +70,7 @@ const EscrowCard: React.FC<EscrowCardProps> = ({ escrow, searchedAddress }) => {
             </span>
             {roleBadge && (
               <span className="flex-shrink-0 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap bg-purple-100 text-purple-800">
-                {roleBadge}
+                {t(roleBadge)}
               </span>
             )}
           </div>
@@ -67,22 +80,22 @@ const EscrowCard: React.FC<EscrowCardProps> = ({ escrow, searchedAddress }) => {
         {/* Details grid — 2 cols on mobile, 4 on md+ */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-gray-50 rounded-lg p-2.5">
-            <p className="text-xs font-medium text-gray-500 mb-0.5">Amount</p>
+            <p className="text-xs font-medium text-gray-500 mb-0.5">{t('amount')}</p>
             <p className="text-sm font-semibold text-gray-900 truncate">
-              {escrow.amount} {escrow.asset}
+              {formatLocaleNumber(Number(escrow.amount), locale, { minimumFractionDigits: 2, maximumFractionDigits: 7 })} {escrow.asset}
             </p>
           </div>
           <div className="bg-gray-50 rounded-lg p-2.5">
-            <p className="text-xs font-medium text-gray-500 mb-0.5">Counterparty</p>
+            <p className="text-xs font-medium text-gray-500 mb-0.5">{t('counterparty')}</p>
             <p className="text-sm font-mono text-gray-700">{truncateAddress(escrow.counterpartyAddress)}</p>
           </div>
           <div className="bg-gray-50 rounded-lg p-2.5">
-            <p className="text-xs font-medium text-gray-500 mb-0.5">Created</p>
-            <p className="text-sm text-gray-700">{formatDate(escrow.createdAt)}</p>
+            <p className="text-xs font-medium text-gray-500 mb-0.5">{t('created')}</p>
+            <p className="text-sm text-gray-700">{formatLocaleDate(new Date(escrow.createdAt), locale, { year: 'numeric', month: 'short', day: 'numeric' })}</p>
           </div>
           <div className="bg-gray-50 rounded-lg p-2.5">
-            <p className="text-xs font-medium text-gray-500 mb-0.5">Deadline</p>
-            <p className="text-sm text-gray-700">{formatDate(escrow.deadline)}</p>
+            <p className="text-xs font-medium text-gray-500 mb-0.5">{t('deadline')}</p>
+            <p className="text-sm text-gray-700">{formatLocaleDate(new Date(escrow.deadline), locale, { year: 'numeric', month: 'short', day: 'numeric' })}</p>
           </div>
         </div>
       </div>
@@ -93,7 +106,7 @@ const EscrowCard: React.FC<EscrowCardProps> = ({ escrow, searchedAddress }) => {
           href={`/escrow/${escrow.id}`}
           className="min-h-[44px] inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors"
         >
-          View Details
+          {t('viewDetails')}
         </Link>
         {canAct && escrow.status === CanonicalEscrowStatus.ACTIVE && (
           <div className="flex gap-2">
@@ -101,13 +114,13 @@ const EscrowCard: React.FC<EscrowCardProps> = ({ escrow, searchedAddress }) => {
               href={`/escrow/${escrow.id}/confirm`}
               className="min-h-[44px] inline-flex items-center px-3 py-2 rounded-lg text-sm font-medium text-green-700 bg-green-50 border border-green-200 hover:bg-green-100 transition-colors"
             >
-              Confirm Delivery
+              {t('confirmDelivery')}
             </Link>
             <Link
               href={`/escrow/${escrow.id}/dispute`}
               className="min-h-[44px] inline-flex items-center px-3 py-2 rounded-lg text-sm font-medium text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors"
             >
-              Dispute
+              {t('disputeAction')}
             </Link>
           </div>
         )}
