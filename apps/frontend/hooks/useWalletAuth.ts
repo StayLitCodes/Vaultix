@@ -1,83 +1,94 @@
-import { useState } from "react";
-import { saveSession } from "@/lib/session";
+// frontend/src/hooks/useWalletAuth.ts
+import { useState, useCallback } from 'react';
+import { api } from '../lib/api/transport';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-const API_VERSION_PREFIX = "/v1";
-
-export interface WalletAuthState {
-  loading: boolean;
-  error: string | null;
-  token: string | null;
+export interface ChallengeRequestDto {
+    walletAddress: string;
 }
 
-/**
- * Implements challenge-response wallet authentication:
- * 1. Fetch a challenge message from the backend.
- * 2. Sign it with the connected wallet.
- * 3. Submit the signature to receive a JWT bound to that wallet.
- */
-export const useWalletAuth = () => {
-  const [state, setState] = useState<WalletAuthState>({
-    loading: false,
-    error: null,
-    token: null,
-  });
+export interface ChallengeResponseDto {
+    success: boolean;
+    data: {
+        nonce: string;
+        message: string;
+    };
+}
 
-  const signIn = async (publicKey: string): Promise<boolean> => {
-    setState({ loading: true, error: null, token: null });
-    try {
-      const challengeRes = await fetch(
-        `${API_URL}${API_VERSION_PREFIX}/auth/challenge`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ walletAddress: publicKey }),
+export interface VerifyRequestDto {
+    walletAddress: string;
+    signature: string;
+    message: string;
+}
+
+export interface VerifyResponseDto {
+    success: boolean;
+    data: {
+        accessToken: string;
+        refreshToken: string;
+        user: {
+            id: string;
+            walletAddress: string;
+        };
+    };
+}
+
+export function useWalletAuth() {
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const authenticateWithWallet = useCallback(
+        async (walletAddress: string, signMessageFn: (message: string) => Promise<string>) => {
+            setIsLoading(true);
+            setError(null);
+
+            try {
+                // 1. Request challenge using POST DTO with walletAddress
+                const challengeRes = await api.post<ChallengeResponseDto>('/auth/challenge', {
+                    walletAddress,
+                } as ChallengeRequestDto);
+
+                const { message } = challengeRes.data;
+
+                // 2. Sign exact returned message through supported wallet adapter
+                const rawSignature = await signMessageFn(message);
+
+                // Normalize signature encoding explicitly (ensure 0x hex prefix format)
+                const signature = rawSignature.startsWith('0x') ? rawSignature : `0x${rawSignature}`;
+
+                // 3. Verify signature and exchange for access and refresh tokens
+                const verifyRes = await api.post<VerifyResponseDto>('/auth/verify', {
+                    walletAddress,
+                    signature,
+                    message,
+                } as VerifyRequestDto);
+
+                const { accessToken, refreshToken } = verifyRes.data;
+
+                // 4. Persist both returned tokens through the shared session layer atomically
+                if (typeof window !== 'undefined') {
+                    localStorage.setItem('vaultix_auth_token', accessToken);
+                    localStorage.setItem('vaultix_refresh_token', refreshToken);
+                }
+
+                setIsLoading(false);
+                return true;
+            } catch (err: any) {
+                // Handle rejection without leaving a partial authenticated state: wipe all tokens
+                if (typeof window !== 'undefined') {
+                    localStorage.removeItem('vaultix_auth_token');
+                    localStorage.removeItem('vaultix_refresh_token');
+                }
+                setError(err?.error?.message || 'Wallet authentication failed.');
+                setIsLoading(false);
+                throw err;
+            }
         },
-      );
-      if (!challengeRes.ok) throw new Error("Failed to fetch challenge");
-      const { message } = await challengeRes.json();
+        []
+    );
 
-      const { signedMessage } = await (window as any).freighter.signMessage(
-        message,
-        {
-          address: publicKey,
-        },
-      );
-
-      const verifyRes = await fetch(
-        `${API_URL}${API_VERSION_PREFIX}/auth/verify`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            publicKey,
-            signature: signedMessage,
-          }),
-        },
-      );
-      if (!verifyRes.ok) throw new Error("Authentication failed");
-      const { accessToken, refreshToken } = await verifyRes.json();
-      if (!accessToken || !refreshToken) {
-        throw new Error("Authentication failed");
-      }
-
-      saveSession({
-        accessToken,
-        refreshToken,
-        walletAddress: publicKey,
-      });
-
-      setState({ loading: false, error: null, token: accessToken });
-      return true;
-    } catch (err: any) {
-      setState({
-        loading: false,
-        error: err.message ?? "Unknown error",
-        token: null,
-      });
-      return false;
-    }
-  };
-
-  return { ...state, signIn };
-};
+    return {
+        authenticateWithWallet,
+        isLoading,
+        error,
+    };
+}
