@@ -19,18 +19,22 @@ jobs:
     defaults:
       run:
         working-directory: apps/onchain
+    env:
+      VAULTIX_BUILD_COMMIT: ${{ github.sha }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@nightly
         with:
-          toolchain: stable
+          toolchain: nightly
           # soroban-sdk 27 rejects wasm32-unknown-unknown on Rust 1.82+
           # (reference-types / multi-value); wasm32v1-none is the supported target.
           targets: wasm32v1-none
+          # rustfmt and clippy are not bundled with nightly by default.
+          components: rustfmt, clippy
 
       - name: Cache dependencies
         uses: Swatinem/rust-cache@v2
@@ -45,3 +49,4 @@ jobs:
 
       - name: Run tests
         run: cargo test
+
