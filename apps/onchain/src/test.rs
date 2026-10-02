@@ -152,6 +152,61 @@ fn test_is_initialized_returns_true_after_constructor() {
     assert_eq!(client.get_config(), (treasury, 50));
 }
 
+/// Issue #731: roles are fixed atomically by `__constructor` at deploy time,
+/// so an attacker racing to "initialize" a freshly deployed instance cannot
+/// claim any role. The legacy `init`/`initialize` entrypoints no longer exist.
+#[test]
+fn test_competing_initialization_cannot_override_deployer_roles() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, contract_id) =
+        create_test_contract_full(&env, &admin, &operator, &arbitrator, &treasury, Some(50));
+
+    // An attacker who observed the deployment races to initialize it with
+    // self-authorized addresses (auth is mocked, so only the contract can
+    // stop this).
+    let attacker = Address::generate(&env);
+    let init_result = env.try_invoke_contract::<(), soroban_sdk::Error>(
+        &contract_id,
+        &Symbol::new(&env, "init"),
+        (attacker.clone(), attacker.clone(), attacker.clone()).into_val(&env),
+    );
+    assert!(init_result.is_err());
+    let initialize_result = env.try_invoke_contract::<(), soroban_sdk::Error>(
+        &contract_id,
+        &Symbol::new(&env, "initialize"),
+        (attacker.clone(), 0i128).into_val(&env),
+    );
+    assert!(initialize_result.is_err());
+
+    // The intended deployer configuration is untouched.
+    assert!(client.is_initialized());
+    assert_eq!(client.get_admin(), admin);
+    assert_eq!(client.get_operator(), operator);
+    assert_eq!(client.get_arbitrator(), arbitrator);
+    assert_eq!(client.get_treasury(), treasury);
+    assert_eq!(client.get_config(), (treasury, 50));
+
+    // The attacker holds no role: admin-gated calls require the real admin.
+    let result = client
+        .mock_auths(&[MockAuth {
+            address: &attacker,
+            invoke: &MockAuthInvoke {
+                contract: &contract_id,
+                fn_name: "set_operator",
+                args: (attacker.clone(),).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .try_set_operator(&attacker);
+    assert!(result.is_err());
+    assert_eq!(client.get_operator(), operator);
+}
+
 #[test]
 fn test_role_rotation_requires_current_admin_auth() {
     let env = Env::default();
@@ -2831,6 +2886,84 @@ fn test_zero_amount_milestone_rejected() {
     );
 
     assert_eq!(result, Err(Ok(Error::ZeroAmount)));
+}
+
+/// Issue #738: an empty milestone list is rejected; it would otherwise create a
+/// zero-value escrow that completes without a single release.
+#[test]
+fn test_create_escrow_rejects_empty_milestones() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) = create_test_contract(&env, &admin, &treasury, Some(50));
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token_address = Address::generate(&env);
+
+    let result = client.try_create_escrow(
+        &12u64,
+        &depositor,
+        &recipient,
+        &token_address,
+        &soroban_sdk::Vec::<Milestone>::new(&env),
+        &100000000u64,
+        &valid_metadata_hash(&env),
+    );
+
+    assert_eq!(result, Err(Ok(Error::ZeroAmount)));
+    assert_eq!(
+        client.try_get_escrow(&12u64),
+        Err(Ok(Error::EscrowNotFound))
+    );
+}
+
+#[test]
+fn test_create_escrows_batch_with_empty_milestones_fails_entire_batch() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let (client, _contract_id) = create_test_contract(&env, &admin, &treasury, Some(50));
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    let token_address = Address::generate(&env);
+
+    let requests = vec![
+        &env,
+        CreateEscrowRequest {
+            escrow_id: 21,
+            depositor: depositor.clone(),
+            recipient: recipient.clone(),
+            token_address: token_address.clone(),
+            milestones: vec![
+                &env,
+                Milestone {
+                    amount: 1000,
+                    status: MilestoneStatus::Pending,
+                    description: symbol_short!("Task"),
+                },
+            ],
+            deadline: 100000000u64,
+            metadata_hash: valid_metadata_hash(&env),
+        },
+        CreateEscrowRequest {
+            escrow_id: 22,
+            depositor: depositor.clone(),
+            recipient: recipient.clone(),
+            token_address: token_address.clone(),
+            milestones: soroban_sdk::Vec::new(&env),
+            deadline: 100000000u64,
+            metadata_hash: valid_metadata_hash(&env),
+        },
+    ];
+
+    let result = client.try_create_escrows_batch(&requests);
+    assert_eq!(result, Err(Ok(Error::ZeroAmount)));
+
+    // Atomic failure, same as the batch's other validations.
+    assert_eq!(client.try_get_escrow(&21), Err(Ok(Error::EscrowNotFound)));
+    assert_eq!(client.try_get_escrow(&22), Err(Ok(Error::EscrowNotFound)));
 }
 
 #[test]

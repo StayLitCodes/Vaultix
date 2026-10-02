@@ -159,3 +159,72 @@ Record the contract ID, network, source commit, optimized WASM hash, timestamp,
 signer identity, mode, and any migration or rollback decision. The repository's
 `apps/onchain/deployments/testnet.json` is suitable for testnet records;
 production records must use the project's approved protected registry.
+
+## 8. Testnet deploy workflow (GitHub Actions)
+
+`.github/workflows/testnet-deploy.yml` ("Testnet Deploy") automates sections
+2–4 and 7 for **testnet only**. It never runs on push or pull request.
+
+### Prerequisites
+
+- Repository secret `STELLAR_TESTNET_DEPLOYER_SECRET_KEY`: the deployer's
+  `S...` secret key. The workflow pipes it to `stellar keys add --secret-key`
+  over stdin and never echoes it; GitHub additionally masks it in logs. The
+  job fails early with a clear error if the secret is missing.
+- For `upgrade`, the deployer key must be the contract's current **admin**
+  (`upgrade` is admin-only).
+- The workflow commits the registry back to the dispatched branch, so it needs
+  `contents: write` (declared in the workflow) and a branch that allows the
+  `github-actions[bot]` push.
+
+### Triggering
+
+GitHub → **Actions** → **Testnet Deploy** → **Run workflow**, pick the branch,
+then set the inputs:
+
+| Input | Used by | Meaning |
+| --- | --- | --- |
+| `mode` | both | `deploy` (new contract instance) or `upgrade` (new WASM on an existing id). |
+| `existing_contract_id` | `upgrade` | `C...` id to upgrade. Required for `upgrade`. |
+| `operator_address`, `arbitrator_address`, `treasury_address` | `deploy` | `G...` role addresses; default to the deployer's address when blank. |
+| `fee_bps` | `deploy` | Initial global fee in basis points (default `50`). |
+
+Equivalent CLI trigger: `gh workflow run testnet-deploy.yml --ref <branch> -f
+mode=upgrade -f existing_contract_id=C...`.
+
+### What a run does
+
+1. Builds `onchain.wasm` for `wasm32v1-none` and optimizes it.
+2. Funds the deployer via friendbot (non-fatal if already funded).
+3. Uploads the optimized WASM and captures its hash.
+4. `deploy`: creates a new instance. `upgrade`: calls the existing contract's
+   `upgrade(new_wasm_hash)` — roles, escrows and balances are preserved.
+5. Smoke check: invokes `get_admin` and `get_config`; any failure fails the
+   job, so an unreachable or uninitialized contract never gets recorded.
+6. Writes `contract_id`, `wasm_hash`, `network`, `commit_sha`, `deployed_at`
+   and `mode` to `apps/onchain/deployments/testnet.json` and commits it to the
+   dispatched branch. A committed `null` registry means no recorded deploy yet.
+
+### Known limitation: `deploy` mode predates `__constructor`
+
+The `deploy` path still runs `stellar contract deploy` **without** constructor
+arguments and then invokes the legacy `init` / `initialize` entrypoints, which
+no longer exist (see section 3). Until the workflow is updated to pass
+`--admin/--operator/--arbitrator/--treasury/--fee_bps` to the constructor,
+`mode=deploy` will fail. Meanwhile:
+
+- Create new instances manually with section 3 (constructor args in the same
+  deploy transaction — never deploy first and initialize later), then record
+  the result in `deployments/testnet.json` per section 7.
+- Use the workflow's `mode=upgrade` against that contract id for subsequent
+  releases; this path is unaffected.
+
+### Rollback with the workflow
+
+Re-run **Testnet Deploy** with `mode=upgrade`, the same
+`existing_contract_id`, and the **last known-good commit/branch** selected as
+the ref. This rebuilds and uploads that WASM and upgrades back to it, then
+records the rollback in the registry (the previous entry remains in git
+history). The section 5 caveats apply: state is preserved, executed
+transactions are not undone, and an unsafe storage change needs a new
+instance instead.

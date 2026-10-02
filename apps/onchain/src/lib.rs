@@ -2820,6 +2820,11 @@ fn get_treasury_internal(env: &Env) -> Result<Address, Error> {
 }
 
 fn validate_milestones(milestones: &Vec<Milestone>) -> Result<i128, Error> {
+    // An empty list would yield a zero-value escrow that "completes" with no
+    // release at all (#738); reject it like any other zero amount.
+    if milestones.is_empty() {
+        return Err(Error::ZeroAmount);
+    }
     if milestones.len() > 20 {
         return Err(Error::VectorTooLarge);
     }
