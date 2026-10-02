@@ -1,6 +1,7 @@
 import { Tabs, useRouter, useSegments } from 'expo-router';
 import { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Bell, LayoutDashboard, Settings } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { requireAuth } from '../../services/auth';
 import { useSession } from '../../hooks/useSession';
@@ -48,8 +49,7 @@ export default function TabLayout() {
             title: 'Dashboard',
             tabBarLabel: 'Dashboard',
             tabBarIcon: ({ color, size }) => (
-              // Using text as icon fallback – @expo/vector-icons will work at runtime
-              <TabIcon name="list" color={color} size={size} />
+              <LayoutDashboard color={color} size={size} />
             ),
           }}
         />
@@ -59,7 +59,7 @@ export default function TabLayout() {
             title: 'Notifications',
             tabBarLabel: 'Alerts',
             tabBarIcon: ({ color, size }) => (
-              <TabIcon name="bell" color={color} size={size} />
+              <Bell color={color} size={size} />
             ),
             tabBarBadge: unreadCount > 0 ? (unreadCount > 99 ? '99+' : unreadCount) : undefined,
             tabBarBadgeStyle: {
@@ -84,27 +84,12 @@ export default function TabLayout() {
             tabBarLabel: 'Settings',
             tabBarAccessibilityLabel: 'Settings tab',
             tabBarIcon: ({ color, size }) => (
-              <TabIcon name="gear" color={color} size={size} />
+              <Settings color={color} size={size} />
             ),
           }}
         />
       </Tabs>
     </View>
-  );
-}
-
-/** Lightweight icon stub – renders a colored circle glyph. Replaced by @expo/vector-icons at runtime */
-function TabIcon({ name, color, size }: { name: string; color: string; size: number }) {
-  const glyphs: Record<string, string> = {
-    list: '≡',
-    bell: '🔔',
-    plus: '＋',
-    gear: '⚙',
-  };
-  return (
-    <Text style={{ color, fontSize: size - 4 }}>
-      {glyphs[name] ?? '●'}
-    </Text>
   );
 }
 
