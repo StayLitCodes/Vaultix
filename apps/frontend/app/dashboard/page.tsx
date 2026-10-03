@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useState } from "react";
+import { Suspense, useCallback, useMemo, useState } from "react";
 import { QueryErrorResetBoundary } from "@tanstack/react-query";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import StatusTabs from "@/components/dashboard/StatusTabs";
@@ -13,9 +13,14 @@ import { useEscrows } from "../../hooks/useEscrows";
 import ActivityFeed from "@/components/common/ActivityFeed";
 import Link from "next/link";
 import { PlusCircle, Activity, X } from "lucide-react";
-import { useEscrowWebSocket } from "@/hooks/useEscrowWebSocket";
+import { useEscrowEvents } from "@/hooks/useEscrowEvents";
 import { EscrowCardSkeleton } from "@/components/ui/EscrowCardSkeleton";
 import { ActivityFeedSkeleton } from "@/components/ui/ActivityFeedSkeleton";
+import {
+  CanonicalEscrowStatus,
+  normalizeEscrowStatus,
+  toBackendEscrowStatus,
+} from "@/utils/escrowStatus";
 
 function DashboardContent() {
   const searchParams = useSearchParams();
@@ -23,9 +28,18 @@ function DashboardContent() {
   const pathname = usePathname();
   const [showActivity, setShowActivity] = useState(false);
 
-  useEscrowWebSocket();
+  useEscrowEvents();
 
-  const activeStatuses = searchParams.get("status")?.split(",").filter(Boolean) || [];
+  // Status filters are held canonically and translated to the backend wire
+  // value only when the query is issued. Unknown values are dropped so a
+  // stale or future link cannot filter on a status the backend rejects.
+  const activeStatuses = useMemo<CanonicalEscrowStatus[]>(
+    () =>
+      (searchParams.get("status")?.split(",").filter(Boolean) ?? [])
+        .map(normalizeEscrowStatus)
+        .filter((s) => s !== CanonicalEscrowStatus.UNKNOWN),
+    [searchParams],
+  );
   const searchQuery = searchParams.get("search") || "";
   const sortBy = (searchParams.get("sort") as "date" | "amount" | "deadline") || "date";
   const sortOrder = (searchParams.get("order") as "asc" | "desc") || "desc";
@@ -49,8 +63,8 @@ function DashboardContent() {
     [searchParams],
   );
 
-  const handleToggleStatus = (status: string) => {
-    let nextStatuses: string[];
+  const handleToggleStatus = (status: CanonicalEscrowStatus | "all") => {
+    let nextStatuses: CanonicalEscrowStatus[];
     if (status === "all") {
       nextStatuses = [];
     } else {
@@ -76,7 +90,10 @@ function DashboardContent() {
     isFetchingNextPage,
     refetch: refetchEscrows,
   } = useEscrows({
-    status: activeStatuses.join(","),
+    status: activeStatuses
+      .map(toBackendEscrowStatus)
+      .filter((s): s is string => Boolean(s))
+      .join(","),
     search: searchQuery,
     sortBy,
     sortOrder,
@@ -89,11 +106,8 @@ function DashboardContent() {
 
   const flatEscrows = escrowsData?.pages.flatMap((page: any) => page.escrows) || [];
 
-  const validStatuses = ["all", "active", "pending", "completed", "disputed"] as const;
-  type ValidStatus = (typeof validStatuses)[number];
-
   const firstStatus = activeStatuses[0];
-  const activeTab: ValidStatus = validStatuses.includes(firstStatus as ValidStatus) ? (firstStatus as ValidStatus) : "all";
+  const activeTab: CanonicalEscrowStatus | "all" = firstStatus ?? "all";
 
   return (
     <>

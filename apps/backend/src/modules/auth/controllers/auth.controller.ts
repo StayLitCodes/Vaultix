@@ -12,7 +12,6 @@ import {
   UseInterceptors,
   UploadedFile,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from '../services/auth.service';
@@ -25,11 +24,43 @@ import {
 import { UpdateProfileDto } from '../dto/profile.dto';
 import { AuthGuard } from '../middleware/auth.guard';
 import { AuthThrottlerGuard } from '../middleware/auth-throttler.guard';
+import { AvatarUploadInterceptor } from '../interceptors/avatar-upload.interceptor';
+import type { User, KycStatus } from '../../user/entities/user.entity';
+
+interface ProfileMetadata {
+  id: string;
+  walletAddress: string;
+  isActive: boolean;
+  createdAt: Date;
+  displayName?: string;
+  email?: string;
+  emailVerified: boolean;
+  avatarUrl?: string;
+  bio?: string;
+  preferredAsset: string;
+  kycStatus: KycStatus;
+}
 
 @Controller('auth')
 @UseGuards(AuthThrottlerGuard)
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  private toProfileMetadata(user: User): ProfileMetadata {
+    return {
+      id: user.id,
+      walletAddress: user.walletAddress,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+      displayName: user.displayName,
+      email: user.email,
+      emailVerified: user.emailVerified,
+      avatarUrl: user.avatarUrl,
+      bio: user.bio,
+      preferredAsset: user.preferredAsset,
+      kycStatus: user.kycStatus,
+    };
+  }
 
   @Post('challenge')
   @HttpCode(HttpStatus.OK)
@@ -59,19 +90,7 @@ export class AuthController {
   @UseGuards(AuthGuard)
   async getCurrentUser(@Req() req: Request & { user: { userId: string } }) {
     const user = await this.authService.getCurrentUser(req.user.userId);
-    return {
-      id: user.id,
-      walletAddress: user.walletAddress,
-      isActive: user.isActive,
-      createdAt: user.createdAt,
-      displayName: user.displayName,
-      email: user.email,
-      emailVerified: user.emailVerified,
-      avatarUrl: user.avatarUrl,
-      bio: user.bio,
-      preferredAsset: user.preferredAsset,
-      kycStatus: user.kycStatus,
-    };
+    return this.toProfileMetadata(user);
   }
 
   @Patch('profile')
@@ -84,30 +103,18 @@ export class AuthController {
       req.user.userId,
       updateProfileDto,
     );
-    return {
-      id: user.id,
-      walletAddress: user.walletAddress,
-      displayName: user.displayName,
-      email: user.email,
-      emailVerified: user.emailVerified,
-      avatarUrl: user.avatarUrl,
-      bio: user.bio,
-      preferredAsset: user.preferredAsset,
-    };
+    return this.toProfileMetadata(user);
   }
 
   @Post('profile/avatar')
   @UseGuards(AuthGuard)
-  @UseInterceptors(FileInterceptor('avatar'))
+  @UseInterceptors(AvatarUploadInterceptor)
   async uploadAvatar(
     @Req() req: Request & { user: { userId: string } },
-    @UploadedFile() file: { buffer: Buffer; originalname: string },
+    @UploadedFile() file?: Express.Multer.File,
   ) {
     const user = await this.authService.uploadAvatar(req.user.userId, file);
-    return {
-      id: user.id,
-      avatarUrl: user.avatarUrl,
-    };
+    return this.toProfileMetadata(user);
   }
 
   @Post('profile/verify-email')

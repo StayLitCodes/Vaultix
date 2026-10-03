@@ -627,3 +627,321 @@ fn test_invalid_status_transition_rejected_at_persistence() {
     let result = client.try_cancel_escrow(&escrow_id);
     assert_eq!(result, Err(Ok(Error::InvalidEscrowStatus)));
 }
+
+// ---------------------------------------------------------------------------
+// Issue #728: checks-effects-interactions + re-entrancy guard
+// ---------------------------------------------------------------------------
+
+pub(crate) mod reentrant_token {
+    use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env, Symbol};
+
+    use crate::{Error, VaultixEscrowClient};
+
+    pub const ATTACK_NONE: u32 = 0;
+    pub const ATTACK_RELEASE: u32 = 1;
+    pub const ATTACK_CANCEL: u32 = 2;
+    pub const ATTACK_REFUND: u32 = 3;
+    pub const ATTACK_RESOLVE: u32 = 4;
+
+    /// Re-entrant call outcome recorded by the token.
+    pub const OUTCOME_NOT_ATTEMPTED: u32 = 0;
+    pub const OUTCOME_SUCCEEDED: u32 = 1;
+    pub const OUTCOME_GUARD_REJECTED: u32 = 2;
+    pub const OUTCOME_OTHER_CONTRACT_ERROR: u32 = 3;
+    pub const OUTCOME_HOST_REJECTED: u32 = 4;
+
+    fn bal_key(id: &Address) -> (Symbol, Address) {
+        (symbol_short!("bal"), id.clone())
+    }
+
+    /// Minimal SEP-41-shaped token whose `transfer` re-enters VaultixEscrow.
+    #[contract]
+    pub struct ReentrantToken;
+
+    #[contractimpl]
+    impl ReentrantToken {
+        pub fn arm(env: Env, escrow: Address, mode: u32, escrow_id: u64, arg: Address) {
+            let s = env.storage().instance();
+            s.set(&symbol_short!("escrow"), &escrow);
+            s.set(&symbol_short!("mode"), &mode);
+            s.set(&symbol_short!("eid"), &escrow_id);
+            s.set(&symbol_short!("arg"), &arg);
+            s.set(&symbol_short!("outcome"), &OUTCOME_NOT_ATTEMPTED);
+        }
+
+        pub fn outcome(env: Env) -> u32 {
+            env.storage()
+                .instance()
+                .get(&symbol_short!("outcome"))
+                .unwrap_or(OUTCOME_NOT_ATTEMPTED)
+        }
+
+        pub fn mint(env: Env, to: Address, amount: i128) {
+            let b = Self::balance(env.clone(), to.clone());
+            env.storage().persistent().set(&bal_key(&to), &(b + amount));
+        }
+
+        pub fn balance(env: Env, id: Address) -> i128 {
+            env.storage().persistent().get(&bal_key(&id)).unwrap_or(0)
+        }
+
+        pub fn allowance(_env: Env, _from: Address, _spender: Address) -> i128 {
+            i128::MAX
+        }
+
+        pub fn transfer_from(
+            env: Env,
+            _spender: Address,
+            from: Address,
+            to: Address,
+            amount: i128,
+        ) {
+            Self::move_balance(&env, &from, &to, amount);
+        }
+
+        pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+            Self::move_balance(&env, &from, &to, amount);
+
+            let s = env.storage().instance();
+            let mode: u32 = s.get(&symbol_short!("mode")).unwrap_or(ATTACK_NONE);
+            if mode == ATTACK_NONE {
+                return;
+            }
+            // Attack once.
+            s.set(&symbol_short!("mode"), &ATTACK_NONE);
+
+            let escrow: Address = s.get(&symbol_short!("escrow")).unwrap();
+            let escrow_id: u64 = s.get(&symbol_short!("eid")).unwrap();
+            let arg: Address = s.get(&symbol_short!("arg")).unwrap();
+            let client = VaultixEscrowClient::new(&env, &escrow);
+
+            let result = match mode {
+                ATTACK_RELEASE => client.try_release_milestone(&escrow_id, &0u32).map(|_| ()),
+                ATTACK_CANCEL => client.try_cancel_escrow(&escrow_id).map(|_| ()),
+                ATTACK_REFUND => client.try_refund_expired(&escrow_id, &arg).map(|_| ()),
+                _ => client
+                    .try_resolve_dispute(&escrow_id, &arg, &None, &None)
+                    .map(|_| ()),
+            };
+            let outcome = match result {
+                Ok(_) => OUTCOME_SUCCEEDED,
+                Err(Ok(Error::ReentrantCall)) => OUTCOME_GUARD_REJECTED,
+                Err(Ok(_)) => OUTCOME_OTHER_CONTRACT_ERROR,
+                Err(Err(_)) => OUTCOME_HOST_REJECTED,
+            };
+            s.set(&symbol_short!("outcome"), &outcome);
+        }
+    }
+
+    impl ReentrantToken {
+        fn move_balance(env: &Env, from: &Address, to: &Address, amount: i128) {
+            let fb = Self::balance(env.clone(), from.clone());
+            let tb = Self::balance(env.clone(), to.clone());
+            env.storage()
+                .persistent()
+                .set(&bal_key(from), &(fb - amount));
+            env.storage().persistent().set(&bal_key(to), &(tb + amount));
+        }
+    }
+}
+
+use reentrant_token::{ReentrantToken, ReentrantTokenClient};
+use soroban_sdk::testutils::Ledger as _;
+
+struct ReentrancySetup<'a> {
+    env: Env,
+    client: VaultixEscrowClient<'a>,
+    contract_id: Address,
+    token: ReentrantTokenClient<'a>,
+    depositor: Address,
+    recipient: Address,
+    arbitrator: Address,
+}
+
+/// Funds escrow 1 (two milestones, 10_000 total) with a re-entrant token, plus
+/// a second funded escrow (2) so the contract's pooled balance could cover a
+/// double payout if re-entry were possible.
+fn setup_reentrancy<'a>() -> ReentrancySetup<'a> {
+    let env = Env::default();
+    env.mock_all_auths_allowing_non_root_auth();
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let arbitrator = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let contract_id = env.register(
+        VaultixEscrow,
+        (&admin, &operator, &arbitrator, &treasury, Some(0i128)),
+    );
+    let client = VaultixEscrowClient::new(&env, &contract_id);
+
+    let token_id = env.register(ReentrantToken, ());
+    let token = ReentrantTokenClient::new(&env, &token_id);
+
+    let depositor = Address::generate(&env);
+    let recipient = Address::generate(&env);
+    token.mint(&depositor, &20_000);
+
+    for escrow_id in [1u64, 2u64] {
+        client.create_escrow(
+            &escrow_id,
+            &depositor,
+            &recipient,
+            &token_id,
+            &sample_milestones(&env),
+            &(env.ledger().timestamp() + 3600),
+            &valid_metadata_hash(&env),
+        );
+        client.deposit_funds(&escrow_id);
+    }
+    assert_eq!(token.balance(&contract_id), 20_000);
+
+    ReentrancySetup {
+        env,
+        client,
+        contract_id,
+        token,
+        depositor,
+        recipient,
+        arbitrator,
+    }
+}
+
+// Note: today the Soroban host itself refuses contract re-entry, so these
+// attacks surface as OUTCOME_HOST_REJECTED. The assertions only require that
+// re-entry did not succeed and funds moved once; the contract-level guard is
+// exercised directly by test_escrow_lock_rejects_reentry_and_is_released_after_success.
+#[test]
+fn test_reentrant_token_cannot_release_milestone_twice() {
+    let t = setup_reentrancy();
+    t.token.arm(
+        &t.contract_id,
+        &reentrant_token::ATTACK_RELEASE,
+        &1u64,
+        &t.depositor,
+    );
+
+    t.client.release_milestone(&1u64, &0);
+
+    let outcome = t.token.outcome();
+    assert_ne!(outcome, reentrant_token::OUTCOME_NOT_ATTEMPTED);
+    assert_ne!(outcome, reentrant_token::OUTCOME_SUCCEEDED);
+
+    // Milestone 0 (4_000) paid exactly once; persisted state matches.
+    assert_eq!(t.token.balance(&t.recipient), 4_000);
+    assert_eq!(t.token.balance(&t.contract_id), 16_000);
+    let escrow = t.client.get_escrow(&1u64);
+    assert_eq!(escrow.total_released, 4_000);
+    assert_eq!(
+        escrow.milestones.get(0).unwrap().status,
+        MilestoneStatus::Released
+    );
+}
+
+#[test]
+fn test_reentrant_token_cannot_double_cancel() {
+    let t = setup_reentrancy();
+    t.token.arm(
+        &t.contract_id,
+        &reentrant_token::ATTACK_CANCEL,
+        &1u64,
+        &t.depositor,
+    );
+
+    t.client.cancel_escrow(&1u64);
+
+    let outcome = t.token.outcome();
+    assert_ne!(outcome, reentrant_token::OUTCOME_NOT_ATTEMPTED);
+    assert_ne!(outcome, reentrant_token::OUTCOME_SUCCEEDED);
+    assert_eq!(t.token.balance(&t.depositor), 10_000);
+    assert_eq!(t.token.balance(&t.contract_id), 10_000);
+    assert_eq!(t.client.get_escrow(&1u64).status, EscrowStatus::Cancelled);
+}
+
+#[test]
+fn test_reentrant_token_cannot_double_refund_expired() {
+    let t = setup_reentrancy();
+    t.env.ledger().with_mut(|l| l.timestamp += 3601);
+    t.token.arm(
+        &t.contract_id,
+        &reentrant_token::ATTACK_REFUND,
+        &1u64,
+        &t.depositor,
+    );
+
+    t.client.refund_expired(&1u64, &t.depositor);
+
+    let outcome = t.token.outcome();
+    assert_ne!(outcome, reentrant_token::OUTCOME_NOT_ATTEMPTED);
+    assert_ne!(outcome, reentrant_token::OUTCOME_SUCCEEDED);
+    assert_eq!(t.token.balance(&t.depositor), 10_000);
+    assert_eq!(t.token.balance(&t.contract_id), 10_000);
+    assert_eq!(t.client.get_escrow(&1u64).status, EscrowStatus::Expired);
+}
+
+#[test]
+fn test_reentrant_token_cannot_double_resolve_dispute() {
+    let t = setup_reentrancy();
+    t.client
+        .raise_dispute(&1u64, &t.depositor, &BytesN::from_array(&t.env, &[3u8; 32]));
+    t.token.arm(
+        &t.contract_id,
+        &reentrant_token::ATTACK_RESOLVE,
+        &1u64,
+        &t.recipient,
+    );
+
+    t.client.resolve_dispute(&1u64, &t.recipient, &None, &None);
+
+    let outcome = t.token.outcome();
+    assert_ne!(outcome, reentrant_token::OUTCOME_NOT_ATTEMPTED);
+    assert_ne!(outcome, reentrant_token::OUTCOME_SUCCEEDED);
+    assert_eq!(t.token.balance(&t.recipient), 10_000);
+    assert_eq!(t.token.balance(&t.contract_id), 10_000);
+    let escrow = t.client.get_escrow(&1u64);
+    assert_eq!(escrow.status, EscrowStatus::Resolved);
+    assert_eq!(escrow.total_released, 10_000);
+    let _ = &t.arbitrator;
+}
+
+/// The guard itself: a fund-moving call on an escrow whose lock is held is
+/// rejected with ReentrantCall, and the lock is released after a normal call.
+#[test]
+fn test_escrow_lock_rejects_reentry_and_is_released_after_success() {
+    let t = setup_reentrancy();
+
+    t.env.as_contract(&t.contract_id, || {
+        enter_escrow_lock(&t.env, 1u64).unwrap();
+    });
+    assert_eq!(
+        t.client.try_release_milestone(&1u64, &0),
+        Err(Ok(Error::ReentrantCall))
+    );
+    assert_eq!(
+        t.client.try_cancel_escrow(&1u64),
+        Err(Ok(Error::ReentrantCall))
+    );
+    assert_eq!(
+        t.client.try_refund_expired(&1u64, &t.depositor),
+        Err(Ok(Error::ReentrantCall))
+    );
+    assert_eq!(
+        t.client.try_confirm_delivery(&1u64, &0, &t.depositor),
+        Err(Ok(Error::ReentrantCall))
+    );
+    assert_eq!(
+        t.client
+            .try_resolve_dispute(&1u64, &t.recipient, &None, &None),
+        Err(Ok(Error::ReentrantCall))
+    );
+    // Other escrows are unaffected by escrow 1's lock.
+    t.client.release_milestone(&2u64, &0);
+
+    t.env.as_contract(&t.contract_id, || {
+        exit_escrow_lock(&t.env, 1u64);
+    });
+    t.client.release_milestone(&1u64, &0);
+    // Lock was released on success, so the next call is not blocked.
+    t.client.release_milestone(&1u64, &1);
+    assert_eq!(t.client.get_escrow(&1u64).total_released, 10_000);
+}

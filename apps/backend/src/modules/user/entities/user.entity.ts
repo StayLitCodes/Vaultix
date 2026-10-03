@@ -6,6 +6,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { UserRole } from './user-role.enum';
+import { DATETIME_COLUMN_TYPE } from '../../../utils/database-column-types';
 export { UserRole } from './user-role.enum';
 
 export enum KycStatus {
@@ -24,8 +25,11 @@ export class User {
   @Column({ unique: true })
   walletAddress!: string;
 
-  @Column({ nullable: true })
-  nonce?: string;
+  @Column({ type: 'varchar', nullable: true })
+  nonce?: string | null;
+
+  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
+  nonceExpiresAt?: Date | null;
 
   @Column({ default: true })
   isActive!: boolean;
@@ -65,7 +69,7 @@ export class User {
   @Column({ type: 'varchar', nullable: true })
   kycRejectionReason?: string;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
   kycVerifiedAt?: Date;
 
   // @ManyToOne(() => Organization, (org: Organization) => org.users, { nullable: false })

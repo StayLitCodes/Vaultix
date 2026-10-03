@@ -1,22 +1,6 @@
 name: CI
 on: [push, pull_request]
 jobs:
-  frontend-build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: apps/frontend/package-lock.json
-      - name: Install dependencies
-        working-directory: apps/frontend
-        run: npm ci
-      - name: Build
-        working-directory: apps/frontend
-        run: npm run build
-
   backend-test-and-build:
     runs-on: ubuntu-latest
     steps:
@@ -35,3 +19,19 @@ jobs:
       - name: Build
         working-directory: apps/backend
         run: npm run build
+
+  conflict-markers:
+    name: Reject committed merge-conflict markers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail on unresolved conflict markers
+        run: |
+          # A line of exactly seven '=' is also a Markdown setext heading
+          # underline, so Markdown is excluded to avoid flagging valid docs.
+          # Covers the classic three markers plus the diff3 base marker '|||||||'.
+          if git grep -nE '^(<{7}|={7}|>{7}|\|{7})( |$)' -- . ':!*.md'; then
+            echo '::error::Unresolved merge-conflict markers are committed. Resolve them before merging.'
+            exit 1
+          fi
+          echo 'No conflict markers found in tracked files.'

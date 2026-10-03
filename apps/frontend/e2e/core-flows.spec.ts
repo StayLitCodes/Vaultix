@@ -9,25 +9,29 @@ test.describe('Core User Flows', () => {
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
   });
 
-  test('connect wallet call-to-action is present', async ({ page }) => {
-    const connectBtn = page.getByRole('button', { name: /connect wallet/i });
-    const getStarted = page.getByRole('link', { name: /get started/i });
-    await expect(connectBtn.or(getStarted)).toBeVisible();
+  test('primary escrow action is present', async ({ page }) => {
+    await expect(page.getByRole('link', { name: /create escrow/i }).first()).toBeVisible();
   });
 
   test('dashboard route is reachable', async ({ page }) => {
     await page.goto('/dashboard');
-    await expect(page).toHaveURL(/\/(dashboard|login|\?)/);
+    const redirect = new URL(page.url());
+    expect(redirect.pathname).toBe('/');
+    expect(redirect.searchParams.get('returnTo')).toBe('/dashboard');
   });
 
   test('create-escrow page is reachable', async ({ page }) => {
     await page.goto('/escrow/create');
-    await expect(page).toHaveURL(/\/escrow\/create/);
+    const redirect = new URL(page.url());
+    expect(redirect.pathname).toBe('/');
+    expect(redirect.searchParams.get('returnTo')).toBe('/escrow/create');
   });
 
   test('transactions page is reachable', async ({ page }) => {
     await page.goto('/transactions');
-    await expect(page).toHaveURL(/\/transactions/);
+    const redirect = new URL(page.url());
+    expect(redirect.pathname).toBe('/');
+    expect(redirect.searchParams.get('returnTo')).toBe('/transactions');
   });
 
   test('page title contains Vaultix', async ({ page }) => {

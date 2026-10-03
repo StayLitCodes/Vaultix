@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import { X, QrCode } from "lucide-react";
 import { isValidStellarAddress } from "../../utils/validators";
+import { CanonicalEscrowStatus, escrowStatusLabel } from "@/utils/escrowStatus";
 
 interface FilterBadgesProps {
   searchQuery?: string;
@@ -9,7 +10,7 @@ interface FilterBadgesProps {
   maxAmount?: string;
   fromDate?: string;
   toDate?: string;
-  activeStatuses?: string[];
+  activeStatuses?: CanonicalEscrowStatus[];
   walletAddress?: string;
   onWalletAddressChange?: (address: string) => void;
   onClear: (key: string) => void;
@@ -45,7 +46,7 @@ export default function FilterBadges({
     ...(fromDate ? [{ key: "fromDate", label: `From: ${fromDate}` }] : []),
     ...(toDate ? [{ key: "toDate", label: `To: ${toDate}` }] : []),
     ...(walletAddress ? [{ key: "walletAddress", label: `Wallet: ${walletAddress.substring(0, 4)}...${walletAddress.substring(52)}` }] : []),
-    ...activeStatuses.map((s) => ({ key: `status-${s}`, label: s })),
+    ...activeStatuses.map((s) => ({ key: `status-${s}`, label: escrowStatusLabel(s) })),
   ];
   
   if (badges.length === 0 && !onWalletAddressChange) return null;

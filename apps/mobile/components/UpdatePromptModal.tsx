@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Linking,
 } from 'react-native';
+import { colors } from '../theme';
 
 interface UpdatePromptModalProps {
   visible: boolean;
@@ -34,10 +35,10 @@ export const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({
       animationType="fade"
       onRequestClose={forceUpdate ? () => {} : onDismiss}
     >
-      <View style={styles.container}>
-        <Text style={styles.icon}>🛡️</Text>
+      <View style={styles.container} accessibilityViewIsModal>
+        <Text style={styles.icon} importantForAccessibility="no" accessibilityElementsHidden>🛡️</Text>
 
-        <Text style={styles.title}>
+        <Text style={styles.title} accessibilityRole="header">
           {forceUpdate ? 'Update Required' : 'Update Available'}
         </Text>
 
@@ -47,12 +48,28 @@ export const UpdatePromptModal: React.FC<UpdatePromptModalProps> = ({
             : `Version ${latestVersion} of Vaultix is now available. Update for the latest features and security fixes.`}
         </Text>
 
-        <TouchableOpacity style={styles.updateButton} onPress={handleUpdate}>
+        <TouchableOpacity
+          style={styles.updateButton}
+          onPress={handleUpdate}
+          accessibilityRole="button"
+          accessibilityLabel={`Update Vaultix to version ${latestVersion}`}
+          accessibilityHint={
+            forceUpdate
+              ? 'Opens the app store. This update is required to keep using Vaultix'
+              : 'Opens the app store to install the update'
+          }
+        >
           <Text style={styles.updateButtonText}>Update Now</Text>
         </TouchableOpacity>
 
         {!forceUpdate && (
-          <TouchableOpacity style={styles.laterButton} onPress={onDismiss}>
+          <TouchableOpacity
+            style={styles.laterButton}
+            onPress={onDismiss}
+            accessibilityRole="button"
+            accessibilityLabel="Update later"
+            accessibilityHint="Dismisses this prompt and continues to Vaultix"
+          >
             <Text style={styles.laterButtonText}>Later</Text>
           </TouchableOpacity>
         )}
@@ -66,7 +83,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0F172A',
+    backgroundColor: colors.background,
     padding: 24,
   },
   icon: {
@@ -76,18 +93,18 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: '#FFFFFF',
+    color: colors.text,
     marginBottom: 12,
   },
   subtitle: {
     fontSize: 16,
-    color: '#94A3B8',
+    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 48,
     lineHeight: 24,
   },
   updateButton: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: colors.infoStrong,
     paddingVertical: 14,
     paddingHorizontal: 32,
     borderRadius: 8,
@@ -96,7 +113,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   updateButtonText: {
-    color: '#FFFFFF',
+    color: colors.text,
     fontSize: 16,
     fontWeight: '600',
   },
@@ -107,7 +124,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   laterButtonText: {
-    color: '#94A3B8',
+    color: colors.textSecondary,
     fontSize: 16,
   },
 });

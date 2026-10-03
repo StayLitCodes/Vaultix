@@ -31,6 +31,7 @@ export enum EscrowEventType {
 }
 
 @Entity('escrow_events')
+@Index('idx_escrow_events_escrow_id', ['escrowId'])
 export class EscrowEvent {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -62,7 +63,7 @@ export class EscrowEvent {
   // Monotonic cursor for incremental sync
   // Auto-incrementing sequence number for ordering events
   @Column({ type: 'bigint', name: 'cursor' })
-  @Generated('increment')
+  @(process.env.NODE_ENV === 'test' ? () => {} : Generated('increment'))
   @Index()
   cursor: string;
 }

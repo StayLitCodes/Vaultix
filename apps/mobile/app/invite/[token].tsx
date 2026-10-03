@@ -15,6 +15,7 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { inviteApi } from '../../services/api';
 import { requireAuth } from '../../services/auth';
+import { colors } from '../../theme';
 
 interface InviteValidation {
   escrowId: string;
@@ -80,7 +81,7 @@ export default function InvitationAcceptScreen() {
   if (loading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator color="#6c63ff" size="large" />
+        <ActivityIndicator color={colors.accent} size="large" />
         <Text style={styles.message}>Validating invitation…</Text>
       </View>
     );
@@ -116,7 +117,7 @@ export default function InvitationAcceptScreen() {
         onPress={handleAccept}
         disabled={accepting}
       >
-        {accepting ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Accept Invitation</Text>}
+        {accepting ? <ActivityIndicator color={colors.onAccent} /> : <Text style={styles.buttonText}>Accept Invitation</Text>}
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.secondaryButton} onPress={() => router.replace('/')}>
@@ -127,20 +128,20 @@ export default function InvitationAcceptScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#12121f' },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 24, paddingTop: 40 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#12121f', padding: 24 },
-  title: { color: '#fff', fontSize: 26, fontWeight: '800', marginBottom: 10 },
-  subtitle: { color: '#888', fontSize: 15, marginBottom: 24 },
-  message: { color: '#888', fontSize: 15, marginTop: 16, textAlign: 'center' },
-  card: { backgroundColor: '#1e1e30', borderRadius: 16, padding: 18, marginBottom: 24 },
-  cardLabel: { color: '#888', fontSize: 12, textTransform: 'uppercase', marginBottom: 4 },
-  cardValue: { color: '#fff', fontSize: 15, marginBottom: 12 },
-  button: { backgroundColor: '#6c63ff', borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginBottom: 12 },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background, padding: 24 },
+  title: { color: colors.text, fontSize: 26, fontWeight: '800', marginBottom: 10 },
+  subtitle: { color: colors.textTertiary, fontSize: 15, marginBottom: 24 },
+  message: { color: colors.textTertiary, fontSize: 15, marginTop: 16, textAlign: 'center' },
+  card: { backgroundColor: colors.surface, borderRadius: 16, padding: 18, marginBottom: 24 },
+  cardLabel: { color: colors.textTertiary, fontSize: 12, textTransform: 'uppercase', marginBottom: 4 },
+  cardValue: { color: colors.text, fontSize: 15, marginBottom: 12 },
+  button: { backgroundColor: colors.accent, borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginBottom: 12 },
   buttonDisabled: { opacity: 0.65 },
-  buttonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  buttonText: { color: colors.onAccent, fontSize: 16, fontWeight: '700' },
   secondaryButton: { alignItems: 'center', paddingVertical: 12 },
-  secondaryButtonText: { color: '#888', fontSize: 14 },
-  errorTitle: { color: '#fff', fontSize: 22, fontWeight: '700', marginBottom: 12, textAlign: 'center' },
-  errorText: { color: '#ef476f', fontSize: 14, lineHeight: 20, textAlign: 'center', marginBottom: 24 },
+  secondaryButtonText: { color: colors.textTertiary, fontSize: 14 },
+  errorTitle: { color: colors.text, fontSize: 22, fontWeight: '700', marginBottom: 12, textAlign: 'center' },
+  errorText: { color: colors.danger, fontSize: 14, lineHeight: 20, textAlign: 'center', marginBottom: 24 },
 });

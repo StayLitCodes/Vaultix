@@ -8,7 +8,7 @@
       "jsx": true
     }
   },
-  "plugins": ["@typescript-eslint"],
+  "plugins": ["@typescript-eslint", "react-hooks"],
   "extends": [
     "eslint:recommended",
     "plugin:@typescript-eslint/recommended"
@@ -16,7 +16,37 @@
   "rules": {
     "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
     "@typescript-eslint/no-explicit-any": "warn",
-    "no-unused-vars": "off"
+    "no-unused-vars": "off",
+    "no-restricted-syntax": [
+      "warn",
+      {
+        "selector": "JSXOpeningElement[name.name=/^(TouchableOpacity|TouchableHighlight|TouchableWithoutFeedback|Pressable|Switch)$/]:not(:has(JSXAttribute[name.name='accessibilityLabel'])):not(:has(JSXSpreadAttribute))",
+        "message": "Interactive controls need an accessibilityLabel (and accessibilityRole) so screen readers can announce them (#710)."
+      }
+    ]
   },
+  "overrides": [
+    {
+      "files": [
+        "components/MobileLockScreen.tsx",
+        "components/UpdatePromptModal.tsx",
+        "components/QRScannerModal.tsx",
+        "components/Toast.tsx",
+        "components/CopyButton.tsx",
+        "components/ShareButton.tsx",
+        "app/index.tsx",
+        "app/(tabs)/settings.tsx"
+      ],
+      "rules": {
+        "no-restricted-syntax": [
+          "error",
+          {
+            "selector": "JSXOpeningElement[name.name=/^(TouchableOpacity|TouchableHighlight|TouchableWithoutFeedback|Pressable|Switch)$/]:not(:has(JSXAttribute[name.name='accessibilityLabel'])):not(:has(JSXSpreadAttribute))",
+            "message": "Interactive controls need an accessibilityLabel (and accessibilityRole) so screen readers can announce them (#710)."
+          }
+        ]
+      }
+    }
+  ],
   "ignorePatterns": ["node_modules/", "dist/", "build/"]
 }

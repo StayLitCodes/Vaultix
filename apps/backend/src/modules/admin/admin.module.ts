@@ -20,6 +20,8 @@ import { Dispute } from '../escrow/entities/dispute.entity';
 import { WebhookModule } from '../webhook/webhook.module';
 import { AdminWebhookController } from './controllers/admin-webhook.controller';
 import { AdminKycController } from './controllers/admin-kyc.controller';
+import { AdminEmailPreviewController } from './controllers/admin-email-preview.controller';
+import { EmailModule } from '../../email/email.module';
 
 @Module({
   imports: [
@@ -32,8 +34,9 @@ import { AdminKycController } from './controllers/admin-kyc.controller';
       AdminAuditLog,
       Dispute,
     ]),
-    EscrowModule,
+    forwardRef(() => EscrowModule),
     KycModule,
+    EmailModule,
     forwardRef(() => WebhookModule),
   ],
   controllers: [
@@ -42,6 +45,7 @@ import { AdminKycController } from './controllers/admin-kyc.controller';
     AnalyticsController,
     AdminWebhookController,
     AdminKycController,
+    AdminEmailPreviewController,
   ],
   providers: [
     AdminService,

@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { Escrow } from './escrow.entity';
 import { User } from '../../user/entities/user.entity';
+import { DATETIME_COLUMN_TYPE } from '../../../utils/database-column-types';
 
 export enum PartyRole {
   BUYER = 'buyer',
@@ -54,7 +55,7 @@ export class Party {
   })
   status: PartyStatus;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
   respondedAt: Date | null;
 
   @CreateDateColumn()

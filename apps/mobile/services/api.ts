@@ -4,11 +4,15 @@ import {
   EscrowFilters,
   EscrowListResponse,
   CreateEscrowPayload,
+  EscrowCreationIntent,
+  EscrowCreationResult,
+  PrepareEscrowCreationPayload,
   ReleaseMilestonePayload,
 } from '../types/escrow';
 import { withRetry } from '../utils/retry';
 import { NotificationsResponse } from '../types/notification';
-import { getAccessToken, getSecureAccessToken } from './session';
+import { getAccessToken, getSecureAccessToken, clearSession } from './session';
+import type { AxiosProgressEvent } from 'axios';
 import { envConfig } from '../security/env';
 
 /**
@@ -37,6 +41,58 @@ api.interceptors.request.use(async (config) => {
   }
   return config;
 });
+
+/**
+ * #719 — Session-expiry recovery.
+ *
+ * On HTTP 401: clear the SecureStore-backed session (once) and notify a
+ * registered navigation handler so the user lands on the wallet-connect
+ * welcome screen. Subsequent 401s with the same dead token do not re-fire
+ * the prompt until a new session is saved.
+ */
+type SessionExpiredHandler = () => void;
+let onSessionExpired: SessionExpiredHandler | null = null;
+let sessionExpiryHandled = false;
+
+/** Register navigation (e.g. router.replace('/')). Call once from root layout. */
+export function setSessionExpiredHandler(handler: SessionExpiredHandler | null): void {
+  onSessionExpired = handler;
+}
+
+/** Test helper — reset the single-shot 401 gate. */
+export function __resetSessionExpiryGateForTests(): void {
+  sessionExpiryHandled = false;
+}
+
+export function __getSessionExpiryHandledForTests(): boolean {
+  return sessionExpiryHandled;
+}
+
+/** Call after a successful sign-in so a future 401 can prompt again. */
+export function resetSessionExpiryGate(): void {
+  sessionExpiryHandled = false;
+}
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const status = error?.response?.status;
+    if (status === 401 && !sessionExpiryHandled) {
+      sessionExpiryHandled = true;
+      try {
+        await clearSession();
+      } catch {
+        /* still navigate even if SecureStore delete fails */
+      }
+      try {
+        onSessionExpired?.();
+      } catch {
+        /* navigation errors must not swallow the original 401 */
+      }
+    }
+    return Promise.reject(error);
+  },
+);
 
 export interface ChallengeResponse {
   /** Raw nonce, echoed for debugging — `message` is what must be signed. */
@@ -107,7 +163,36 @@ export const escrowApi = {
     return data;
   },
 
-  /** #317 – release a milestone (no auto-retry — tx-sensitive, user controls retry) */
+  /**
+   * #709 – step 1 of wallet-signed creation: the backend builds and simulates
+   * the Soroban `create_escrow` call and returns the unsigned envelope. Reusing
+   * the same `intentId` on retry is idempotent server-side.
+   */
+  prepareCreation: async (payload: PrepareEscrowCreationPayload): Promise<EscrowCreationIntent> => {
+    const { data } = await api.post<EscrowCreationIntent>('/api/escrows/creation-intents', payload);
+    return data;
+  },
+
+  /** #709 – step 2: submit the device-signed envelope for broadcast + settlement. */
+  submitCreation: async (intentId: string, signedXdr: string): Promise<EscrowCreationResult> => {
+    const { data } = await api.post<EscrowCreationResult>(
+      `/api/escrows/creation-intents/${intentId}/submit`,
+      { signedXdr },
+    );
+    return data;
+  },
+
+  /**
+   * #317 – release a milestone (no auto-retry — tx-sensitive, user controls retry)
+   *
+   * #709 tracking note: no client-side signing here, deliberately. The backend
+   * route `POST /escrows/:id/conditions/:conditionId/release` executes the
+   * release itself and does not return an unsigned XDR, so there is nothing for
+   * `signTransactionXDR` to sign. `POST /escrows/:id/prepare-intent` only
+   * supports CREATE_ESCROW / DEPOSIT_FUNDS today; once a release operation is
+   * added there, switch this to prepare → `signTransactionXDR` → submit like
+   * `prepareCreation` above.
+   */
   releaseMilestone: async (payload: ReleaseMilestonePayload): Promise<{ txHash: string }> => {
     const { data } = await api.post<{ txHash: string }>(
       `/api/escrows/${payload.escrowId}/milestones/${payload.milestoneId}/release`,
@@ -175,28 +260,82 @@ export const notificationApi = {
   markAsRead: async (notificationId?: string): Promise<void> => {
     await api.post('/api/notifications/mark-as-read', { notificationId });
   },
+
+  /**
+   * #761 — Register this device's Expo push token with the backend so escrow
+   * funding / release / dispute events can be delivered outside the app.
+   */
+  registerDevice: async (device: { pushToken: string; platform: string }): Promise<void> => {
+    await api.post('/api/notifications/devices', device);
+  },
+
+  /** #761 — De-register the push token on logout / disconnect. */
+  unregisterDevice: async (pushToken: string): Promise<void> => {
+    await api.delete(`/api/notifications/devices/${encodeURIComponent(pushToken)}`);
+  },
 };
+export interface ServerDispute {
+  id: string;
+  escrowId: string;
+  reason: string;
+  status: string;
+  evidence?: string[] | null;
+  outcome?: string | null;
+  resolutionNotes?: string | null;
+  resolvedAt?: string | null;
+}
+
 export const disputeApi = {
+  /** File a dispute against an escrow; evidence holds CIDs from uploadEvidence */
+  file: async (
+    escrowId: string,
+    payload: { reason: string; evidence?: string[] },
+  ): Promise<ServerDispute> => {
+    const { data } = await api.post<ServerDispute>(`/api/escrows/${escrowId}/dispute`, payload);
+    return data;
+  },
+
+  /** Fetch the dispute for an escrow (404 when none exists) */
+  get: async (escrowId: string): Promise<ServerDispute | null> => {
+    const { data } = await api.get<ServerDispute | null>(`/api/escrows/${escrowId}/dispute`);
+    return data;
+  },
+
   /** #409 — upload evidence file for a dispute, returns CID and URL */
+  /**
+   * #409 / #720 — upload evidence; forwards axios onUploadProgress for real UI progress.
+   */
   uploadEvidence: async (
     escrowId: string,
     fileUri: string,
     fileName: string,
     mimeType: string,
+    onUploadProgress?: (percent: number) => void,
   ): Promise<{ cid: string; url: string }> => {
     const formData = new FormData();
     /* React Native's FormData accepts { uri, name, type } but TS types don't reflect it */
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const fileBlob = { uri: fileUri, name: fileName, type: mimeType } as any;
-    formData.append('file', fileBlob);
+    formData.append('files', fileBlob);
 
     const { data } = await api.post<{ cid: string; url: string }>(
       `/api/escrows/${escrowId}/evidence`,
       formData,
       {
         headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (event: AxiosProgressEvent) => {
+          if (!onUploadProgress) return;
+          const total = event.total ?? 0;
+          if (total > 0) {
+            const percent = Math.min(99, Math.round((event.loaded / total) * 100));
+            onUploadProgress(percent);
+          } else if (event.loaded > 0) {
+            onUploadProgress(50);
+          }
+        },
       },
     );
+    onUploadProgress?.(100);
     return data;
   },
 };

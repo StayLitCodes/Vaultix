@@ -64,8 +64,8 @@ describe('AdminEscrowConsistencyController', () => {
       .spyOn(checkerService, 'checkConsistency')
       .mockResolvedValueOnce(mockResult);
 
-    const result = await controller.checkConsistency({ escrowIds: [1] });
+    const result = await controller.checkConsistency({ escrowIds: ['1'] });
     expect(result.summary.totalChecked).toBe(1);
-    expect(spy).toHaveBeenCalledWith({ escrowIds: [1] });
+    expect(spy).toHaveBeenCalledWith({ escrowIds: ['1'] });
   });
 });

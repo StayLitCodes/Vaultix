@@ -10,6 +10,7 @@ import {
   NotificationEventType,
   NotificationStatus,
 } from '../enums/notification-event.enum';
+import { DATETIME_COLUMN_TYPE } from '../../utils/database-column-types';
 
 @Entity()
 export class Notification {
@@ -38,7 +39,7 @@ export class Notification {
   @Column({ default: 0 })
   retryCount: number;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
   readAt?: Date;
 
   @Column({ nullable: true })

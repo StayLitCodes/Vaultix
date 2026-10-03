@@ -3,7 +3,7 @@
  * Steps: 1) Parties  2) Milestones  3) Deadline  4) Review & Submit
  * Validates: milestone totals == total amount, 1-10 milestones, deadline in future
  */
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -20,8 +20,11 @@ import { useRouter } from 'expo-router';
 import { escrowApi } from '../../services/api';
 import { toFriendlyError } from '../../utils/errors';
 import { requireAuth } from '../../services/auth';
+import { useBiometricLock } from '../../hooks/useBiometricLock';
 import * as StellarSdk from '@stellar/stellar-sdk';
-import { getLocalWalletAddress } from '../../services/wallet';
+import { getLocalWalletAddress, signTransactionXDR } from '../../services/wallet';
+import { PrepareEscrowCreationPayload } from '../../types/escrow';
+import { uuidv4 } from '../../utils/uuid';
 
 const MAX_MILESTONES = 10;
 const MIN_MILESTONES = 1;
@@ -75,7 +78,7 @@ function Field({ label, value, onChangeText, placeholder, keyboardType, multilin
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#555"
+        placeholderTextColor={colors.textTertiary}
         keyboardType={keyboardType ?? 'default'}
         multiline={multiline}
         autoCapitalize="none"
@@ -91,6 +94,7 @@ export default function CreateEscrowScreen() {
   const [form, setForm] = useState<FormState>(INITIAL_FORM);
   const [errors, setErrors] = useState<Partial<Record<string, string>>>({});
   const [submitting, setSubmitting] = useState(false);
+  const attemptRef = useRef<{ key: string; intentId: string; signedXdr?: string } | null>(null);
 
   useEffect(() => {
     requireAuth(router, { pathname: '/escrow/create' });
@@ -186,24 +190,64 @@ export default function CreateEscrowScreen() {
     if (valid) setStep((s) => s + 1);
   };
 
+  /**
+   * #709 — wallet-signed creation: the backend prepares the Soroban
+   * `create_escrow` envelope, the built-in wallet signs it on-device via
+   * `signTransactionXDR`, and the backend broadcasts it and waits for settlement.
+   */
   const handleSubmit = async () => {
+    // #762 — abort before *any* state change if the prompt is cancelled or the
+    // biometric check fails, so a cancelled escrow creation leaves nothing behind.
+    const reauth = await reauthenticate({
+      promptMessage: 'Confirm escrow creation',
+      subtitle: `Locking ${form.totalAmount || '0'} ${form.asset} into a new escrow.`,
+    });
+    if (reauth.required && !reauth.success) {
+      Alert.alert(
+        'Escrow not created',
+        reauth.reason === 'unavailable'
+          ? 'Biometric authentication is unavailable on this device, so the escrow was not created.'
+          : 'Authentication was not completed, so the escrow was not created.',
+        [{ text: 'OK' }],
+      );
+      return;
+    }
+
     setSubmitting(true);
     try {
-      const created = await escrowApi.create({
-        title: form.title,
+      const payload: Omit<PrepareEscrowCreationPayload, 'intentId'> = {
+        title: form.title.trim(),
         description: form.description,
-        counterpartyAddress: form.counterpartyAddress,
+        category: 'milestone',
+        counterpartyAddress: form.counterpartyAddress.trim(),
         amount: form.totalAmount,
         asset: form.asset,
         deadline: new Date(form.deadline).toISOString(),
         milestones: form.milestones.map((m) => ({
-          title: m.title,
+          // The contract only stores a milestone description; fall back to its title.
+          description: m.description.trim() || m.title.trim(),
           amount: m.amount,
-          description: m.description,
         })),
-      });
+        conditions: [],
+      };
+
+      // An intent is bound to its exact payload server-side. Reuse it (and any
+      // envelope already signed for it) on retry; start fresh once edited.
+      const key = JSON.stringify(payload);
+      if (attemptRef.current?.key !== key) {
+        attemptRef.current = { key, intentId: uuidv4() };
+      }
+      const attempt = attemptRef.current;
+
+      if (!attempt.signedXdr) {
+        const intent = await escrowApi.prepareCreation({ intentId: attempt.intentId, ...payload });
+        attempt.signedXdr = await signTransactionXDR(intent.unsignedXdr);
+      }
+      const created = await escrowApi.submitCreation(attempt.intentId, attempt.signedXdr);
+      attemptRef.current = null;
+
       Alert.alert('Success', 'Escrow created!', [
-        { text: 'View', onPress: () => router.replace({ pathname: '/escrow/[id]', params: { id: created.id } }) },
+        { text: 'View', onPress: () => router.replace({ pathname: '/escrow/[id]', params: { id: created.escrowId } }) },
         { text: 'Dashboard', onPress: () => router.replace('/(tabs)/dashboard') },
       ]);
     } catch (err) {
@@ -301,8 +345,18 @@ export default function CreateEscrowScreen() {
               <Text style={styles.nextBtnText}>Next →</Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity style={[styles.nextBtn, submitting && styles.btnDisabled]} onPress={handleSubmit} disabled={submitting}>
-              {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.nextBtnText}>Create Escrow</Text>}
+            <TouchableOpacity
+              style={[styles.nextBtn, (submitting || isReauthing) && styles.btnDisabled]}
+              onPress={handleSubmit}
+              disabled={submitting || isReauthing}
+              accessibilityRole="button"
+              accessibilityLabel="Create escrow"
+            >
+              {submitting ? (
+                <ActivityIndicator color={colors.onAccent} />
+              ) : (
+                <Text style={styles.nextBtnText}>{isReauthing ? 'Authenticating…' : 'Create Escrow'}</Text>
+              )}
             </TouchableOpacity>
           )}
         </View>
@@ -321,36 +375,36 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#12121f' },
+  container: { flex: 1, backgroundColor: colors.background },
   content: { padding: 16, paddingBottom: 40 },
   stepRow: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginBottom: 12 },
-  stepDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#2d2d44' },
-  stepDotDone: { backgroundColor: '#6c63ff' },
-  stepDotActive: { backgroundColor: '#6c63ff', transform: [{ scale: 1.3 }] },
-  stepLabel: { color: '#888', fontSize: 12, marginBottom: 8 },
-  stepTitle: { color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 16 },
-  hint: { color: '#888', fontSize: 12, marginBottom: 8 },
+  stepDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.surfaceRaised },
+  stepDotDone: { backgroundColor: colors.accent },
+  stepDotActive: { backgroundColor: colors.accent, transform: [{ scale: 1.3 }] },
+  stepLabel: { color: colors.textTertiary, fontSize: 12, marginBottom: 8 },
+  stepTitle: { color: colors.text, fontSize: 20, fontWeight: '700', marginBottom: 16 },
+  hint: { color: colors.textTertiary, fontSize: 12, marginBottom: 8 },
   field: { marginBottom: 16 },
-  label: { color: '#aaa', fontSize: 13, marginBottom: 6 },
-  input: { backgroundColor: '#1e1e30', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, color: '#fff', fontSize: 15 },
+  label: { color: colors.textSecondary, fontSize: 13, marginBottom: 6 },
+  input: { backgroundColor: colors.surface, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, color: colors.text, fontSize: 15 },
   inputMulti: { minHeight: 80, textAlignVertical: 'top' },
-  inputError: { borderWidth: 1, borderColor: '#ef476f' },
-  errorText: { color: '#ef476f', fontSize: 12, marginTop: 4 },
-  milestoneBlock: { backgroundColor: '#1a1a1e', borderRadius: 12, padding: 16, marginBottom: 12 },
+  inputError: { borderWidth: 1, borderColor: colors.danger },
+  errorText: { color: colors.danger, fontSize: 12, marginTop: 4 },
+  milestoneBlock: { backgroundColor: colors.surfaceSunken, borderRadius: 12, padding: 16, marginBottom: 12 },
   milestoneHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  milestoneNum: { color: '#fff', fontWeight: '600' },
-  removeText: { color: '#ef476f', fontSize: 13 },
-  addBtn: { borderWidth: 1, borderColor: '#6c63ff', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 8 },
-  addBtnText: { color: '#6c63ff', fontWeight: '600' },
+  milestoneNum: { color: colors.text, fontWeight: '600' },
+  removeText: { color: colors.danger, fontSize: 13 },
+  addBtn: { borderWidth: 1, borderColor: colors.accent, borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 8 },
+  addBtnText: { color: colors.accent, fontWeight: '600' },
   navRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 24 },
-  backBtn: { backgroundColor: '#2d2d44', borderRadius: 10, paddingHorizontal: 20, paddingVertical: 12 },
-  backBtnText: { color: '#fff', fontWeight: '600' },
-  nextBtn: { backgroundColor: '#6c63ff', borderRadius: 10, paddingHorizontal: 24, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
-  nextBtnText: { color: '#fff', fontWeight: '600' },
+  backBtn: { backgroundColor: colors.surfaceRaised, borderRadius: 10, paddingHorizontal: 20, paddingVertical: 12 },
+  backBtnText: { color: colors.text, fontWeight: '600' },
+  nextBtn: { backgroundColor: colors.accent, borderRadius: 10, paddingHorizontal: 24, paddingVertical: 12, alignItems: 'center', justifyContent: 'center' },
+  nextBtnText: { color: colors.onAccent, fontWeight: '600' },
   btnDisabled: { opacity: 0.6 },
-  reviewCard: { backgroundColor: '#1e1e30', borderRadius: 12, padding: 12, marginBottom: 16 },
-  reviewRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#2d2d44' },
-  reviewLabel: { color: '#888', fontSize: 13 },
-  reviewValue: { color: '#fff', fontSize: 13, fontWeight: '500', maxWidth: '60%' },
+  reviewCard: { backgroundColor: colors.surface, borderRadius: 12, padding: 12, marginBottom: 16 },
+  reviewRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: colors.surfaceRaised },
+  reviewLabel: { color: colors.textTertiary, fontSize: 13 },
+  reviewValue: { color: colors.text, fontSize: 13, fontWeight: '500', maxWidth: '60%' },
 });
 

@@ -1,5 +1,6 @@
 import { convertEventsToCSV, generateTransactionFilename } from '@/lib/csv-export';
 import { IEventResponse } from '@/lib/escrow-api';
+import { CanonicalEscrowStatus } from '@/utils/escrowStatus';
 
 describe('CSV Export', () => {
   const mockEvent: IEventResponse = {
@@ -14,7 +15,7 @@ describe('CSV Export', () => {
       amount: 100.5,
       assetCode: 'XLM',
       assetIssuer: 'issuer-789',
-      status: 'COMPLETED',
+      status: CanonicalEscrowStatus.COMPLETED,
     },
     actor: {
       walletAddress: 'GABC123DEF456',

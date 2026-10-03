@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { GatewaysModule } from '../../gateways/gateways.module';
+import { EventsModule } from '../../gateways/events.module';
 import { TerminusModule, TypeOrmHealthIndicator } from '@nestjs/terminus';
 import { HealthController } from './health.controller';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -12,7 +12,7 @@ import { IpfsModule } from '../ipfs/ipfs.module';
   imports: [
     TerminusModule,
     TypeOrmModule.forFeature([User, Escrow]),
-    GatewaysModule,
+    EventsModule,
     EmailModule,
     IpfsModule,
   ],
