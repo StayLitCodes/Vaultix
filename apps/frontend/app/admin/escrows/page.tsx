@@ -1,5 +1,6 @@
 "use client";
 
+import { adminMetadata } from "@/lib/admin-metadata";
 import React, { useState, useEffect, useCallback } from "react";
 import { Filter, ChevronLeft, ChevronRight, Eye, RefreshCw, X, Loader2, AlertCircle, CheckCircle2, Clock, XCircle, AlertTriangle, Download } from "lucide-react";
 import { AdminService } from "@/services/admin";
@@ -11,17 +12,14 @@ import EscrowTimeline from "@/components/escrow/EscrowTimeline";
 import { AdminTableSkeleton } from "@/components/ui/AdminTableSkeleton";
 import { CanonicalEscrowStatus, escrowStatusLabel, normalizeEscrowStatus } from '@/utils/escrowStatus';
 
-const STATUS_CONFIG: Record<CanonicalEscrowStatus, { color: string; bg: string; icon: React.ElementType }> = {
-  [CanonicalEscrowStatus.ACTIVE]: { color: "text-emerald-400", bg: "bg-emerald-500/10", icon: CheckCircle2 },
-  [CanonicalEscrowStatus.FUNDED]: { color: "text-emerald-400", bg: "bg-emerald-500/10", icon: CheckCircle2 },
-  [CanonicalEscrowStatus.COMPLETED]: { color: "text-blue-400", bg: "bg-blue-500/10", icon: CheckCircle2 },
-  [CanonicalEscrowStatus.RESOLVED]: { color: "text-blue-400", bg: "bg-blue-500/10", icon: CheckCircle2 },
-  [CanonicalEscrowStatus.CREATED]: { color: "text-yellow-400", bg: "bg-yellow-500/10", icon: Clock },
-  [CanonicalEscrowStatus.CANCELLED]: { color: "text-gray-400", bg: "bg-gray-500/10", icon: XCircle },
-  [CanonicalEscrowStatus.REFUNDED]: { color: "text-gray-400", bg: "bg-gray-500/10", icon: XCircle },
-  [CanonicalEscrowStatus.DISPUTED]: { color: "text-red-400", bg: "bg-red-500/10", icon: AlertTriangle },
-  [CanonicalEscrowStatus.EXPIRED]: { color: "text-amber-400", bg: "bg-amber-500/10", icon: Clock },
-  [CanonicalEscrowStatus.UNKNOWN]: { color: "text-gray-400", bg: "bg-gray-500/10", icon: AlertTriangle },
+export const metadata = adminMetadata;
+
+const STATUS_CONFIG: Record<string, { color: string; bg: string; icon: React.ElementType }> = {
+  ACTIVE: { color: "text-emerald-400", bg: "bg-emerald-500/10", icon: CheckCircle2 },
+  COMPLETED: { color: "text-blue-400", bg: "bg-blue-500/10", icon: CheckCircle2 },
+  PENDING: { color: "text-yellow-400", bg: "bg-yellow-500/10", icon: Clock },
+  CANCELLED: { color: "text-gray-400", bg: "bg-gray-500/10", icon: XCircle },
+  DISPUTED: { color: "text-red-400", bg: "bg-red-500/10", icon: AlertTriangle },
 };
 
 function StatusBadge({ status }: { status: string }) {

@@ -1,5 +1,6 @@
 'use client';
 
+import { adminMetadata } from '@/lib/admin-metadata';
 import React, { useState, useEffect } from 'react';
 import { BarChart3, PieChart, TrendingUp, Users, Loader2 } from 'lucide-react';
 import { AdminService } from '@/services/admin';
@@ -7,6 +8,8 @@ import { IPlatformStats } from '@/types/admin';
 import { ExportDropdown, ExportFormat } from '@/components/ExportDropdown';
 import { ExportModal } from '@/components/ExportModal';
 import { useToast } from '@/hooks/useToast';
+
+export const metadata = adminMetadata;
 
 // ── Date Range Selector ────────────────────────────────────────────────────
 

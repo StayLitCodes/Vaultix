@@ -1,5 +1,6 @@
 'use client';
 
+import { adminMetadata } from '@/lib/admin-metadata';
 import React, { useState, useEffect } from 'react';
 import {
   Coins,
@@ -16,6 +17,8 @@ import {
 } from 'lucide-react';
 import { AssetService, IAllowedAsset } from '@/services/assets';
 import { toast } from 'sonner';
+
+export const metadata = adminMetadata;
 
 export default function AdminAssetsPage() {
   const [assets, setAssets] = useState<IAllowedAsset[]>([]);
