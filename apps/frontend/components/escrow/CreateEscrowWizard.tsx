@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useForm, FormProvider } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -13,7 +13,8 @@ import MilestonesStep from './create/MilestonesStep';
 import ConditionsStep from './create/ConditionsStep';
 import ReviewStep from './create/ReviewStep';
 import { CheckCircle2, ChevronRight, ChevronLeft, Loader2, AlertCircle, Save } from 'lucide-react';
-import { WalletServiceFactory, WalletType } from '@/app/services/wallet';
+import { useWallet } from '@/app/contexts/WalletContext';
+import { CreateEscrowPayload, prepareEscrowCreation, submitEscrowCreation } from '@/services/escrow-creation';
 import { useTemplates } from '@/hooks/useTemplates';
 import { formDataToTemplateData } from '@/lib/templates';
 import { useToast } from '@/hooks/useToast';
@@ -31,15 +32,19 @@ const STEPS = [
 export default function CreateEscrowWizard() {
   const [currentStep, setCurrentStep] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasSignedIntent, setHasSignedIntent] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const [createdEscrowId, setCreatedEscrowId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | undefined>();
   const [showSaveTemplate, setShowSaveTemplate] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [templateDescription, setTemplateDescription] = useState('');
+  const creationIntent = useRef<{ id: string; payload: CreateEscrowPayload; signedXdr?: string } | null>(null);
 
   const { addCustomTemplate } = useTemplates();
   const { success } = useToast();
+  const { activeAccount, signTransaction } = useWallet();
 
   const methods = useForm<CreateEscrowFormData>({
     resolver: zodResolver(createEscrowSchema),
@@ -80,24 +85,57 @@ export default function CreateEscrowWizard() {
     setIsSubmitting(true);
     setSubmitError(null);
     try {
-      // Use centralized WalletServiceFactory instead of direct @stellar/freighter-api imports
-      const walletService = WalletServiceFactory.getService(WalletType.FREIGHTER);
-      
-      const isInstalled = await walletService.isInstalled?.();
-      if (!isInstalled) {
-        throw new Error('Freighter wallet extension not detected. Please install Freighter.');
+      if (!activeAccount) {
+        throw new Error('Connect a Stellar wallet before creating an escrow.');
       }
 
-      const address = await walletService.connect();
-      if (!address) {
-        throw new Error('Could not retrieve address from Freighter wallet.');
+      const payload: CreateEscrowPayload = {
+        title: data.title,
+        description: data.description,
+        category: data.category,
+        amount: data.amount,
+        asset: data.asset,
+        counterpartyAddress: data.counterpartyAddress,
+        deadline: data.deadline.toISOString(),
+        milestones: data.milestones ?? [],
+        conditions: data.conditions ?? [],
+      };
+      const fingerprint = JSON.stringify(payload);
+      if (!creationIntent.current || (!creationIntent.current.signedXdr && JSON.stringify(creationIntent.current.payload) !== fingerprint)) {
+        const intentId = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        creationIntent.current = { id: intentId, payload };
       }
 
-      // Mock smart contract escrow deployment handshake
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      setTxHash('7a8b9c...mock_hash...1d2e3f');
+      const intent = creationIntent.current;
+      let signedXdr = intent.signedXdr;
+      if (!signedXdr) {
+        const prepared = await prepareEscrowCreation(intent.id, intent.payload);
+        if (prepared.intentId !== intent.id || !prepared.unsignedXdr) {
+          throw new Error('The API returned an invalid escrow transaction.');
+        }
+        signedXdr = await signTransaction(prepared.unsignedXdr);
+        if (!signedXdr) throw new Error('The wallet did not return a signed transaction.');
+        intent.signedXdr = signedXdr;
+        setHasSignedIntent(true);
+      }
+
+      const settled = await submitEscrowCreation(intent.id, signedXdr);
+      if (settled.status !== 'confirmed' || !settled.escrowId || !settled.transactionHash) {
+        throw new Error('The network has not confirmed this escrow yet. Retry to check the same submission.');
+      }
+      setCreatedEscrowId(settled.escrowId);
+      setTxHash(settled.transactionHash);
+      success('Escrow creation confirmed on Stellar.');
     } catch (error: any) {
-      setSubmitError(error.message || 'Failed to create escrow. Please try again.');
+      const message = error?.message || 'Failed to create escrow. Please try again.';
+      if (/transaction failed on stellar|rpc rejected the signed transaction/i.test(message)) {
+        // The network reported a terminal result, so a new attempt needs a new sequence and intent.
+        creationIntent.current = null;
+        setHasSignedIntent(false);
+      }
+      setSubmitError(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -124,8 +162,10 @@ export default function CreateEscrowWizard() {
           <CheckCircle2 className="h-14 w-14 text-emerald-500" />
         </div>
         <h2 className="text-xl sm:text-2xl font-bold">Escrow Created Successfully!</h2>
-        <p className="text-muted-foreground text-sm sm:text-base">Your escrow agreement has been deployed to the network.</p>
+        <p className="text-muted-foreground text-sm sm:text-base">Your escrow agreement has been confirmed on Stellar.</p>
         <div className="bg-muted/50 border border-border p-4 rounded-lg break-all text-left">
+          <p className="text-xs text-muted-foreground uppercase mb-1 font-mono">Escrow ID</p>
+          <p className="font-mono text-sm mb-4">{createdEscrowId}</p>
           <p className="text-xs text-muted-foreground uppercase mb-1 font-mono">Transaction Hash</p>
           <p className="font-mono text-sm">{txHash}</p>
         </div>
@@ -249,20 +289,22 @@ export default function CreateEscrowWizard() {
         {/* Step content */}
         <FormProvider {...methods}>
           <form onSubmit={handleSubmit(onSubmit)}>
-            <div className="p-4 sm:p-8 mt-0 sm:mt-4">
-              {currentStep === 0 && (
-                <TemplateSelector
-                  onSelect={handleTemplateSelect}
-                  selectedTemplateId={selectedTemplateId}
-                />
-              )}
-              {currentStep === 1 && <BasicInfoStep />}
-              {currentStep === 2 && <PartiesStep />}
-              {currentStep === 3 && <TermsStep />}
-              {currentStep === 4 && <MilestonesStep />}
-              {currentStep === 5 && <ConditionsStep />}
-              {currentStep === 6 && <ReviewStep />}
-            </div>
+            <fieldset disabled={hasSignedIntent} className="contents">
+              <div className="p-4 sm:p-8 mt-0 sm:mt-4">
+                {currentStep === 0 && (
+                  <TemplateSelector
+                    onSelect={handleTemplateSelect}
+                    selectedTemplateId={selectedTemplateId}
+                  />
+                )}
+                {currentStep === 1 && <BasicInfoStep />}
+                {currentStep === 2 && <PartiesStep />}
+                {currentStep === 3 && <TermsStep />}
+                {currentStep === 4 && <MilestonesStep />}
+                {currentStep === 5 && <ConditionsStep />}
+                {currentStep === 6 && <ReviewStep />}
+              </div>
+            </fieldset>
 
             {submitError && (
               <div className="mx-4 sm:mx-8 mb-4 p-3 sm:p-4 rounded-lg bg-rose-50 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-900 flex items-start gap-2">

@@ -1,20 +1,24 @@
 import React from 'react';
+import { CanonicalEscrowStatus } from '@/utils/escrowStatus';
+
+type StatusTabId = CanonicalEscrowStatus | 'all';
 
 interface StatusTabsProps {
-  activeStatuses: string[];
-  onToggleStatus: (status: string) => void;
+  activeStatuses: CanonicalEscrowStatus[];
+  onToggleStatus: (status: StatusTabId) => void;
 }
 
-const TABS = [
+const TABS: Array<{ id: StatusTabId; label: string }> = [
   { id: 'all', label: 'All' },
-  { id: 'active', label: 'Active' },
-  { id: 'pending', label: 'Pending' },
-  { id: 'completed', label: 'Completed' },
-  { id: 'disputed', label: 'Disputed' },
+  { id: CanonicalEscrowStatus.ACTIVE, label: 'Active' },
+  { id: CanonicalEscrowStatus.CREATED, label: 'Pending' },
+  { id: CanonicalEscrowStatus.COMPLETED, label: 'Completed' },
+  { id: CanonicalEscrowStatus.DISPUTED, label: 'Disputed' },
+  { id: CanonicalEscrowStatus.EXPIRED, label: 'Expired' },
 ];
 
 const StatusTabs: React.FC<StatusTabsProps> = ({ activeStatuses, onToggleStatus }) => {
-  const isActive = (id: string) => id === 'all' ? activeStatuses.length === 0 : activeStatuses.includes(id);
+  const isActive = (id: StatusTabId) => id === 'all' ? activeStatuses.length === 0 : activeStatuses.includes(id);
 
   return (
     <div className="mb-5 -mx-1">

@@ -6,6 +6,7 @@ import {
   ConflictException,
   UnprocessableEntityException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository, SelectQueryBuilder } from 'typeorm';
@@ -45,6 +46,12 @@ import { IpfsService } from '../../ipfs/ipfs.service';
 import { AllowedAsset } from '../../assets/entities/allowed-asset.entity';
 import { NotificationService } from '../../../notifications/notifications.service';
 import { NotificationEventType } from '../../../notifications/enums/notification-event.enum';
+import { EventsGateway } from '../../../gateways/events.gateway';
+import {
+  assertAmountConservation,
+  decimalToBaseUnits,
+  baseUnitsToDecimal,
+} from '../amount.util';
 
 @Injectable()
 export class EscrowService {
@@ -70,7 +77,23 @@ export class EscrowService {
     private readonly webhookService: WebhookService,
     private readonly ipfsService: IpfsService,
     private readonly notificationService: NotificationService,
+    @Optional() private readonly eventsGateway?: EventsGateway,
   ) {}
+
+  /**
+   * Generate a unique idempotency key for notification deduplication
+   * Format: eventType:escrowId:userId:timestampBucket
+   * Timestamp bucket is 5-minute window to handle near-simultaneous events
+   */
+  private generateIdempotencyKey(
+    eventType: NotificationEventType,
+    escrowId: string,
+    userId: string,
+    actorId: string,
+  ): string {
+    const timestampBucket = Math.floor(Date.now() / (5 * 60 * 1000)); // 5-minute bucket
+    return `${eventType}:${escrowId}:${actorId}:${userId}:${timestampBucket}`;
+  }
 
   async create(
     dto: CreateEscrowDto,
@@ -119,6 +142,12 @@ export class EscrowService {
               invitedBy: creatorId,
               email: invitedUser?.email ?? undefined,
             },
+            this.generateIdempotencyKey(
+              NotificationEventType.PARTY_INVITED,
+              savedEscrow.id,
+              partyDto.userId,
+              creatorId,
+            ),
           )
           .catch(() => undefined);
       }
@@ -130,6 +159,11 @@ export class EscrowService {
             description: conditionDto.description,
             type: conditionDto.type,
             metadata: conditionDto.metadata,
+            amount:
+              conditionDto.metadata?.kind === 'milestone' &&
+              typeof conditionDto.metadata.amount === 'string'
+                ? conditionDto.metadata.amount
+                : undefined,
           }),
         );
         await this.conditionRepository.save(conditions);
@@ -568,6 +602,15 @@ export class EscrowService {
       { stellarTxHash },
       ipAddress,
     );
+
+    await this.notifyEscrowParticipants(
+      await this.findOne(id),
+      NotificationEventType.ESCROW_FUNDED,
+      { escrowId: id, stellarTxHash },
+      userId,
+      null,
+    );
+
     await this.webhookService.dispatchEvent('escrow.funded', {
       escrowId: id,
       stellarTxHash,
@@ -1003,7 +1046,7 @@ export class EscrowService {
     });
 
     // Notify the other escrow participants (fire-and-forget)
-    await this.notifyDisputeParticipants(
+    await this.notifyEscrowParticipants(
       escrow,
       NotificationEventType.DISPUTE_RAISED,
       {
@@ -1123,7 +1166,7 @@ export class EscrowService {
     });
 
     // Notify the other escrow participants (fire-and-forget)
-    await this.notifyDisputeParticipants(
+    await this.notifyEscrowParticipants(
       escrow,
       NotificationEventType.DISPUTE_RESOLVED,
       {
@@ -1142,15 +1185,16 @@ export class EscrowService {
   }
 
   /**
-   * Dispatch a dispute notification to every escrow participant
+   * Dispatch a notification to every escrow participant
    * (creator + parties), excluding the acting user. Failures must not
    * block the dispute workflow.
    */
-  private async notifyDisputeParticipants(
+  private async notifyEscrowParticipants(
     escrow: Escrow,
     eventType: NotificationEventType,
     payload: Record<string, unknown>,
-    excludeUserId?: string,
+    actorId: string,
+    excludeUserId: string | null = actorId,
   ): Promise<void> {
     const recipientIds = new Set<string>();
     if (escrow.creatorId) recipientIds.add(escrow.creatorId);
@@ -1159,15 +1203,34 @@ export class EscrowService {
     }
     if (excludeUserId) recipientIds.delete(excludeUserId);
 
+    if (eventType === NotificationEventType.DISPUTE_RAISED) {
+      const admins = await this.userRepository.find({
+        where: [{ role: UserRole.ADMIN }, { role: UserRole.SUPER_ADMIN }],
+      });
+      for (const admin of admins) {
+        if (admin.id !== excludeUserId) recipientIds.add(admin.id);
+      }
+    }
+
     for (const recipientId of recipientIds) {
       const recipient = await this.userRepository.findOne({
         where: { id: recipientId },
       });
-      this.notificationService
-        .handleEscrowEvent(recipientId, eventType, {
-          ...payload,
-          email: recipient?.email ?? undefined,
-        })
+      await this.notificationService
+        .handleEscrowEvent(
+          recipientId,
+          eventType,
+          {
+            ...payload,
+            email: recipient?.email ?? undefined,
+          },
+          this.generateIdempotencyKey(
+            eventType,
+            escrow.id,
+            recipientId,
+            actorId,
+          ),
+        )
         .catch(() => undefined);
     }
   }
@@ -1343,6 +1406,12 @@ export class EscrowService {
             acceptedByUserId: userId,
             email: acceptedUser?.email ?? undefined,
           },
+          this.generateIdempotencyKey(
+            NotificationEventType.PARTY_ACCEPTED,
+            escrowId,
+            escrow.creatorId,
+            userId,
+          ),
         )
         .catch(() => undefined);
     }
@@ -1399,6 +1468,12 @@ export class EscrowService {
               rejectedByUserId: userId,
               email: rejectedUser?.email ?? undefined,
             },
+            this.generateIdempotencyKey(
+              NotificationEventType.PARTY_REJECTED,
+              escrowId,
+              escrow.creatorId,
+              userId,
+            ),
           )
           .catch(() => undefined);
       }
@@ -1448,7 +1523,9 @@ export class EscrowService {
       ipAddress,
     });
 
-    return this.eventRepository.save(event);
+    const savedEvent = await this.eventRepository.save(event);
+    this.eventsGateway?.emitEscrowEvent(savedEvent);
+    return savedEvent;
   }
 
   async isUserAdmin(userId: string): Promise<boolean> {
@@ -1569,23 +1646,27 @@ export class EscrowService {
     }
 
     // Calculate released amount
-    const releaseAmount = parseFloat(condition.amount.toString());
-    const newReleasedAmount =
-      parseFloat(escrow.releasedAmount.toString()) + releaseAmount;
+    const totalUnits = decimalToBaseUnits(escrow.amount);
+    const releaseAmountUnits = decimalToBaseUnits(condition.amount);
+    const newReleasedUnits =
+      decimalToBaseUnits(escrow.releasedAmount || '0') + releaseAmountUnits;
+    assertAmountConservation(totalUnits, newReleasedUnits, 0n);
+    const releaseAmount = baseUnitsToDecimal(releaseAmountUnits);
+    const newReleasedAmount = baseUnitsToDecimal(newReleasedUnits);
 
     // Update escrow
     escrow.releasedAmount = newReleasedAmount;
 
     // Check if all milestones are released
-    const totalMilestonesAmount = escrow.conditions.reduce(
-      (sum, c) => sum + (c.amount ? parseFloat(c.amount.toString()) : 0),
-      0,
+    const totalMilestonesUnits = escrow.conditions.reduce(
+      (sum, c) => sum + (c.amount ? decimalToBaseUnits(c.amount) : 0n),
+      0n,
     );
 
     // If all are released, set escrow to completed
     if (
-      newReleasedAmount >= parseFloat(escrow.amount.toString()) ||
-      newReleasedAmount >= totalMilestonesAmount
+      newReleasedUnits >= totalUnits ||
+      newReleasedUnits >= totalMilestonesUnits
     ) {
       escrow.status = EscrowStatus.COMPLETED;
       escrow.isReleased = true;
@@ -1611,6 +1692,18 @@ export class EscrowService {
       conditionId,
       amount: releaseAmount,
     });
+
+    await this.notifyEscrowParticipants(
+      escrow,
+      NotificationEventType.MILESTONE_RELEASED,
+      {
+        escrowId,
+        escrowTitle: escrow.title,
+        conditionId,
+        amount: releaseAmount,
+      },
+      userId,
+    );
 
     return this.findOne(escrowId);
   }

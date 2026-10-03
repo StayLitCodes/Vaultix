@@ -9,17 +9,73 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "io.vaultix.mobile"
+      "bundleIdentifier": "io.vaultix.mobile",
+      "associatedDomains": ["applinks:vaultix.app", "applinks:www.vaultix.app"],
+      "infoPlist": {
+        "UIBackgroundModes": ["remote-notification"]
+      }
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
       },
-      "package": "io.vaultix.mobile"
+      "package": "io.vaultix.mobile",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "vaultix.app",
+              "pathPrefix": "/escrow"
+            },
+            {
+              "scheme": "https",
+              "host": "vaultix.app",
+              "pathPrefix": "/invite"
+            },
+            {
+              "scheme": "https",
+              "host": "www.vaultix.app",
+              "pathPrefix": "/escrow"
+            },
+            {
+              "scheme": "https",
+              "host": "www.vaultix.app",
+              "pathPrefix": "/invite"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
-    "plugins": ["expo-router"],
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Vaultix to access your camera to scan Stellar addresses and escrow IDs.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#6C63FF",
+          "defaultChannel": "escrow-activity",
+          "sounds": []
+        }
+      ]
+    ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": "https://vaultix.app"
+      }
     }
   }
 }

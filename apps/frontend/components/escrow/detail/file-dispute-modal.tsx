@@ -23,6 +23,7 @@ import { IDispute } from "@/types/escrow";
 import { DisputeEvidenceUpload, UploadedFile } from "./DisputeEvidenceUpload";
 import { fileDispute } from "@/lib/escrow-api";
 import { useToast } from "@/hooks/useToast";
+import { CanonicalEscrowStatus, canTakeFinancialAction, normalizeEscrowStatus } from '@/utils/escrowStatus';
 
 interface FileDisputeModalProps {
   open: boolean;
@@ -65,10 +66,12 @@ export default function FileDisputeModal({
   const [showConfirmation, setShowConfirmation] = useState(false);
   const { success, error, warning } = useToast();
 
+  const normalizedStatus = normalizeEscrowStatus(escrowStatus);
   const canFileDispute =
-    userRole &&
+    !!userRole &&
     ["creator", "counterparty"].includes(userRole) &&
-    escrowStatus === "ACTIVE";
+    normalizedStatus === CanonicalEscrowStatus.ACTIVE &&
+    canTakeFinancialAction(normalizedStatus);
 
   const handleAddEvidenceLink = () => {
     if (evidenceLink.trim()) {

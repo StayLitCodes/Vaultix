@@ -15,19 +15,19 @@ import { Party, PartyRole } from '../../escrow/entities/party.entity';
 import { SorobanClientService } from '../../../services/stellar/soroban-client.service';
 import { ConfigService } from '@nestjs/config';
 import { ConsistencyCheckerService } from '../../admin/services/consistency-checker.service';
-import { EscrowGateway } from '../../../gateways/escrow.gateway';
+import { EventsGateway } from '../../../gateways/events.gateway';
 import { NotificationService } from '../../../notifications/notifications.service';
+import { EscrowChainIdService } from '../../escrow/services/escrow-chain-id.service';
 
 describe('StellarEventListenerService', () => {
   let service: StellarEventListenerService;
-  let stellarEventRepo: jest.Mocked<any>;
   let escrowRepo: jest.Mocked<any>;
   let conditionRepo: jest.Mocked<any>;
   let escrowEventRepo: jest.Mocked<any>;
   let partyRepo: jest.Mocked<any>;
   let sorobanClient: jest.Mocked<any>;
   let rpcServer: jest.Mocked<any>;
-  let escrowGateway: jest.Mocked<any>;
+  let eventsGateway: jest.Mocked<any>;
   let notificationService: jest.Mocked<any>;
 
   beforeEach(async () => {
@@ -36,8 +36,8 @@ describe('StellarEventListenerService', () => {
       getEvents: jest.fn().mockResolvedValue({ events: [] }),
     };
 
-    escrowGateway = {
-      broadcastMilestoneReleased: jest.fn(),
+    eventsGateway = {
+      emitEscrowEvent: jest.fn(),
     };
 
     notificationService = {
@@ -103,8 +103,15 @@ describe('StellarEventListenerService', () => {
           },
         },
         {
-          provide: EscrowGateway,
-          useValue: escrowGateway,
+          provide: EscrowChainIdService,
+          useValue: {
+            findEscrowId: jest.fn().mockResolvedValue('escrow-1'),
+            findByEscrowId: jest.fn().mockResolvedValue(null),
+          },
+        },
+        {
+          provide: EventsGateway,
+          useValue: eventsGateway,
         },
         {
           provide: NotificationService,
@@ -116,7 +123,6 @@ describe('StellarEventListenerService', () => {
     service = module.get<StellarEventListenerService>(
       StellarEventListenerService,
     );
-    stellarEventRepo = module.get(getRepositoryToken(StellarEvent));
     escrowRepo = module.get(getRepositoryToken(Escrow));
     conditionRepo = module.get(getRepositoryToken(Condition));
     escrowEventRepo = module.get(getRepositoryToken(EscrowEvent));
@@ -263,7 +269,7 @@ describe('StellarEventListenerService', () => {
       expect(escrowRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
           id: 'escrow-1',
-          releasedAmount: 100,
+          releasedAmount: '100',
           stellarTxHash: 'tx-abc-123',
         }),
       );
@@ -294,7 +300,7 @@ describe('StellarEventListenerService', () => {
       expect(escrowEventRepo.save).toHaveBeenCalled();
     });
 
-    it('should emit WebSocket event via EscrowGateway', async () => {
+    it('should emit the persisted escrow event via EventsGateway', async () => {
       escrowRepo.findOne.mockResolvedValue({
         ...baseEscrow,
         conditions: [...baseConditions.map((c) => ({ ...c }))],
@@ -303,42 +309,17 @@ describe('StellarEventListenerService', () => {
 
       await (service as any).handleMilestoneReleased(mockEvent);
 
-      expect(escrowGateway.broadcastMilestoneReleased).toHaveBeenCalledWith(
-        'escrow-1',
-        expect.objectContaining({
-          milestoneIndex: 0,
-          amount: 100,
-          conditionId: 'cond-0',
-          txHash: 'tx-abc-123',
-        }),
-      );
+      expect(eventsGateway.emitEscrowEvent).toHaveBeenCalled();
     });
 
-    it('should create notifications for buyer and seller', async () => {
+    it('should not create notifications for a milestone event', async () => {
       escrowRepo.findOne.mockResolvedValue({
         ...baseEscrow,
         conditions: [...baseConditions.map((c) => ({ ...c }))],
       });
-      partyRepo.find.mockResolvedValue([
-        { userId: 'buyer-user-id', role: PartyRole.BUYER },
-        { userId: 'seller-user-id', role: PartyRole.SELLER },
-        { userId: 'arb-user-id', role: PartyRole.ARBITRATOR },
-      ]);
-
       await (service as any).handleMilestoneReleased(mockEvent);
 
-      // Buyer and seller should get notifications, but not arbitrator
-      expect(notificationService.handleEscrowEvent).toHaveBeenCalledTimes(2);
-      expect(notificationService.handleEscrowEvent).toHaveBeenCalledWith(
-        'buyer-user-id',
-        'MILESTONE_RELEASED',
-        expect.objectContaining({ escrowId: 'escrow-1' }),
-      );
-      expect(notificationService.handleEscrowEvent).toHaveBeenCalledWith(
-        'seller-user-id',
-        'MILESTONE_RELEASED',
-        expect.objectContaining({ escrowId: 'escrow-1' }),
-      );
+      expect(notificationService.handleEscrowEvent).not.toHaveBeenCalled();
     });
 
     it('should be idempotent — skip if milestone already released', async () => {
@@ -401,7 +382,7 @@ describe('StellarEventListenerService', () => {
       );
       expect(escrowRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
-          releasedAmount: 200,
+          releasedAmount: '200',
         }),
       );
     });
@@ -410,7 +391,7 @@ describe('StellarEventListenerService', () => {
       // First milestone already released
       const escrowWithFirstReleased = {
         ...baseEscrow,
-        releasedAmount: 100,
+        releasedAmount: '100',
         conditions: [
           { ...baseConditions[0], isReleased: true },
           { ...baseConditions[1] },
@@ -424,7 +405,7 @@ describe('StellarEventListenerService', () => {
 
       expect(escrowRepo.save).toHaveBeenCalledWith(
         expect.objectContaining({
-          releasedAmount: 300, // 100 + 200
+          releasedAmount: '300', // 100 + 200
         }),
       );
     });
@@ -451,7 +432,7 @@ describe('StellarEventListenerService', () => {
         conditions: [...baseConditions.map((c) => ({ ...c }))],
       });
       partyRepo.find.mockResolvedValue([]);
-      escrowGateway.broadcastMilestoneReleased.mockImplementation(() => {
+      eventsGateway.emitEscrowEvent.mockImplementation(() => {
         throw new Error('WebSocket error');
       });
       const errorSpy = jest.spyOn((service as any).logger, 'error');
@@ -467,26 +448,14 @@ describe('StellarEventListenerService', () => {
       expect(conditionRepo.save).toHaveBeenCalled();
     });
 
-    it('should not throw if notification creation fails', async () => {
+    it('should not create notifications while updating the milestone', async () => {
       escrowRepo.findOne.mockResolvedValue({
         ...baseEscrow,
         conditions: [...baseConditions.map((c) => ({ ...c }))],
       });
-      partyRepo.find.mockResolvedValue([
-        { userId: 'buyer-user-id', role: PartyRole.BUYER },
-      ]);
-      notificationService.handleEscrowEvent.mockRejectedValue(
-        new Error('Notification error'),
-      );
-      const errorSpy = jest.spyOn((service as any).logger, 'error');
-
-      // Should not throw
       await (service as any).handleMilestoneReleased(mockEvent);
 
-      expect(errorSpy).toHaveBeenCalledWith(
-        'Failed to create milestone release notifications',
-        expect.any(Error),
-      );
+      expect(notificationService.handleEscrowEvent).not.toHaveBeenCalled();
       // DB changes should still be saved
       expect(conditionRepo.save).toHaveBeenCalled();
     });

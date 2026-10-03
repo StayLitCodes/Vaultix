@@ -6,6 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { DATETIME_COLUMN_TYPE } from '../../utils/database-column-types';
 
 export enum EmailOutboxStatus {
   PENDING = 'pending',
@@ -41,13 +42,13 @@ export class EmailOutbox {
   @Column({ default: 0 })
   attempts: number;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
   nextRetryAt?: Date;
 
   @Column({ type: 'text', nullable: true })
   lastError?: string;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
   sentAt?: Date;
 
   @CreateDateColumn()

@@ -2,8 +2,7 @@ import {
   IsString,
   IsNotEmpty,
   IsOptional,
-  IsNumber,
-  IsPositive,
+  Matches,
   IsEnum,
   IsArray,
   ValidateNested,
@@ -65,9 +64,9 @@ export class CreateEscrowDto {
   @MaxLength(2000)
   description?: string;
 
-  @IsNumber()
-  @IsPositive()
-  amount: number;
+  @IsString()
+  @Matches(/^(?=.*[1-9])(?:0|[1-9]\d*)(?:\.\d{1,7})?$/)
+  amount: string;
 
   @IsOptional()
   @ValidateNested()

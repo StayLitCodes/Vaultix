@@ -1,7 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { validateJwtSecret } from './modules/auth/services/jwt-validation.util';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 import { JwtModule } from '@nestjs/jwt';
 import { LoggerModule } from 'nestjs-pino';
@@ -16,6 +16,8 @@ import { User } from './modules/user/entities/user.entity';
 import { RefreshToken } from './modules/user/entities/refresh-token.entity';
 import { EmailVerification } from './modules/user/entities/email-verification.entity';
 import { Escrow } from './modules/escrow/entities/escrow.entity';
+import { EscrowCreationIntent } from './modules/escrow/entities/escrow-creation-intent.entity';
+import { SorobanTxIntent } from './modules/escrow/entities/soroban-tx-intent.entity';
 import { Party } from './modules/escrow/entities/party.entity';
 import { Condition } from './modules/escrow/entities/condition.entity';
 import { EscrowEvent } from './modules/escrow/entities/escrow-event.entity';
@@ -40,11 +42,20 @@ import { HealthModule } from './modules/health/health.module';
 import { AppVersionModule } from './app-version/app-version.module';
 import { EmailModule } from './email/email.module';
 import { EmailOutbox } from './email/entities/email-outbox.entity';
+import { KycModule } from './modules/kyc/kyc.module';
+import { KycVerification } from './modules/kyc/entities/kyc-verification.entity';
+import { EscrowChainId } from './modules/escrow/entities/escrow-chain-id.entity';
 import stellarConfig from './config/stellar.config';
 import ipfsConfig from './config/ipfs.config';
 import emailConfig from './config/email.config';
 import webhookConfig from './config/webhook.config';
+import databaseConfig, {
+  buildDatabaseConnectionOptions,
+  getDatabaseType,
+} from './config/database.config';
 import { ApiV2Module } from './modules/versioning/api-v2.module';
+import { BackupModule } from './modules/backup/backup.module';
+import { BackupRecord } from './modules/backup/entities/backup-record.entity';
 
 @Module({
   imports: [
@@ -73,41 +84,54 @@ import { ApiV2Module } from './modules/versioning/api-v2.module';
     }),
     ConfigModule.forRoot({
       isGlobal: true,
-      load: [stellarConfig, ipfsConfig, emailConfig, webhookConfig],
+      load: [
+        stellarConfig,
+        ipfsConfig,
+        emailConfig,
+        webhookConfig,
+        databaseConfig,
+      ],
     }),
     ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        type: 'sqlite',
-        database: configService.get<string>(
-          'DATABASE_PATH',
-          './data/vaultix.db',
-        ),
-        entities: [
-          User,
-          RefreshToken,
-          EmailVerification,
-          Escrow,
-          Party,
-          Condition,
-          EscrowEvent,
-          Dispute,
-          Notification,
-          NotificationPreference,
-          ApiKey,
-          AdminAuditLog,
-          Webhook,
-          WebhookDelivery,
-          WebhookDeadLetter,
-          StellarEvent,
-          AllowedAsset,
-          EmailOutbox,
-        ],
-        synchronize: false,
-        migrations: [__dirname + '/migrations/*.ts'],
-        migrationsRun: true,
-      }),
+      useFactory: (configService: ConfigService): TypeOrmModuleOptions =>
+        ({
+          ...buildDatabaseConnectionOptions(),
+          entities: [
+            User,
+            RefreshToken,
+            EmailVerification,
+            Escrow,
+            EscrowCreationIntent,
+            Party,
+            Condition,
+            EscrowEvent,
+            Dispute,
+            Notification,
+            NotificationPreference,
+            ApiKey,
+            AdminAuditLog,
+            Webhook,
+            WebhookDelivery,
+            WebhookDeadLetter,
+            StellarEvent,
+            AllowedAsset,
+            SorobanTxIntent,
+            EmailOutbox,
+            BackupRecord,
+            KycVerification,
+            EscrowChainId,
+          ],
+          synchronize: configService.get('NODE_ENV') === 'test',
+          migrations: [
+            __dirname +
+              (getDatabaseType() === 'postgres'
+                ? '/migrations-postgres/*.ts'
+                : '/migrations/*.ts'),
+          ],
+          migrationsRun: configService.get('NODE_ENV') !== 'test',
+        }) as TypeOrmModuleOptions,
       inject: [ConfigService],
     }),
     AuthModule,
@@ -125,6 +149,8 @@ import { ApiV2Module } from './modules/versioning/api-v2.module';
     AppVersionModule,
     EmailModule,
     ApiV2Module,
+    BackupModule,
+    KycModule,
     JwtModule.registerAsync({
       useFactory: (configService: ConfigService) => ({
         secret: validateJwtSecret(configService.get<string>('JWT_SECRET')),

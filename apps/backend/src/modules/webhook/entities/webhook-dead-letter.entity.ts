@@ -7,6 +7,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Webhook } from '../webhook.entity';
+import { DATETIME_COLUMN_TYPE } from '../../../utils/database-column-types';
 
 @Entity('webhook_dead_letter')
 @Index(['webhookId'])
@@ -38,10 +39,10 @@ export class WebhookDeadLetter {
   @Column({ type: 'text', nullable: true })
   lastError!: string | null;
 
-  @Column({ type: 'datetime' })
+  @Column({ type: DATETIME_COLUMN_TYPE })
   failedAt!: Date;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
   replayedAt!: Date | null;
 
   @CreateDateColumn()

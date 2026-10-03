@@ -6,6 +6,7 @@ import { requireAuth } from '../../services/auth';
 import { useSession } from '../../hooks/useSession';
 import { useNotifications } from '../../hooks/useNotifications';
 import { ReadOnlyBanner } from '../../components/ReadOnlyBanner';
+import { colors } from '../../theme';
 
 export default function TabLayout() {
   const router = useRouter();
@@ -36,8 +37,8 @@ export default function TabLayout() {
             styles.tabBar,
             { height: 60 + insets.bottom, paddingBottom: 4 + insets.bottom },
           ],
-          tabBarActiveTintColor: '#6c63ff',
-          tabBarInactiveTintColor: '#888',
+          tabBarActiveTintColor: colors.accent,
+          tabBarInactiveTintColor: colors.textTertiary,
           tabBarLabelStyle: styles.tabLabel,
         }}
       >
@@ -62,8 +63,8 @@ export default function TabLayout() {
             ),
             tabBarBadge: unreadCount > 0 ? (unreadCount > 99 ? '99+' : unreadCount) : undefined,
             tabBarBadgeStyle: {
-              backgroundColor: '#ff4444',
-              color: '#fff',
+              backgroundColor: colors.danger,
+              color: colors.text,
               fontSize: 10,
               fontWeight: '700',
               minWidth: 18,
@@ -110,11 +111,11 @@ function TabIcon({ name, color, size }: { name: string; color: string; size: num
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#12121f',
+    backgroundColor: colors.background,
   },
   tabBar: {
-    backgroundColor: '#1a1a2e',
-    borderTopColor: '#2d2d44',
+    backgroundColor: colors.surface,
+    borderTopColor: colors.surfaceRaised,
     borderTopWidth: 1,
     paddingTop: 4,
   },

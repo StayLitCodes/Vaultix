@@ -10,6 +10,7 @@ import { ExportModal } from "@/components/ExportModal";
 import { useToast } from "@/hooks/useToast";
 import EscrowTimeline from "@/components/escrow/EscrowTimeline";
 import { AdminTableSkeleton } from "@/components/ui/AdminTableSkeleton";
+import { CanonicalEscrowStatus, escrowStatusLabel, normalizeEscrowStatus } from '@/utils/escrowStatus';
 
 export const metadata = adminMetadata;
 
@@ -22,12 +23,15 @@ const STATUS_CONFIG: Record<string, { color: string; bg: string; icon: React.Ele
 };
 
 function StatusBadge({ status }: { status: string }) {
-  const config = STATUS_CONFIG[status] || STATUS_CONFIG.PENDING;
+  // Normalize here so a lowercase API value no longer falls through to the
+  // PENDING config and mis-renders `active` escrows as pending.
+  const canonical = normalizeEscrowStatus(status);
+  const config = STATUS_CONFIG[canonical];
   const Icon = config.icon;
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium ${config.color} ${config.bg}`}>
       <Icon className="w-3 h-3" />
-      {status}
+      {escrowStatusLabel(canonical)}
     </span>
   );
 }

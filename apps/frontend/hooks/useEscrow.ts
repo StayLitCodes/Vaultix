@@ -76,7 +76,7 @@ export const useEscrow = (id: string): IUseEscrowReturn & {
   useEffect(() => {
     if (!id || !socket || !isConnected) return;
 
-    socket.emit('escrow:join', { id });
+    socket.emit('joinEscrow', id);
 
     // Real-time pipe events
     const handleLiveUpdate = (event: { message: string }) => {
@@ -84,19 +84,19 @@ export const useEscrow = (id: string): IUseEscrowReturn & {
       void refetch();
     };
 
-    socket.on('escrow:status_changed', handleLiveUpdate);
-    socket.on('escrow:funded', handleLiveUpdate);
-    socket.on('escrow:completed', handleLiveUpdate);
-    socket.on('escrow:dispute_filed', handleLiveUpdate);
-    socket.on('escrow:dispute_resolved', handleLiveUpdate);
+    socket.on('escrow.status_changed', handleLiveUpdate);
+    socket.on('escrow.funded', handleLiveUpdate);
+    socket.on('escrow.completed', handleLiveUpdate);
+    socket.on('escrow.dispute_filed', handleLiveUpdate);
+    socket.on('escrow.dispute_resolved', handleLiveUpdate);
 
     return () => {
-      socket.emit('escrow:leave', { id });
-      socket.off('escrow:status_changed', handleLiveUpdate);
-      socket.off('escrow:funded', handleLiveUpdate);
-      socket.off('escrow:completed', handleLiveUpdate);
-      socket.off('escrow:dispute_filed', handleLiveUpdate);
-      socket.off('escrow:dispute_resolved', handleLiveUpdate);
+      socket.emit('leaveEscrow', id);
+      socket.off('escrow.status_changed', handleLiveUpdate);
+      socket.off('escrow.funded', handleLiveUpdate);
+      socket.off('escrow.completed', handleLiveUpdate);
+      socket.off('escrow.dispute_filed', handleLiveUpdate);
+      socket.off('escrow.dispute_resolved', handleLiveUpdate);
     };
   }, [id, socket, isConnected, refetch]);
 

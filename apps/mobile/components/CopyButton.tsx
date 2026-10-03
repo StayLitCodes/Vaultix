@@ -3,9 +3,10 @@
  * Uses expo-clipboard for cross-platform clipboard access.
  */
 import React, { useCallback, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { showToast } from './Toast';
+import { colors } from '../theme';
 
 interface CopyButtonProps {
   /** The text to copy to clipboard */
@@ -76,20 +77,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     gap: 6,
-    backgroundColor: '#2d2d44',
+    backgroundColor: colors.surfaceRaised,
   },
   compact: {
     paddingHorizontal: 8,
     paddingVertical: 6,
     gap: 4,
-    backgroundColor: '#2d2d4466',
+    backgroundColor: colors.raisedSurface,
   },
   primaryBtn: {
-    backgroundColor: '#6c63ff',
+    backgroundColor: colors.accent,
   },
   icon: { fontSize: 14 },
   iconCopied: { fontSize: 14 },
-  label: { color: '#aaa', fontSize: 12, fontWeight: '500' },
-  labelPrimary: { color: '#fff' },
-  labelCopied: { color: '#06d6a0' },
+  label: { color: colors.textSecondary, fontSize: 12, fontWeight: '500' },
+  labelPrimary: { color: colors.text },
+  labelCopied: { color: colors.successBright },
 });

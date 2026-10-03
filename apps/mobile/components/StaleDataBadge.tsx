@@ -1,5 +1,6 @@
 import React from "react";
 import { View, Text, StyleSheet } from "react-native";
+import { colors } from '../theme';
 
 type Props = {
   stale: boolean;
@@ -21,14 +22,14 @@ export default function StaleDataBadge({
 
 const styles = StyleSheet.create({
   badge: {
-    backgroundColor: '#f97316',
+    backgroundColor: colors.warning,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
     alignSelf: 'flex-start',
   },
   label: {
-    color: '#ffffff',
+    color: colors.text,
     fontSize: 12,
     fontWeight: '600',
   },

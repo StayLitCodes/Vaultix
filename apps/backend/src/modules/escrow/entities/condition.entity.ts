@@ -8,6 +8,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { Escrow } from './escrow.entity';
+import { DATETIME_COLUMN_TYPE } from '../../../utils/database-column-types';
 
 export enum ConditionType {
   MANUAL = 'manual',
@@ -41,7 +42,7 @@ export class Condition {
   @Column({ default: false })
   isFulfilled: boolean;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
   fulfilledAt?: Date;
 
   @Column({ nullable: true })
@@ -56,7 +57,7 @@ export class Condition {
   @Column({ default: false })
   isMet: boolean;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
   metAt?: Date;
 
   @Column({ nullable: true })
@@ -66,10 +67,10 @@ export class Condition {
   metadata?: Record<string, any>;
 
   @Column({ type: 'decimal', precision: 18, scale: 7, nullable: true })
-  amount?: number;
+  amount?: string;
 
   @Column({ type: 'decimal', precision: 18, scale: 7, nullable: true })
-  proposedAmount?: number;
+  proposedAmount?: string;
 
   @Column({ type: 'text', nullable: true })
   proposedDescription?: string;
@@ -80,7 +81,7 @@ export class Condition {
   @Column({ default: false })
   isReleased: boolean;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
   releasedAt?: Date;
 
   @CreateDateColumn()
