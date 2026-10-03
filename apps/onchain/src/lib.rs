@@ -360,6 +360,18 @@ pub struct EscrowExpiredRefundedEvent {
     pub timestamp: u64,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct DeadlineExtendedEvent {
+    pub escrow_id: u64,
+    pub depositor: Address,
+    pub recipient: Address,
+    pub old_deadline: u64,
+    pub new_deadline: u64,
+    pub status: EscrowStatus,
+    pub timestamp: u64,
+}
+
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Error {
@@ -1875,6 +1887,71 @@ impl VaultixEscrow {
                 total_released: escrow.total_released,
                 deadline: escrow.deadline,
                 timestamp: current_time,
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Extend the deadline of an active (or created) escrow.
+    ///
+    /// Both the depositor and the recipient must jointly authorise the call so
+    /// that neither party can unilaterally push back the deadline.
+    ///
+    /// # Guards
+    /// - Contract must not be paused.
+    /// - Escrow must exist and be in a non-terminal status (`Created` or `Active`).
+    ///   Terminal statuses (`Completed`, `Cancelled`, `Resolved`, `Expired`) are
+    ///   rejected with `InvalidEscrowStatus`.
+    /// - `new_deadline` must be strictly greater than the current deadline
+    ///   (`InvalidDeadline`).
+    ///
+    /// # Authorization
+    /// Requires `require_auth()` from **both** `depositor` and `recipient`.
+    ///
+    /// # Events
+    /// Emits a versioned `DeadlineExtended` event with the old and new deadline.
+    pub fn extend_deadline(env: Env, escrow_id: u64, new_deadline: u64) -> Result<(), Error> {
+        ensure_not_paused(&env)?;
+
+        let mut escrow = load_escrow_entry_v2(&env, escrow_id)?;
+
+        // Reject terminal statuses
+        let current_status = escrow_status(&escrow);
+        match current_status {
+            EscrowStatus::Completed
+            | EscrowStatus::Cancelled
+            | EscrowStatus::Resolved
+            | EscrowStatus::Expired => {
+                return Err(Error::InvalidEscrowStatus);
+            }
+            EscrowStatus::Created | EscrowStatus::Active | EscrowStatus::Disputed => {}
+        }
+
+        // Require auth from both parties
+        escrow.depositor.require_auth();
+        escrow.recipient.require_auth();
+
+        // New deadline must be strictly later than current deadline
+        if new_deadline <= escrow.deadline {
+            return Err(Error::InvalidDeadline);
+        }
+
+        let old_deadline = escrow.deadline;
+        escrow.deadline = new_deadline;
+
+        store_escrow_entry_v2(&env, escrow_id, &escrow)?;
+
+        env.events().publish(
+            event_topic(&env, "DeadlineExtended"),
+            DeadlineExtendedEvent {
+                escrow_id,
+                depositor: escrow.depositor.clone(),
+                recipient: escrow.recipient.clone(),
+                old_deadline,
+                new_deadline,
+                status: current_status,
+                timestamp: current_timestamp(&env),
             },
         );
 
