@@ -6,6 +6,7 @@ import {
   ConflictException,
   UnprocessableEntityException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, Repository, SelectQueryBuilder } from 'typeorm';
@@ -45,6 +46,12 @@ import { IpfsService } from '../../ipfs/ipfs.service';
 import { AllowedAsset } from '../../assets/entities/allowed-asset.entity';
 import { NotificationService } from '../../../notifications/notifications.service';
 import { NotificationEventType } from '../../../notifications/enums/notification-event.enum';
+import { EventsGateway } from '../../../gateways/events.gateway';
+import {
+  assertAmountConservation,
+  decimalToBaseUnits,
+  baseUnitsToDecimal,
+} from '../amount.util';
 
 @Injectable()
 export class EscrowService {
@@ -70,6 +77,7 @@ export class EscrowService {
     private readonly webhookService: WebhookService,
     private readonly ipfsService: IpfsService,
     private readonly notificationService: NotificationService,
+    @Optional() private readonly eventsGateway?: EventsGateway,
   ) {}
 
   /**
@@ -151,6 +159,11 @@ export class EscrowService {
             description: conditionDto.description,
             type: conditionDto.type,
             metadata: conditionDto.metadata,
+            amount:
+              conditionDto.metadata?.kind === 'milestone' &&
+              typeof conditionDto.metadata.amount === 'string'
+                ? conditionDto.metadata.amount
+                : undefined,
           }),
         );
         await this.conditionRepository.save(conditions);
@@ -1510,7 +1523,9 @@ export class EscrowService {
       ipAddress,
     });
 
-    return this.eventRepository.save(event);
+    const savedEvent = await this.eventRepository.save(event);
+    this.eventsGateway?.emitEscrowEvent(savedEvent);
+    return savedEvent;
   }
 
   async isUserAdmin(userId: string): Promise<boolean> {
@@ -1631,23 +1646,27 @@ export class EscrowService {
     }
 
     // Calculate released amount
-    const releaseAmount = parseFloat(condition.amount.toString());
-    const newReleasedAmount =
-      parseFloat(escrow.releasedAmount.toString()) + releaseAmount;
+    const totalUnits = decimalToBaseUnits(escrow.amount);
+    const releaseAmountUnits = decimalToBaseUnits(condition.amount);
+    const newReleasedUnits =
+      decimalToBaseUnits(escrow.releasedAmount || '0') + releaseAmountUnits;
+    assertAmountConservation(totalUnits, newReleasedUnits, 0n);
+    const releaseAmount = baseUnitsToDecimal(releaseAmountUnits);
+    const newReleasedAmount = baseUnitsToDecimal(newReleasedUnits);
 
     // Update escrow
     escrow.releasedAmount = newReleasedAmount;
 
     // Check if all milestones are released
-    const totalMilestonesAmount = escrow.conditions.reduce(
-      (sum, c) => sum + (c.amount ? parseFloat(c.amount.toString()) : 0),
-      0,
+    const totalMilestonesUnits = escrow.conditions.reduce(
+      (sum, c) => sum + (c.amount ? decimalToBaseUnits(c.amount) : 0n),
+      0n,
     );
 
     // If all are released, set escrow to completed
     if (
-      newReleasedAmount >= parseFloat(escrow.amount.toString()) ||
-      newReleasedAmount >= totalMilestonesAmount
+      newReleasedUnits >= totalUnits ||
+      newReleasedUnits >= totalMilestonesUnits
     ) {
       escrow.status = EscrowStatus.COMPLETED;
       escrow.isReleased = true;

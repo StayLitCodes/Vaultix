@@ -1,5 +1,6 @@
 import React from "react";
 import { StyleSheet, View, Text } from "react-native";
+import { colors } from '../theme';
 
 type Props = {
   message: string;
@@ -32,13 +33,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   errorContainer: {
-    backgroundColor: "#ef4444",
+    backgroundColor: colors.danger,
   },
   successContainer: {
-    backgroundColor: "#16a34a",
+    backgroundColor: colors.success,
   },
   message: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 14,
     fontWeight: "500",
   },

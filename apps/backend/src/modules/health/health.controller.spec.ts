@@ -1,12 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { TerminusModule, TypeOrmHealthIndicator } from '@nestjs/terminus';
-import { getRepositoryToken } from '@nestjs/typeorm';
+import { getDataSourceToken, getRepositoryToken } from '@nestjs/typeorm';
 import { HealthController } from './health.controller';
 import { StellarService } from '../../services/stellar.service';
 import { EmailService } from '../../email/email.service';
 import { IpfsProviderService } from '../ipfs/services/ipfs-provider.service';
-import { EscrowGateway } from '../../gateways/escrow.gateway';
+import { EventsGateway } from '../../gateways/events.gateway';
 import { User } from '../user/entities/user.entity';
 import { Escrow } from '../escrow/entities/escrow.entity';
 
@@ -19,7 +19,7 @@ describe('HealthController', () => {
   const stellarService = {
     checkHealth: jest.fn(),
   };
-  const escrowGateway = {
+  const eventsGateway = {
     isHealthy: jest.fn(),
   };
   const emailService = {
@@ -35,6 +35,11 @@ describe('HealthController', () => {
       (_key: string, defaultValue: unknown): unknown => defaultValue,
     ),
   };
+  const dataSource = {
+    query: jest.fn(),
+    showMigrations: jest.fn(),
+    migrations: [{}, {}],
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -44,10 +49,12 @@ describe('HealthController', () => {
       database: { status: 'up' },
     });
     stellarService.checkHealth.mockResolvedValue(true);
-    escrowGateway.isHealthy.mockReturnValue(true);
+    eventsGateway.isHealthy.mockReturnValue(true);
     ipfsProviderService.checkHealth.mockResolvedValue(true);
     ipfsProviderService.isConfigured = true;
     emailService.isConfigured = false;
+    dataSource.query.mockResolvedValue([{ '?column?': 1 }]);
+    dataSource.showMigrations.mockResolvedValue(false);
 
     const module: TestingModule = await Test.createTestingModule({
       imports: [TerminusModule],
@@ -55,12 +62,13 @@ describe('HealthController', () => {
       providers: [
         { provide: TypeOrmHealthIndicator, useValue: typeOrmHealthIndicator },
         { provide: StellarService, useValue: stellarService },
-        { provide: EscrowGateway, useValue: escrowGateway },
+        { provide: EventsGateway, useValue: eventsGateway },
         { provide: EmailService, useValue: emailService },
         { provide: IpfsProviderService, useValue: ipfsProviderService },
         { provide: ConfigService, useValue: configService },
         { provide: getRepositoryToken(User), useValue: { count: jest.fn() } },
         { provide: getRepositoryToken(Escrow), useValue: { count: jest.fn() } },
+        { provide: getDataSourceToken(), useValue: dataSource },
       ],
     }).compile();
 
@@ -162,6 +170,27 @@ describe('HealthController', () => {
     });
   });
 
+  describe('database (GET /health/database)', () => {
+    it('reports up with migration status when the DB responds', async () => {
+      const result = await controller.database();
+
+      expect(result.status).toBe('up');
+      expect(result.databaseType).toEqual(expect.any(String));
+      expect(result.migrations).toEqual({ pending: false, total: 2 });
+      expect(dataSource.query).toHaveBeenCalledWith('SELECT 1');
+    });
+
+    it('reports down with an error when the query fails', async () => {
+      dataSource.query.mockRejectedValue(new Error('connection refused'));
+
+      const result = await controller.database();
+
+      expect(result.status).toBe('down');
+      expect(result.migrations).toBeNull();
+      expect(result.error).toBe('connection refused');
+    });
+  });
+
   describe('timeout handling', () => {
     it('marks a hanging dependency as down after the timeout', async () => {
       // Shrink the timeout so the test completes quickly
@@ -178,7 +207,7 @@ describe('HealthController', () => {
             useValue: typeOrmHealthIndicator,
           },
           { provide: StellarService, useValue: stellarService },
-          { provide: EscrowGateway, useValue: escrowGateway },
+          { provide: EventsGateway, useValue: eventsGateway },
           { provide: EmailService, useValue: emailService },
           { provide: IpfsProviderService, useValue: ipfsProviderService },
           { provide: ConfigService, useValue: configService },
@@ -187,6 +216,7 @@ describe('HealthController', () => {
             provide: getRepositoryToken(Escrow),
             useValue: { count: jest.fn() },
           },
+          { provide: getDataSourceToken(), useValue: dataSource },
         ],
       }).compile();
       const timedController = module.get<HealthController>(HealthController);

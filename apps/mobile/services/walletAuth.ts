@@ -10,6 +10,7 @@
 import { authApi } from './api';
 import { saveSession, Session } from './session';
 import { connectWithBuiltInWallet, signMessage } from './wallet';
+import { syncPushRegistrationOnSignIn } from './pushNotifications';
 
 export async function signInWithBuiltInWallet(): Promise<Session> {
   const { address } = await connectWithBuiltInWallet();
@@ -28,5 +29,8 @@ export async function signInWithBuiltInWallet(): Promise<Session> {
 
   const session: Session = { accessToken, refreshToken, walletAddress: address };
   await saveSession(session);
+  // #761 — re-attach push delivery to the newly connected wallet. No-op unless
+  // the user already opted in, and never throws, so it cannot fail a sign-in.
+  void syncPushRegistrationOnSignIn();
   return session;
 }

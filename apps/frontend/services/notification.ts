@@ -15,6 +15,7 @@ export interface NotificationPreference {
   channel: "email" | "webhook";
   enabled: boolean;
   eventTypes: string[];
+  soundEnabled: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -23,6 +24,7 @@ export interface UpdatePreferenceDto {
   channel: "email" | "webhook";
   enabled: boolean;
   eventTypes: string[];
+  soundEnabled?: boolean;
 }
 
 export const notificationService = {

@@ -10,12 +10,14 @@ import { PreferenceService } from './preference.service';
 import { EmailSender } from './senders/email.sender';
 import { WebhookSender } from './senders/webhook.sender';
 import { EmailModule } from '../email/email.module';
+import { EventsModule } from '../gateways/events.module';
 
 @Module({
   imports: [
     ConfigModule,
     forwardRef(() => AuthModule),
     EmailModule,
+    EventsModule,
     TypeOrmModule.forFeature([Notification, NotificationPreference]),
   ],
   controllers: [NotificationController],

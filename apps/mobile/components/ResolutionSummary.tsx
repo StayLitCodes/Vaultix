@@ -1,10 +1,18 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { DisputeDetails } from '../hooks/useDisputes';
+import { DisputeDetails, DisputeResolution } from '../hooks/useDisputes';
+import { colors } from '../theme';
 
 interface ResolutionSummaryProps {
   dispute: DisputeDetails;
 }
+
+/** Display labels for the on-chain `Resolution` vocabulary. */
+const RESOLUTION_LABELS: Record<DisputeResolution, string> = {
+  depositor: 'Depositor',
+  recipient: 'Recipient',
+  split: 'Split',
+};
 
 export const ResolutionSummary: React.FC<ResolutionSummaryProps> = ({ dispute }) => {
   if (dispute.status !== 'RESOLVED' && dispute.status !== 'REJECTED') {
@@ -22,16 +30,16 @@ export const ResolutionSummary: React.FC<ResolutionSummaryProps> = ({ dispute })
 
       {dispute.status === 'RESOLVED' && dispute.winner && (
         <View style={styles.row}>
-          <Text style={styles.label}>Winner:</Text>
-          <Text style={styles.value}>{dispute.winner}</Text>
+          <Text style={styles.label}>Resolved in favour of:</Text>
+          <Text style={styles.value}>{RESOLUTION_LABELS[dispute.winner]}</Text>
         </View>
       )}
 
       {dispute.status === 'RESOLVED' && dispute.finalPayouts && (
         <View style={styles.payouts}>
           <Text style={styles.label}>Final Payouts:</Text>
-          <Text style={styles.payoutText}>Buyer: ${dispute.finalPayouts.buyerAmount}</Text>
-          <Text style={styles.payoutText}>Seller: ${dispute.finalPayouts.sellerAmount}</Text>
+          <Text style={styles.payoutText}>Depositor: ${dispute.finalPayouts.depositorAmount}</Text>
+          <Text style={styles.payoutText}>Recipient: ${dispute.finalPayouts.recipientAmount}</Text>
         </View>
       )}
 
@@ -44,29 +52,29 @@ export const ResolutionSummary: React.FC<ResolutionSummaryProps> = ({ dispute })
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#0F172A',
+    backgroundColor: colors.background,
     padding: 16,
     borderRadius: 8,
     marginTop: 16,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.border,
   },
   title: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#10B981', // Green for resolved
+    color: colors.success, // Green for resolved
     marginBottom: 12,
   },
   row: {
     marginBottom: 8,
   },
   label: {
-    color: '#94A3B8',
+    color: colors.textSecondary,
     fontSize: 12,
     fontWeight: '600',
   },
   value: {
-    color: '#FFF',
+    color: colors.text,
     fontSize: 14,
     marginTop: 2,
   },
@@ -74,15 +82,15 @@ const styles = StyleSheet.create({
     marginTop: 8,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#334155',
+    borderTopColor: colors.border,
   },
   payoutText: {
-    color: '#FFF',
+    color: colors.text,
     fontSize: 14,
     marginTop: 4,
   },
   timestamp: {
-    color: '#64748B',
+    color: colors.textTertiary,
     fontSize: 12,
     marginTop: 16,
     textAlign: 'right',

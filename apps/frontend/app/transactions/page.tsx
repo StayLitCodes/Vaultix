@@ -12,6 +12,7 @@ import { ExportDropdown, ExportFormat } from "@/components/ExportDropdown";
 import { ExportModal } from "@/components/ExportModal";
 import { useToast } from "@/hooks/useToast";
 import { TransactionTableSkeleton } from "@/components/ui/TransactionTableSkeleton";
+import { CanonicalEscrowStatus, escrowStatusLabel } from '@/utils/escrowStatus';
 
 const EVENT_TYPES = [
   { value: "", label: "All Events" },
@@ -398,7 +399,7 @@ export default function TransactionsPage() {
                                       : "bg-gray-100 text-gray-800"
                               }
                             >
-                              {event.escrow?.status || "N/A"}
+                              {event.escrow ? escrowStatusLabel(event.escrow.status) : "N/A"}
                             </Badge>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm">

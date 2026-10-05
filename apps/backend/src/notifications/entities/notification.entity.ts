@@ -10,6 +10,7 @@ import {
   NotificationEventType,
   NotificationStatus,
 } from '../enums/notification-event.enum';
+import { DATETIME_COLUMN_TYPE } from '../../utils/database-column-types';
 
 @Entity()
 export class Notification {

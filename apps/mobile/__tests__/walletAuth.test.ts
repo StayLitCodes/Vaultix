@@ -14,6 +14,12 @@ jest.mock('../services/wallet', () => ({
   signMessage: jest.fn(),
 }));
 
+// #761 — sign-in re-attaches push delivery for the new wallet.
+const mockSyncPush = jest.fn(async () => {});
+jest.mock('../services/pushNotifications', () => ({
+  syncPushRegistrationOnSignIn: () => mockSyncPush(),
+}));
+
 const mockStore = new Map<string, string>();
 jest.mock('../utils/secureStore', () => ({
   saveSecureItem: jest.fn(async (key: string, value: string) => {
@@ -102,5 +108,16 @@ describe('signInWithBuiltInWallet', () => {
 
     await expect(signInWithBuiltInWallet()).rejects.toThrow(/access token/i);
     expect(getSession()).toBeNull();
+  });
+
+  it('re-registers push delivery for the new wallet after a successful sign-in (#761)', async () => {
+    await signInWithBuiltInWallet();
+    expect(mockSyncPush).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not attempt push registration when sign-in fails', async () => {
+    mockVerify.mockRejectedValue({ response: { status: 401 } });
+    await expect(signInWithBuiltInWallet()).rejects.toBeDefined();
+    expect(mockSyncPush).not.toHaveBeenCalled();
   });
 });

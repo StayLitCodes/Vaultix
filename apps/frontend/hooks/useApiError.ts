@@ -3,7 +3,7 @@
 import { useState, useCallback, Dispatch, SetStateAction } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/useToast';
-import { apiClient } from '@/lib/api-client';
+import { clearSession } from '@/lib/session';
 
 interface UseApiErrorReturn {
   handleError: (error: unknown) => void;
@@ -29,7 +29,7 @@ export function useApiError(): UseApiErrorReturn {
       const status = statusMatch ? parseInt(statusMatch[1], 10) : null;
 
       if (status === 401) {
-        apiClient.setToken(null);
+        clearSession();
         toast.error('Session expired. Please sign in again.');
         router.push('/');
         return;

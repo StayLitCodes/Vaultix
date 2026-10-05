@@ -11,6 +11,7 @@ import { confirmCondition } from '@/lib/escrow-api';
 import { ICondition, IParty } from '@/types/escrow';
 import FulfillConditionModal from './FulfillConditionModal';
 import { Button } from '@/components/ui/button';
+import { CanonicalEscrowStatus, normalizeEscrowStatus } from '@/utils/escrowStatus';
 
 interface Props {
   escrowId: string;
@@ -47,7 +48,7 @@ const ConditionItem: React.FC<Props> = ({
 
   const partyRole = currentParty?.role?.toLowerCase();
   const partyStatus = currentParty?.status?.toLowerCase();
-  const isEscrowActive = escrowStatus.toLowerCase() === 'active';
+  const isEscrowActive = normalizeEscrowStatus(escrowStatus) === CanonicalEscrowStatus.ACTIVE;
   const isFulfilled = Boolean(condition.isFulfilled);
   const isConfirmed = Boolean(condition.isMet);
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { IEscrowExtended } from '@/types/escrow';
 import { useCurrency } from "@/context/CurrencyContext";
 import { useFiatPrice } from "@/hooks/useFiatPrice";
+import { CanonicalEscrowStatus, canTakeFinancialAction, escrowStatusLabel } from "@/utils/escrowStatus";
 
 interface TermsSectionProps {
   escrow: IEscrowExtended;
@@ -66,7 +67,7 @@ const TermsSection: React.FC<TermsSectionProps> = ({ escrow, userRole }) => {
             </div>
             <div className="flex justify-between items-center gap-2">
               <dt className="text-sm text-muted-foreground">Status</dt>
-              <dd className="text-sm font-medium text-foreground capitalize">{escrow.status}</dd>
+              <dd className="text-sm font-medium text-foreground">{escrowStatusLabel(escrow.status)}</dd>
             </div>
             {escrow.expiresAt && (
               <div className="flex justify-between items-start gap-2">
@@ -82,12 +83,16 @@ const TermsSection: React.FC<TermsSectionProps> = ({ escrow, userRole }) => {
 
         {/* Action buttons */}
         <div className="space-y-2.5">
-          {userRole === 'creator' && escrow.status === 'PENDING' && (
+          {userRole === 'creator' &&
+            escrow.status === CanonicalEscrowStatus.CREATED &&
+            canTakeFinancialAction(escrow.status) && (
             <button className="w-full min-h-[44px] px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium transition-colors cursor-pointer">
               Fund Escrow
             </button>
           )}
-          {userRole === 'counterparty' && escrow.status === 'ACTIVE' && (
+          {userRole === 'counterparty' &&
+            escrow.status === CanonicalEscrowStatus.ACTIVE &&
+            canTakeFinancialAction(escrow.status) && (
             <>
               <button className="w-full min-h-[44px] px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium transition-colors cursor-pointer">
                 Confirm Delivery
@@ -97,7 +102,9 @@ const TermsSection: React.FC<TermsSectionProps> = ({ escrow, userRole }) => {
               </button>
             </>
           )}
-          {(userRole === 'creator' || userRole === 'counterparty') && escrow.status === 'ACTIVE' && (
+          {(userRole === 'creator' || userRole === 'counterparty') &&
+            escrow.status === CanonicalEscrowStatus.ACTIVE &&
+            canTakeFinancialAction(escrow.status) && (
             <button className="w-full min-h-[44px] px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium transition-colors cursor-pointer">
               Cancel Escrow
             </button>

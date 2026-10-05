@@ -15,13 +15,42 @@ const API_BASE_URL = getApiBaseUrl();
 // API version prefix - all requests go through /v1/
 const API_VERSION_PREFIX = "/v1";
 
+export class IdentityChangedError extends Error {
+  constructor() {
+    super("Request cancelled due to wallet identity change");
+    this.name = "IdentityChangedError";
+  }
+}
+
 class ApiClient {
   private authToken: string | null = null;
+  private identityGeneration = 0;
+  private abortController = new AbortController();
 
   constructor() {
     // Load token from localStorage on init
     if (typeof window !== "undefined") {
       this.authToken = window.localStorage.getItem("vaultix_token");
+    }
+  }
+
+  /** Abort in-flight protected requests (wallet switch / disconnect). */
+  cancelPendingRequests(): void {
+    this.abortController.abort();
+    this.abortController = new AbortController();
+    this.identityGeneration += 1;
+  }
+
+  applySessionToken(token: string | null) {
+    this.authToken = token;
+    if (typeof window === "undefined") return;
+
+    if (token) {
+      window.localStorage.setItem("vaultix_login_time", String(Date.now()));
+      document.cookie = "vaultix_token=" + token + "; path=/; max-age=86400";
+    } else {
+      document.cookie =
+        "vaultix_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     }
   }
 
@@ -52,6 +81,7 @@ class ApiClient {
     retryCount = 0,
   ): Promise<T> {
     const url = `${API_BASE_URL}${API_VERSION_PREFIX}${path}`;
+    const generation = this.identityGeneration;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       ...(this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {}),
@@ -63,7 +93,12 @@ class ApiClient {
         ...options,
         headers,
         credentials: "include",
+        signal: options.signal ?? this.abortController.signal,
       });
+
+      if (generation !== this.identityGeneration) {
+        throw new IdentityChangedError();
+      }
 
       if (!response.ok) {
         // Handle 401 - token expired, try to refresh
@@ -86,6 +121,12 @@ class ApiClient {
 
       return (await response.json()) as T;
     } catch (error) {
+      if (error instanceof IdentityChangedError) {
+        throw error;
+      }
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new IdentityChangedError();
+      }
       console.error(`API request failed: ${path}`, error);
       throw error;
     }
@@ -138,6 +179,13 @@ class ApiClient {
       );
 
       this.setToken(response.accessToken);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("auth:access-token-refreshed", {
+            detail: { accessToken: response.accessToken },
+          }),
+        );
+      }
       console.log("Token refreshed successfully");
       return true;
     } catch (error) {

@@ -23,10 +23,28 @@ These values must be kept in sync. Drift will cause silent failures (CORS errors
 |---|---|---|---|
 | API base URL | `PORT` (determines URL) / `API_BASE_URL` | `NEXT_PUBLIC_API_BASE_URL` | `EXPO_PUBLIC_API_URL` (single source of truth via `security/env.ts`) |
 | Stellar network | `STELLAR_NETWORK` | `NEXT_PUBLIC_STELLAR_NETWORK` | `EXPO_PUBLIC_APP_ENV` (`dev`/`testnet`/`production`) |
-| RPC endpoint | `STELLAR_RPC_URL` (if overridden) | `NEXT_PUBLIC_RPC_URL` | `EXPO_PUBLIC_RPC_URL` |
+| RPC endpoint | `STELLAR_RPC_URL` (if overridden) | `NEXT_PUBLIC_RPC_URL` | n/a (mobile never calls Soroban RPC, the backend submits transactions) |
 | Contract ID | served via `/api/config` or direct env | `NEXT_PUBLIC_CONTRACT_ID` | fetched from API |
 
-> Mobile configuration is centralized in `apps/mobile/security/env.ts` as `envConfig`. Both `services/api.ts` and any wallet/RPC consumers read from `envConfig`, so `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_RPC_URL` (optionally gated by `EXPO_PUBLIC_APP_ENV`) are the only environment variables that need to be set.
+> Mobile configuration is centralized in `apps/mobile/security/env.ts` as `envConfig`. `services/api.ts` reads its base URL from `envConfig.apiUrl`, so `EXPO_PUBLIC_API_URL` (optionally gated by `EXPO_PUBLIC_APP_ENV`) is the only environment variable that needs to be set. `validateEnv()` runs on startup from `app/_layout.tsx` and warns when defaults are in use.
+
+---
+
+## Duplicate / conflicting variables
+
+More than one variable name has been used for the same concept across the
+codebase's history. To prevent drift, each pair below records the **canonical**
+name that new code must use; the non-canonical name is documented only so it is
+recognised and removed on sight, never reintroduced.
+
+| Concept | Variants seen | Canonical | Status | Tracking |
+|---|---|---|---|---|
+| Mobile API base URL | `EXPO_PUBLIC_API_URL`, `EXPO_PUBLIC_API_BASE_URL` | **`EXPO_PUBLIC_API_URL`** | `EXPO_PUBLIC_API_BASE_URL` is **not read** by any current source file (`services/api.ts` resolves the URL through `security/env.ts` → `envConfig.apiUrl`, which reads only `EXPO_PUBLIC_API_URL`). Do not add `EXPO_PUBLIC_API_BASE_URL`. | [#707](https://github.com/StayLitCodes/Vaultix/issues/707) |
+| Frontend API base URL | `NEXT_PUBLIC_API_BASE_URL`, `NEXT_PUBLIC_API_URL` | **`NEXT_PUBLIC_API_BASE_URL`** | `NEXT_PUBLIC_API_URL` still appears on the evidence-upload path in `escrow-api.ts` and should be consolidated onto the canonical name. | [#707](https://github.com/StayLitCodes/Vaultix/issues/707) |
+
+> The mobile duplication (`EXPO_PUBLIC_API_BASE_URL` vs `EXPO_PUBLIC_API_URL`)
+> is the specific case tracked as a code fix in [#707](https://github.com/StayLitCodes/Vaultix/issues/707);
+> this table is the reference that keeps the same mistake from recurring elsewhere.
 
 ---
 
@@ -148,9 +166,8 @@ These values must be kept in sync. Drift will cause silent failures (CORS errors
 
 | Variable | Required | Secret | Default | Purpose |
 |---|---|---|---|---|
-| `EXPO_PUBLIC_APP_ENV` | ❌ | ❌ | `dev` | `dev`, `testnet`, or `production`. Selects the config block in `security/env.ts`. |
+| `EXPO_PUBLIC_APP_ENV` | ❌ | ❌ | `dev` | `dev`, `testnet`, or `production`. Selects the config block in `security/env.ts`. Unknown values fall back to `dev` with a startup warning. |
 | `EXPO_PUBLIC_API_URL` | ✅ | ❌ | per-env default | Backend API URL (single source of truth). Read via `envConfig.apiUrl`. Dev default: `http://localhost:3000`, testnet: `https://api-testnet.vaultix.com`, production: `https://api.vaultix.com`. |
-| `EXPO_PUBLIC_RPC_URL` | ✅ | ❌ | per-env default | Stellar Soroban RPC endpoint. Dev default: `http://localhost:8000/soroban/rpc`, testnet: `https://soroban-testnet.stellar.org`, production: `https://rpc.vaultix.com`. |
 | `EXPO_PUBLIC_AUTH_PATH_PREFIX` | ❌ | ❌ | `/v1/auth` | Auth route prefix (override for custom gateways) |
 
 ---

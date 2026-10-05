@@ -27,6 +27,10 @@ export class NotificationPreference {
   @Column('simple-array')
   eventTypes: NotificationEventType[];
 
+  // User-level in-app chime toggle, mirrored on each of the user's rows
+  @Column({ default: true })
+  soundEnabled: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

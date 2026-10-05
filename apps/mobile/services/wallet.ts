@@ -8,6 +8,7 @@ import { Linking } from 'react-native';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { deleteSecureItem, getSecureItem, saveSecureItem } from '../utils/secureStore';
 import { clearSession } from './session';
+import { envConfig } from '../security/env';
 
 if (typeof (global as { Buffer?: unknown }).Buffer === 'undefined') {
   (global as { Buffer?: unknown }).Buffer = Buffer;
@@ -87,9 +88,23 @@ export async function getLocalWalletAddress(): Promise<string | null> {
   return address ?? null;
 }
 
+/** True only for a syntactically and checksum-valid Stellar account ID (G…). */
+export function isValidStellarPublicKey(address: unknown): address is string {
+  return typeof address === 'string' && StellarSdk.StrKey.isValidEd25519PublicKey(address);
+}
+
+/**
+ * Resolves the device keypair and returns its public key as the connected
+ * wallet address (#709). The address is validated before it is ever stored in
+ * a session, so a placeholder like 'GABCD...XYZ' can never be "connected".
+ */
 export async function connectWithBuiltInWallet(): Promise<{ address: string; method: WalletConnectionMethod }> {
   const keypair = await ensureLocalWalletKeypair();
-  return { address: keypair.publicKey(), method: 'secure-mobile' };
+  const address = keypair.publicKey();
+  if (!isValidStellarPublicKey(address)) {
+    throw new Error('The built-in wallet produced an invalid Stellar address.');
+  }
+  return { address, method: 'secure-mobile' };
 }
 
 /**
@@ -106,7 +121,19 @@ export async function signMessage(message: string): Promise<string> {
   return Buffer.from(signature).toString('hex');
 }
 
-export async function signTransactionXDR(xdr: string, networkPassphrase = StellarSdk.Networks.TESTNET): Promise<string> {
+/**
+ * Signs a server-prepared transaction envelope with the built-in wallet and
+ * returns the signed envelope as base64 XDR. Used by escrow creation
+ * (`app/escrow/create.tsx`), where the backend builds + simulates the Soroban
+ * call and the device only signs — the secret never leaves SecureStore.
+ */
+export async function signTransactionXDR(
+  xdr: string,
+  networkPassphrase: string = envConfig.networkPassphrase,
+): Promise<string> {
+  if (!xdr) {
+    throw new Error('Cannot sign an empty transaction.');
+  }
   const keypair = await ensureLocalWalletKeypair();
   const transaction = new StellarSdk.Transaction(xdr, networkPassphrase);
   transaction.sign(keypair);

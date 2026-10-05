@@ -11,6 +11,7 @@ import {
 import { User, KycStatus } from '../../user/entities/user.entity';
 
 export { KycStatus } from '../../user/entities/user.entity';
+import { DATETIME_COLUMN_TYPE } from '../../../utils/database-column-types';
 
 export enum KycProvider {
   MOCK = 'mock',

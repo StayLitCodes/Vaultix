@@ -9,7 +9,7 @@ import { Party } from '../escrow/entities/party.entity';
 import { StellarEventListenerService } from './services/stellar-event-listener.service';
 import { StellarEventController } from './controllers/stellar-event.controller';
 import { AdminModule } from '../admin/admin.module';
-import { GatewaysModule } from '../../gateways/gateways.module';
+import { EventsModule } from '../../gateways/events.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
 
 @Module({
@@ -23,7 +23,7 @@ import { NotificationsModule } from '../../notifications/notifications.module';
       Party,
     ]),
     forwardRef(() => AdminModule),
-    forwardRef(() => GatewaysModule),
+    EventsModule,
     forwardRef(() => NotificationsModule),
   ],
   controllers: [StellarEventController],

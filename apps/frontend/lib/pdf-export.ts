@@ -1,6 +1,7 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { IEventResponse } from "./escrow-api";
+import { CanonicalEscrowStatus } from "@/utils/escrowStatus";
 
 export interface ExportStats {
   totalTransactions: number;
@@ -26,11 +27,17 @@ export function calculateExportStats(events: IEventResponse[]): ExportStats {
     if (event.escrow) {
       stats.totalAmount += event.escrow.amount || 0;
       
-      if (event.escrow.status === "COMPLETED") {
+      if (
+        event.escrow.status === CanonicalEscrowStatus.COMPLETED ||
+        event.escrow.status === CanonicalEscrowStatus.RESOLVED
+      ) {
         stats.completedTransactions++;
-      } else if (event.escrow.status === "ACTIVE") {
+      } else if (
+        event.escrow.status === CanonicalEscrowStatus.ACTIVE ||
+        event.escrow.status === CanonicalEscrowStatus.FUNDED
+      ) {
         stats.activeTransactions++;
-      } else if (event.escrow.status === "DISPUTED") {
+      } else if (event.escrow.status === CanonicalEscrowStatus.DISPUTED) {
         stats.disputedTransactions++;
       }
     }

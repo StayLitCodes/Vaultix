@@ -1,22 +1,24 @@
-import { IsArray, IsNumber, Min } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsArray, IsString, Matches, MaxLength } from 'class-validator';
 
 export class ConsistencyCheckByIdsDto {
   @IsArray()
-  @IsNumber({}, { each: true })
-  @Min(1, { each: true })
-  @Type(() => Number)
-  escrowIds: number[];
+  @IsString({ each: true })
+  @MaxLength(36, { each: true })
+  @Matches(
+    /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|0|[1-9][0-9]{0,19})$/i,
+    { each: true },
+  )
+  escrowIds: string[];
 }
 
 export class ConsistencyCheckByRangeDto {
-  @IsNumber()
-  @Min(1)
-  fromId: number;
+  @IsString()
+  @Matches(/^[1-9][0-9]{0,19}$/)
+  fromId: string;
 
-  @IsNumber()
-  @Min(1)
-  toId: number;
+  @IsString()
+  @Matches(/^[1-9][0-9]{0,19}$/)
+  toId: string;
 }
 
 // Union type for request validation
@@ -31,12 +33,13 @@ export interface FieldMismatch {
 }
 
 export interface EscrowDiffReport {
-  escrowId: number;
+  escrowId: string;
   isConsistent: boolean;
   fieldsMismatched: FieldMismatch[];
   missingInDb?: boolean;
   missingOnChain?: boolean;
   error?: string;
+  unmappedHistorical?: boolean;
 }
 
 export interface ConsistencyCheckResponse {

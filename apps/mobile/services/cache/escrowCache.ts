@@ -18,30 +18,40 @@ export interface EscrowCacheEntry {
 
 const LRU_INDEX_KEY = "escrow_lru_index";
 
+/**
+ * #792 — the index lives in a single AsyncStorage key, so the
+ * read → filter/unshift → write sequence is a non-atomic read-modify-write.
+ * Two concurrent calls (e.g. navigating from escrow A to B before A's cache
+ * write resolves) both read the same starting index, and whichever write lands
+ * second silently overwrites the first, dropping the other key from the index.
+ * Chaining every call onto one promise makes the whole sequence atomic within
+ * the process, so no key can be lost from the eviction accounting.
+ */
+let lruIndexQueue: Promise<unknown> = Promise.resolve();
+
 async function updateLruIndex(key: string) {
-  const raw = await AsyncStorage.getItem(
-    LRU_INDEX_KEY
-  );
+  const run = lruIndexQueue.then(async () => {
+    const raw = await AsyncStorage.getItem(LRU_INDEX_KEY);
 
-  let index: string[] = raw
-    ? JSON.parse(raw)
-    : [];
+    let index: string[] = raw ? JSON.parse(raw) : [];
 
-  index = index.filter((k) => k !== key);
-  index.unshift(key);
+    index = index.filter((k) => k !== key);
+    index.unshift(key);
 
-  const excess = index.splice(
-    MAX_ESCROW_CACHE_ENTRIES
-  );
+    const excess = index.splice(MAX_ESCROW_CACHE_ENTRIES);
 
-  if (excess.length > 0) {
-    await AsyncStorage.removeMany(excess);
-  }
+    if (excess.length > 0) {
+      // AsyncStorage exposes `multiRemove`, not `removeMany` (#763).
+      await AsyncStorage.multiRemove(excess);
+    }
 
-  await AsyncStorage.setItem(
-    LRU_INDEX_KEY,
-    JSON.stringify(index)
-  );
+    await AsyncStorage.setItem(LRU_INDEX_KEY, JSON.stringify(index));
+  });
+
+  // Keep the queue alive even if one call rejects, so a single failure cannot
+  // permanently wedge every later cache write.
+  lruIndexQueue = run.catch(() => undefined);
+  return run;
 }
 
 export async function cacheEscrowDetail(
@@ -109,5 +119,6 @@ export async function clearEscrowCache() {
 
   index.push(LRU_INDEX_KEY);
 
-  await AsyncStorage.removeMany(index);
+  // AsyncStorage exposes `multiRemove`, not `removeMany` (#763).
+  await AsyncStorage.multiRemove(index);
 }

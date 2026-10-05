@@ -18,7 +18,10 @@ export async function clearAllCache(): Promise<void> {
       (key: string) => key === CACHE_KEYS.DASHBOARD || key.startsWith('escrow_detail_')
     );
     if (cacheKeys.length > 0) {
-      await AsyncStorage.removeMany(cacheKeys);
+      // `removeMany` never existed on AsyncStorage — the real batch-delete API is
+      // `multiRemove`. Calling `removeMany` threw a TypeError that this
+      // try/catch swallowed, so post-logout cache clearing silently no-op'd (#763).
+      await AsyncStorage.multiRemove(cacheKeys);
     }
   } catch (error) {
     console.error('Error clearing cache:', error);

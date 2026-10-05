@@ -7,6 +7,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Webhook } from '../webhook.entity';
+import { DATETIME_COLUMN_TYPE } from '../../../utils/database-column-types';
 
 @Entity('webhook_dead_letter')
 @Index(['webhookId'])

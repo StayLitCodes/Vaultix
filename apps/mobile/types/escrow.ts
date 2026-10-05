@@ -113,6 +113,34 @@ export interface CreateEscrowPayload {
   milestones: Array<{ title: string; amount: string; description?: string }>;
 }
 
+/** Mirrors the backend `PrepareEscrowCreationDto` (#709). */
+export interface PrepareEscrowCreationPayload {
+  /** Client-generated UUID v4 — reused on retry so preparation is idempotent. */
+  intentId: string;
+  title: string;
+  description: string;
+  category: 'service' | 'goods' | 'milestone' | 'other';
+  amount: string;
+  asset: string;
+  counterpartyAddress: string;
+  deadline: string;
+  milestones: Array<{ description: string; amount: string }>;
+  conditions: Array<{ type: 'manual' | 'time' | 'oracle'; description?: string; releaseDate?: string }>;
+}
+
+export interface EscrowCreationIntent {
+  intentId: string;
+  chainEscrowId: string;
+  /** Base64 transaction envelope the connected wallet must sign. */
+  unsignedXdr: string;
+}
+
+export interface EscrowCreationResult {
+  escrowId: string;
+  transactionHash: string;
+  status: 'confirmed';
+}
+
 export interface ReleaseMilestonePayload {
   escrowId: string;
   milestoneId: string;

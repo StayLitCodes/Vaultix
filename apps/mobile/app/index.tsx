@@ -27,6 +27,7 @@ import {
 import { useSession } from '../hooks/useSession';
 import { toFriendlyError } from '../utils/errors';
 import { showToast } from '../components/Toast';
+import { colors } from '../theme';
 
 /**
  * External wallets can deep-link, but they cannot yet answer the backend
@@ -126,7 +127,7 @@ export default function WelcomeScreen() {
         >
           {connecting ? (
             <View style={styles.connectingRow}>
-              <ActivityIndicator color="#fff" size="small" />
+              <ActivityIndicator color={colors.text} size="small" />
               <Text style={styles.connectBtnText}>Signing in…</Text>
             </View>
           ) : (
@@ -190,21 +191,21 @@ function FeatureItem({ icon, title, description }: { icon: string; title: string
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#12121f' },
+  container: { flex: 1, backgroundColor: colors.background },
   scrollContent: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 24, paddingBottom: 40 },
   brandSection: { alignItems: 'center', marginBottom: 40 },
   logo: { fontSize: 64, marginBottom: 12 },
-  appName: { color: '#fff', fontSize: 36, fontWeight: '800', letterSpacing: -0.5 },
-  tagline: { color: '#888', fontSize: 16, marginTop: 6 },
+  appName: { color: colors.text, fontSize: 36, fontWeight: '800', letterSpacing: -0.5 },
+  tagline: { color: colors.textTertiary, fontSize: 16, marginTop: 6 },
   features: { width: '100%', marginBottom: 36 },
-  featureItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1e1e30', borderRadius: 12, padding: 14, marginBottom: 10 },
+  featureItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface, borderRadius: 12, padding: 14, marginBottom: 10 },
   featureIcon: { fontSize: 24, marginRight: 12 },
   featureText: { flex: 1 },
-  featureTitle: { color: '#fff', fontWeight: '600', fontSize: 15, marginBottom: 2 },
-  featureDesc: { color: '#888', fontSize: 12, lineHeight: 16 },
+  featureTitle: { color: colors.text, fontWeight: '600', fontSize: 15, marginBottom: 2 },
+  featureDesc: { color: colors.textTertiary, fontSize: 12, lineHeight: 16 },
   actionSection: { width: '100%', alignItems: 'center', marginBottom: 16 },
   connectBtn: {
-    backgroundColor: '#6c63ff',
+    backgroundColor: colors.accent,
     borderRadius: 14,
     paddingVertical: 16,
     paddingHorizontal: 40,
@@ -213,22 +214,22 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   btnDisabled: { opacity: 0.6 },
-  connectBtnText: { color: '#fff', fontWeight: '700', fontSize: 17 },
+  connectBtnText: { color: colors.onAccent, fontWeight: '700', fontSize: 17 },
   connectingRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  disclaimer: { color: '#666', fontSize: 11, textAlign: 'center', lineHeight: 16 },
+  disclaimer: { color: colors.textTertiary, fontSize: 11, textAlign: 'center', lineHeight: 16 },
   externalSection: { width: '100%', alignItems: 'center', marginBottom: 20 },
-  externalHeading: { color: '#888', fontSize: 12, marginBottom: 8 },
+  externalHeading: { color: colors.textTertiary, fontSize: 12, marginBottom: 8 },
   externalRow: { flexDirection: 'row', gap: 10, width: '100%' },
   externalBtn: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#2d2d44',
+    borderColor: colors.surfaceRaised,
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
   },
-  externalBtnText: { color: '#aaa', fontWeight: '600', fontSize: 14 },
-  externalNote: { color: '#666', fontSize: 11, textAlign: 'center', lineHeight: 16, marginTop: 8 },
+  externalBtnText: { color: colors.textSecondary, fontWeight: '600', fontSize: 14 },
+  externalNote: { color: colors.textTertiary, fontSize: 11, textAlign: 'center', lineHeight: 16, marginTop: 8 },
   skipBtn: { marginTop: 4 },
-  skipBtnText: { color: '#888', fontSize: 13, fontWeight: '500' },
+  skipBtnText: { color: colors.textTertiary, fontSize: 13, fontWeight: '500' },
 });

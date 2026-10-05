@@ -14,6 +14,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useNotifications } from '../../hooks/useNotifications';
 import { Notification } from '../../types/notification';
+import { colors } from '../../theme';
 
 const EVENT_LABELS: Record<string, string> = {
   CREATED: 'Escrow Created',
@@ -140,7 +141,7 @@ export default function NotificationsScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={notifications.length === 0 ? styles.emptyList : styles.list}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6c63ff" />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
@@ -159,7 +160,7 @@ export default function NotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#12121f' },
+  container: { flex: 1, backgroundColor: colors.background },
   screenHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -168,38 +169,38 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 8,
   },
-  screenTitle: { color: '#fff', fontSize: 22, fontWeight: '700' },
-  unreadBadge: { color: '#6c63ff', fontSize: 12, marginTop: 2 },
-  markAllBtn: { color: '#6c63ff', fontSize: 13, fontWeight: '600' },
+  screenTitle: { color: colors.text, fontSize: 22, fontWeight: '700' },
+  unreadBadge: { color: colors.accent, fontSize: 12, marginTop: 2 },
+  markAllBtn: { color: colors.accent, fontSize: 13, fontWeight: '600' },
   list: { paddingHorizontal: 16, paddingBottom: 20 },
   emptyList: { flexGrow: 1 },
   item: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#1e1e30',
+    backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 14,
     marginBottom: 10,
   },
   itemUnread: {
-    backgroundColor: '#1e1e50',
+    backgroundColor: colors.infoSurface,
     borderLeftWidth: 3,
-    borderLeftColor: '#6c63ff',
+    borderLeftColor: colors.accent,
   },
   itemLeft: { flexDirection: 'row', alignItems: 'flex-start', flex: 1 },
   unreadDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#6c63ff',
+    backgroundColor: colors.accent,
     marginRight: 10,
     marginTop: 6,
   },
   itemContent: { flex: 1 },
-  itemTitle: { color: '#aaa', fontSize: 14, fontWeight: '500' },
-  itemTitleUnread: { color: '#fff', fontWeight: '600' },
-  itemMeta: { color: '#888', fontSize: 12, marginTop: 3 },
-  itemDate: { color: '#666', fontSize: 11, marginTop: 3 },
+  itemTitle: { color: colors.textSecondary, fontSize: 14, fontWeight: '500' },
+  itemTitleUnread: { color: colors.text, fontWeight: '600' },
+  itemMeta: { color: colors.textTertiary, fontSize: 12, marginTop: 3 },
+  itemDate: { color: colors.textTertiary, fontSize: 11, marginTop: 3 },
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -207,8 +208,8 @@ const styles = StyleSheet.create({
     paddingTop: 80,
   },
   emptyEmoji: { fontSize: 40, marginBottom: 8 },
-  empty: { color: '#888', fontSize: 15, textAlign: 'center' },
-  emptySub: { color: '#666', fontSize: 13, marginTop: 4, textAlign: 'center' },
+  empty: { color: colors.textTertiary, fontSize: 15, textAlign: 'center' },
+  emptySub: { color: colors.textTertiary, fontSize: 13, marginTop: 4, textAlign: 'center' },
   errorContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -216,30 +217,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   errorEmoji: { fontSize: 40, marginBottom: 12 },
-  errorText: { color: '#ef476f', fontSize: 14, textAlign: 'center', marginBottom: 16 },
+  errorText: { color: colors.danger, fontSize: 14, textAlign: 'center', marginBottom: 16 },
   retryBtn: {
-    backgroundColor: '#6c63ff',
+    backgroundColor: colors.accent,
     borderRadius: 10,
     paddingHorizontal: 24,
     paddingVertical: 10,
   },
-  retryText: { color: '#fff', fontWeight: '600' },
+  retryText: { color: colors.onAccent, fontWeight: '600' },
   skeletonList: { padding: 16 },
   skeletonDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#2d2d44',
+    backgroundColor: colors.surfaceRaised,
     marginRight: 10,
     marginTop: 6,
   },
   skeletonContent: { flex: 1 },
   skeletonTitle: {
     height: 14,
-    backgroundColor: '#2d2d44',
+    backgroundColor: colors.surfaceRaised,
     borderRadius: 4,
     marginBottom: 8,
     width: '70%',
   },
-  skeletonLine: { height: 10, backgroundColor: '#2d2d44', borderRadius: 4, marginBottom: 6, width: '90%' },
+  skeletonLine: { height: 10, backgroundColor: colors.surfaceRaised, borderRadius: 4, marginBottom: 6, width: '90%' },
 });

@@ -36,7 +36,7 @@ fn test_admin_upgrade_and_state_preservation() {
             description: Symbol::new(&env, "Test"),
         },
     ];
-    let deadline = 1706400000u64;
+    let deadline = 100000000u64;
     client.create_escrow(
         &1u64,
         &depositor,

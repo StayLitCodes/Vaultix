@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { Webhook } from '../webhook.entity';
 import { WebhookDeliveryStatus } from '../../../types/webhook/webhook.types';
+import { DATETIME_COLUMN_TYPE } from '../../../utils/database-column-types';
 
 @Entity('webhook_delivery')
 @Index(['status', 'nextRetryAt'])

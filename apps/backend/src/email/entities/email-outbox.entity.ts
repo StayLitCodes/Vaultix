@@ -6,6 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { DATETIME_COLUMN_TYPE } from '../../utils/database-column-types';
 
 export enum EmailOutboxStatus {
   PENDING = 'pending',

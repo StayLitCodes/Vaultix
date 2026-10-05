@@ -341,10 +341,15 @@ Emitted by `upgrade` before the WASM hash is replaced.
 
 ## Known Deviations from Convention
 
-| Event | Deviation | Tracking |
+These are cases where the events do not (yet) fully describe the state changes a
+consumer would need to observe. They are flagged here so the doc and the code can
+converge rather than leaving indexer authors to rediscover the gap from source.
+
+| Event / gap | Deviation | Tracking |
 |---|---|---|
 | `MultisigConfigured` | Payload struct not yet exported in this doc | Add struct definition once finalized |
 | `SignatureCollected` | Payload struct not yet exported in this doc | Add struct definition once finalized |
+| **Milestone state change during `resolve_dispute`** | `resolve_dispute` can move milestones from `Disputed` → `Released` (see the milestone transition graph in [`../STATUS_MAPPING.md`](../STATUS_MAPPING.md)), but only the escrow-level `DisputeResolved` event is emitted — there is **no per-milestone event** for that transition. An indexer tracking milestone status from the event stream alone cannot observe milestones released by an arbitrator's ruling and must re-read contract state after a `DisputeResolved`. | [#736](https://github.com/StayLitCodes/Vaultix/issues/736) |
 
 ---
 

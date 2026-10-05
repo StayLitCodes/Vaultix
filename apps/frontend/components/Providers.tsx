@@ -6,6 +6,8 @@ import { ToastProvider } from '@/app/contexts/ToastProvider';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { WebSocketProvider } from '@/app/contexts/WebSocketContext';
+import { WalletProvider } from '@/app/contexts/WalletContext';
+import { WalletSessionCoordinator } from '@/components/WalletSessionCoordinator';
 import { CurrencyProvider } from '@/context/CurrencyContext';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
@@ -23,11 +25,14 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       <ThemeProvider>
         <ToastProvider>
           <ErrorBoundary>
-            <WebSocketProvider>
-              <CurrencyProvider>
-                {children}
-              </CurrencyProvider>
-            </WebSocketProvider>
+            <WalletProvider>
+              <WalletSessionCoordinator />
+              <WebSocketProvider>
+                <CurrencyProvider>
+                  {children}
+                </CurrencyProvider>
+              </WebSocketProvider>
+            </WalletProvider>
           </ErrorBoundary>
         </ToastProvider>
       </ThemeProvider>

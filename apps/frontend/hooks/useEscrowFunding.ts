@@ -1,7 +1,15 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import {
+  DEFAULT_POLL_INTERVAL_MS,
+  StellarNetwork,
+  awaitConfirmation,
+} from "@/lib/transaction-status";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 const API_VERSION_PREFIX = "/v1";
+
+/** How long to keep waiting for the chain to confirm a submitted funding tx. */
+const CONFIRMATION_TIMEOUT_MS = 60_000;
 
 export interface FundingState {
   loading: boolean;
@@ -17,6 +25,7 @@ export type FundingPhase =
   | "submitting"
   | "confirming"
   | "complete"
+  | "unconfirmed"
   | "error"
   | "timeout";
 
@@ -39,11 +48,34 @@ const getFundingError = (error: unknown): string => {
   return message || "The transaction could not be completed.";
 };
 
+export interface UseEscrowFundingOptions {
+  /** Network the transaction was submitted to. Drives the status source. */
+  network?: StellarNetwork;
+  /** Delay between confirmation polls. */
+  pollInterval?: number;
+  /** How long to wait for a terminal chain state before reporting unconfirmed. */
+  confirmationTimeoutMs?: number;
+  /** Injectable fetch, so confirmation sequences are deterministic in tests. */
+  fetchImpl?: typeof fetch;
+}
+
 /**
  * Hook for signing and submitting a Stellar payment transaction to fund an escrow.
- * Calls the wallet's signTransaction method and submits to the backend.
+ *
+ * An HTTP 2xx from the funding endpoint only means the backend accepted the
+ * signed envelope — it is *not* proof that the transaction reached a ledger.
+ * Completion is therefore reported only once the canonical status source
+ * confirms it, and a transport failure while waiting leaves the funding
+ * `unconfirmed` (resumable) instead of reporting a failed payment.
  */
-export const useEscrowFunding = () => {
+export const useEscrowFunding = (options: UseEscrowFundingOptions = {}) => {
+  const {
+    network = "testnet",
+    pollInterval = DEFAULT_POLL_INTERVAL_MS,
+    confirmationTimeoutMs = CONFIRMATION_TIMEOUT_MS,
+    fetchImpl,
+  } = options;
+
   const [state, setState] = useState<FundingState>({
     loading: false,
     error: null,
@@ -51,6 +83,50 @@ export const useEscrowFunding = () => {
     phase: "idle",
   });
   const abortControllerRef = useRef<AbortController | null>(null);
+  const confirmationAbortRef = useRef<AbortController | null>(null);
+  const txHashRef = useRef<string | null>(null);
+
+  const waitForConfirmation = useCallback(
+    async (txHash: string): Promise<boolean> => {
+      const controller = new AbortController();
+      confirmationAbortRef.current = controller;
+
+      try {
+        const result = await awaitConfirmation({
+          txHash,
+          network,
+          timeoutMs: confirmationTimeoutMs,
+          pollInterval,
+          signal: controller.signal,
+          fetchImpl,
+        });
+
+        if (result.kind === "confirmed") {
+          setState({ loading: false, error: null, txHash, phase: "complete" });
+          return true;
+        }
+
+        if (result.kind === "failed") {
+          setState({ loading: false, error: result.detail, txHash, phase: "error" });
+          return false;
+        }
+
+        setState({
+          loading: false,
+          error:
+            "The transaction was submitted but the network has not confirmed it yet. You can resume checking.",
+          txHash,
+          phase: "unconfirmed",
+        });
+        return false;
+      } finally {
+        if (confirmationAbortRef.current === controller) {
+          confirmationAbortRef.current = null;
+        }
+      }
+    },
+    [confirmationTimeoutMs, fetchImpl, network, pollInterval],
+  );
 
   const fundEscrow = async (
     escrowId: string,
@@ -98,21 +174,31 @@ export const useEscrowFunding = () => {
         throw new Error(data?.message ?? "Funding submission failed");
       }
 
+      // The submission endpoint accepted the signed envelope, so from here on the
+      // question is whether a ledger confirms it — not whether the HTTP call
+      // succeeded.
       setState((current: FundingState) => ({ ...current, phase: "confirming" }));
+
       const { txHash } = await res.json();
-      await new Promise((resolve) => window.setTimeout(resolve, 0));
-      setState({ loading: false, error: null, txHash, phase: "complete" });
-      return true;
+      if (!txHash) {
+        throw new Error("Funding submission did not return a transaction hash.");
+      }
+
+      txHashRef.current = txHash;
+      setState((current: FundingState) => ({ ...current, txHash }));
+
+      return await waitForConfirmation(txHash);
     } catch (err: unknown) {
       const timedOut =
         abortController.signal.aborted ||
         (err instanceof Error && err.message === "TRANSACTION_TIMEOUT");
+      const txHash = txHashRef.current;
       setState({
         loading: false,
         error: timedOut
           ? "Transaction timed out after 60 seconds. You can cancel and try again."
           : getFundingError(err),
-        txHash: null,
+        txHash,
         phase: timedOut ? "timeout" : "error",
       });
       return false;
@@ -122,9 +208,28 @@ export const useEscrowFunding = () => {
     }
   };
 
+  /**
+   * Continues waiting for the chain after an `unconfirmed` result, without
+   * re-signing or re-submitting anything.
+   */
+  const resumeConfirmation = useCallback(async (): Promise<boolean> => {
+    const txHash = txHashRef.current;
+    if (!txHash) return false;
+
+    setState((current: FundingState) => ({
+      ...current,
+      loading: true,
+      error: null,
+      phase: "confirming",
+    }));
+
+    return waitForConfirmation(txHash);
+  }, [waitForConfirmation]);
+
   const cancelSigning = () => {
     abortControllerRef.current?.abort();
+    confirmationAbortRef.current?.abort();
   };
 
-  return { ...state, fundEscrow, cancelSigning };
+  return { ...state, fundEscrow, resumeConfirmation, cancelSigning };
 };

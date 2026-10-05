@@ -20,7 +20,9 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   }),
   getItem: jest.fn(async (key: string) => mockAsyncStore.get(key) ?? null),
   getAllKeys: jest.fn(async () => Array.from(mockAsyncStore.keys())),
-  removeMany: jest.fn(async (keys: string[]) => {
+  // Only the real API is mocked. `removeMany` is deliberately absent so any
+  // code still calling it throws and fails the suite instead of passing (#763).
+  multiRemove: jest.fn(async (keys: string[]) => {
     keys.forEach((key) => mockAsyncStore.delete(key));
   }),
   removeItem: jest.fn(async (key: string) => {
@@ -52,6 +54,13 @@ import {
   consumePendingRedirect,
 } from '../services/auth';
 import { clearAllCache } from '../services/cache/cacheKeys';
+import {
+  cacheEscrowDetail,
+  clearEscrowCache,
+  getCachedEscrowDetail,
+} from '../services/cache/escrowCache';
+import { MAX_ESCROW_CACHE_ENTRIES } from '../services/cache/cacheConfig';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SESSION = {
   accessToken: 'jwt.access.token',
@@ -242,5 +251,73 @@ describe('clearAllCache (#549)', () => {
 
   it('handles empty cache gracefully', async () => {
     await expect(clearAllCache()).resolves.not.toThrow();
+  });
+
+  it('actually removes the keys via the real AsyncStorage batch API (#763)', async () => {
+    mockAsyncStore.set('dashboard_cache', JSON.stringify({ data: 'test' }));
+    mockAsyncStore.set('escrow_detail_abc', JSON.stringify({ data: 'escrow' }));
+
+    await clearAllCache();
+
+    expect(AsyncStorage.multiRemove).toHaveBeenCalledWith(
+      expect.arrayContaining(['dashboard_cache', 'escrow_detail_abc']),
+    );
+    expect(mockAsyncStore.size).toBe(0);
+  });
+});
+
+describe('escrow cache (#763)', () => {
+  it('round-trips an entry through AsyncStorage', async () => {
+    await cacheEscrowDetail('abc', { id: 'abc' });
+
+    const cached = await getCachedEscrowDetail('abc');
+    expect(cached).not.toBeNull();
+    expect(cached?.data).toEqual({ id: 'abc' });
+  });
+
+  it('evicts the least-recently-used entry using multiRemove', async () => {
+    for (let i = 0; i < MAX_ESCROW_CACHE_ENTRIES; i++) {
+      await cacheEscrowDetail(`escrow-${i}`, { id: `escrow-${i}` });
+    }
+    expect(mockAsyncStore.has('escrow_detail_escrow-0')).toBe(true);
+
+    // One more entry pushes the LRU past MAX_ESCROW_CACHE_ENTRIES.
+    await cacheEscrowDetail('escrow-overflow', { id: 'escrow-overflow' });
+
+    expect(AsyncStorage.multiRemove).toHaveBeenCalledWith(['escrow_detail_escrow-0']);
+    expect(mockAsyncStore.has('escrow_detail_escrow-0')).toBe(false);
+    expect(mockAsyncStore.has('escrow_detail_escrow-overflow')).toBe(true);
+  });
+
+  it('clearEscrowCache removes every indexed entry and the LRU index', async () => {
+    await cacheEscrowDetail('abc', { id: 'abc' });
+    await cacheEscrowDetail('def', { id: 'def' });
+    mockAsyncStore.set('unrelated_key', 'keep me');
+
+    await clearEscrowCache();
+
+    expect(mockAsyncStore.has('escrow_detail_abc')).toBe(false);
+    expect(mockAsyncStore.has('escrow_detail_def')).toBe(false);
+    expect(mockAsyncStore.has('escrow_lru_index')).toBe(false);
+    expect(mockAsyncStore.has('unrelated_key')).toBe(true);
+  });
+
+  it('clears escrow cache on sign out and logout', async () => {
+    await saveSession(SESSION);
+    await cacheEscrowDetail('abc', { id: 'abc' });
+    await cacheEscrowDetail('def', { id: 'def' });
+    mockAsyncStore.set('dashboard_cache', JSON.stringify({ data: 'test' }));
+
+    await signOut();
+    expect(mockAsyncStore.has('escrow_detail_abc')).toBe(false);
+
+    await saveSession(SESSION);
+    await cacheEscrowDetail('abc', { id: 'abc' });
+    mockAsyncStore.set('dashboard_cache', JSON.stringify({ data: 'test' }));
+
+    await logout();
+    expect(mockAsyncStore.has('dashboard_cache')).toBe(false);
+    expect(mockAsyncStore.has('escrow_detail_abc')).toBe(false);
+    expect(Array.from(mockAsyncStore.keys()).some((k) => k.startsWith('escrow_detail_'))).toBe(false);
   });
 });
