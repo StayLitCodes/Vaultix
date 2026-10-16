@@ -20,7 +20,7 @@
     "expo": "~52.0.0",
     "expo-camera": "~16.0.18",
     "expo-clipboard": "~7.0.0",
-    "expo-constants": "~17.0.0",
+    "expo-constants": "~58.0.11",
     "expo-document-picker": "~13.0.0",
     "expo-local-authentication": "~15.0.1",
     "expo-notifications": "~0.29.14",
