@@ -1,5 +1,6 @@
 "use client";
 
+import { adminMetadata } from "@/lib/admin-metadata";
 import React, { useState, useEffect, useRef } from "react";
 import {
   AlertTriangle,
@@ -22,6 +23,8 @@ import {
 import { AdminService } from "@/services/admin";
 import { IAdminDispute } from "@/types/admin";
 import { toast } from "sonner";
+
+export const metadata = adminMetadata;
 import { AdminDisputesSkeleton } from "@/components/ui/AdminDisputesSkeleton";
 
 export default function AdminDisputesPage() {

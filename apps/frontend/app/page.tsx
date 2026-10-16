@@ -1,5 +1,27 @@
 import Link from "next/link";
 import { ShieldCheck, Zap, Globe, Lock, ArrowRight, CheckCircle2 } from "lucide-react";
+import { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Vaultix - Secure Decentralized Escrow Platform",
+  description: "Protect your transactions with smart escrow agreements powered by Stellar blockchain technology and Soroban smart contracts.",
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    title: "Vaultix - Secure Decentralized Escrow Platform",
+    description: "Protect your transactions with smart escrow agreements powered by Stellar blockchain technology and Soroban smart contracts.",
+    images: ["/og-image.svg"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Vaultix - Secure Decentralized Escrow Platform",
+    description: "Protect your transactions with smart escrow agreements powered by Stellar blockchain technology and Soroban smart contracts.",
+    images: ["/og-image.svg"],
+    site: "@Vaultix",
+    creator: "@Vaultix",
+  },
+};
 
 export default function Home() {
   return (

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0a0f"/>
+      <stop offset="100%" stop-color="#1a1a2e"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#3b82f6"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect x="40" y="40" width="1120" height="550" rx="24" fill="none" stroke="url(#accent)" stroke-width="2" opacity="0.3"/>
+  
+  <g transform="translate(520, 180)">
+    <rect x="0" y="0" width="160" height="160" rx="32" fill="url(#accent)" transform="rotate(45 80 80)"/>
+    <rect x="12" y="12" width="136" height="136" rx="24" fill="#0a0a0f" transform="rotate(45 80 80)"/>
+    <text x="80" y="110" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="72" font-weight="800" fill="url(#accent)">V</text>
+  </g>
+  
+  <text x="600" y="420" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="56" font-weight="800" fill="url(#accent)">Vaultix</text>
+  <text x="600" y="490" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="500" fill="#9ca3af">Secure Decentralized Escrow Platform</text>
+</svg>
