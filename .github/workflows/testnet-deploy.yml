@@ -75,7 +75,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         # actions/checkout defaults to github.ref, which for a manually
         # dispatched run is the branch chosen in the "Run workflow" UI. That
         # gives the registry-commit step a normal branch ref to push back to.

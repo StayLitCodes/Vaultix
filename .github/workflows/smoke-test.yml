@@ -39,7 +39,7 @@ jobs:
     env:
       BASE_URL: ${{ inputs.base_url || vars.SMOKE_TEST_BASE_URL }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Use Node.js
         if: ${{ env.BASE_URL == '' }}

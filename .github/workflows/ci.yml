@@ -4,7 +4,7 @@ jobs:
   backend-test-and-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -24,7 +24,7 @@ jobs:
     name: Reject committed merge-conflict markers
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Fail on unresolved conflict markers
         run: |
           # A line of exactly seven '=' is also a Markdown setext heading
@@ -40,7 +40,7 @@ jobs:
     name: Reject non-npm lockfiles
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Fail if a non-npm lockfile is committed
         run: |
           set -euo pipefail
