@@ -107,7 +107,7 @@ jobs:
       # repeat manual runs don't pay the ~2-3 minute compile cost every time.
       - name: Cache Stellar CLI binary
         id: cache-stellar-cli
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/stellar
           key: stellar-cli-${{ runner.os }}-${{ env.STELLAR_CLI_VERSION }}
