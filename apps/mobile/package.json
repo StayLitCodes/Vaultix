@@ -13,7 +13,7 @@
   "dependencies": {
     "@react-native-async-storage/async-storage": "^3.1.1",
     "@react-native-community/netinfo": "^11.4.1",
-    "@react-navigation/native": "^6.1.18",
+    "@react-navigation/native": "^7.5.1",
     "@stellar/stellar-sdk": "^13.3.0",
     "axios": "^1.7.9",
     "buffer": "^6.0.3",
