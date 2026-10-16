@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { encodeCursor } from '../../../common/pagination/cursor-pagination.util';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository, UpdateResult } from 'typeorm';
 
@@ -517,6 +518,87 @@ describe('EscrowService', () => {
           'user-123',
           'wallet-addr',
         ),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('findAllCursor', () => {
+    const makeQb = (rows: any[]) => {
+      const qb: any = {};
+      for (const m of ['where', 'andWhere', 'orderBy', 'addOrderBy', 'take']) {
+        qb[m] = jest.fn().mockReturnValue(qb);
+      }
+      qb.getMany = jest.fn().mockResolvedValue(rows);
+      return qb;
+    };
+    const row = (i: number) => ({
+      id: `e${i}`,
+      createdAt: new Date(Date.UTC(2026, 0, 1, 0, 0, i)),
+    });
+
+    beforeEach(() => {
+      (escrowRepository as any).manager = {
+        connection: { options: { type: 'sqlite' } },
+      };
+    });
+
+    it('applies filters, fetches limit + 1 and returns nextCursor', async () => {
+      const qb = makeQb([row(3), row(2), row(1)]);
+      escrowRepository.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.findAllCursor('u1', {
+        limit: 2,
+        status: 'active',
+        assetCode: 'USDC',
+        role: 'buyer',
+        createdFrom: '2026-01-01T00:00:00Z',
+        createdTo: '2026-02-01T00:00:00Z',
+      } as any);
+
+      expect(qb.take).toHaveBeenCalledWith(3);
+      expect(qb.andWhere).toHaveBeenCalledWith('escrow.status = :status', {
+        status: 'active',
+      });
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'escrow.assetCode = :assetCode',
+        { assetCode: 'USDC' },
+      );
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        'escrow.createdAt >= :createdFrom',
+        { createdFrom: '2026-01-01 00:00:00' },
+      );
+      expect(result.items).toHaveLength(2);
+      expect(result.nextCursor).not.toBeNull();
+    });
+
+    it('applies the keyset condition when a cursor is given', async () => {
+      const qb = makeQb([]);
+      escrowRepository.createQueryBuilder.mockReturnValue(qb);
+      const cursor = encodeCursor(new Date('2026-01-01T00:00:02Z'), 'e2');
+
+      const result = await service.findAllCursor('u1', { cursor } as any);
+
+      const call = qb.andWhere.mock.calls.find(([sql]: [string]) =>
+        sql.includes(':cursorId'),
+      );
+      expect(call[0]).toContain('<');
+      expect(call[1]).toEqual({
+        cursorKey: '2026-01-01 00:00:02',
+        cursorId: 'e2',
+      });
+      expect(result).toEqual({ items: [], nextCursor: null });
+    });
+
+    it('rejects an invalid cursor and an inverted date range', async () => {
+      escrowRepository.createQueryBuilder.mockReturnValue(makeQb([]));
+      await expect(
+        service.findAllCursor('u1', { cursor: 'garbage' } as any),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.findAllCursor('u1', {
+          createdFrom: '2026-02-01',
+          createdTo: '2026-01-01',
+        } as any),
       ).rejects.toThrow(BadRequestException);
     });
   });

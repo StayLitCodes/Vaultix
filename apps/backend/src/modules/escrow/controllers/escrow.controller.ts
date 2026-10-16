@@ -18,6 +18,7 @@ import {
   FileTypeValidator,
   Res,
 } from '@nestjs/common';
+import { ListEscrowsCursorDto } from '../dto/list-escrows-cursor.dto';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { Response } from 'express';
@@ -134,6 +135,22 @@ export class EscrowController {
   ) {
     const userId = this.getAuthenticatedUserId(req);
     return this.escrowService.findAll(userId, query);
+  }
+
+  @Get('cursor')
+  @ApiOperation({
+    summary: 'List escrows with cursor pagination',
+    description:
+      'Returns { items, nextCursor }. Pass nextCursor back as `cursor` for the next page. Sorted by createdAt then id.',
+  })
+  async findAllCursor(
+    @Query() query: ListEscrowsCursorDto,
+    @Request() req: AuthenticatedRequest,
+  ) {
+    return this.escrowService.findAllCursor(
+      this.getAuthenticatedUserId(req),
+      query,
+    );
   }
 
   @Get('overview')

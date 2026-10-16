@@ -42,6 +42,13 @@ export enum EscrowType {
   'status',
   'createdAt',
 ])
+@Index('idx_escrows_created_at_id', ['createdAt', 'id'])
+@Index('idx_escrows_status_created_at_id', ['status', 'createdAt', 'id'])
+@Index('idx_escrows_asset_created_at', [
+  'assetCode',
+  'assetIssuer',
+  'createdAt',
+])
 @Index('IDX_escrows_chainEscrowId', ['chainEscrowId'], { unique: true })
 export class Escrow {
   @PrimaryGeneratedColumn('uuid')
