@@ -35,6 +35,7 @@ import { EscrowChainId } from './entities/escrow-chain-id.entity';
 import { EscrowChainIdService } from './services/escrow-chain-id.service';
 import { SorobanTxIntent } from './entities/soroban-tx-intent.entity';
 import { SorobanIntentService } from './services/soroban-intent.service';
+import { IdempotencyModule } from '../../common/idempotency/idempotency.module';
 import { EventsModule } from '../../gateways/events.module';
 
 @Module({
@@ -57,6 +58,7 @@ import { EventsModule } from '../../gateways/events.module';
     IpfsModule,
     NotificationsModule,
     EventsModule,
+    IdempotencyModule,
     forwardRef(() => AdminModule),
   ],
   controllers: [EscrowController, EscrowSchedulerController, EventsController],

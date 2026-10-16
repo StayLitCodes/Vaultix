@@ -56,6 +56,12 @@ recognised and removed on sight, never reintroduced.
 |---|---|---|---|---|
 | `DATABASE_PATH` | ✅ | ❌ | `./data/vaultix.db` | SQLite database file path |
 
+### Idempotency
+
+| Variable | Required | Secret | Default | Purpose |
+|---|---|---|---|---|
+| `IDEMPOTENCY_TTL_SECONDS` | ❌ | ❌ | `86400` | How long `Idempotency-Key` responses are stored and replayed (see `docs/idempotency.md`) |
+
 ### Authentication
 
 | Variable | Required | Secret | Default | Purpose |

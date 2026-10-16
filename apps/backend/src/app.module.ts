@@ -25,6 +25,7 @@ import { Dispute } from './modules/escrow/entities/dispute.entity';
 import { NotificationsModule } from './notifications/notifications.module';
 import { EscrowModule } from './modules/escrow/escrow.module';
 import { ApiKeyModule } from './api-key/api-key.module';
+import { IdempotencyKey } from './common/idempotency/idempotency-key.entity';
 import { Notification } from './notifications/entities/notification.entity';
 import { NotificationPreference } from './notifications/entities/notification-preference.entity';
 import { ApiKey } from './api-key/entities/api-key.entity';
@@ -122,6 +123,7 @@ import { BackupRecord } from './modules/backup/entities/backup-record.entity';
             BackupRecord,
             KycVerification,
             EscrowChainId,
+            IdempotencyKey,
           ],
           synchronize: configService.get('NODE_ENV') === 'test',
           migrations: [

@@ -56,6 +56,7 @@ QuickEx is a Soroban-based dApp built on Stellar, utilizing:
 - **[Contract Events](docs/contract/EVENTS.md)** - Event schema reference for indexers and consumers
 - **[Mobile Security](docs/mobile-security.md)** - Environment setup, secure storage, and testnet switching
 - **[Mobile Notifications](docs/mobile-notifications.md)** - Push notification strategy and MVP notes
+- **[Idempotency Keys](docs/idempotency.md)** - `Idempotency-Key` header for safe retries on escrow mutations
 - **[Notification Preferences and Digest](docs/notification-preferences.md)** - Per-channel preferences and daily email digest
 - **[Dispute Flow](docs/dispute-flow.md)** - Dispute resolution process and UX
 - **[API Reference](http://localhost:3000/api/docs)** - Backend API documentation (after running backend)

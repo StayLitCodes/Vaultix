@@ -1,3 +1,4 @@
+import { IdempotencyKey } from './common/idempotency/idempotency-key.entity';
 import { DataSource } from 'typeorm';
 import { config } from 'dotenv';
 import {
@@ -58,6 +59,7 @@ export default new DataSource({
     BackupRecord,
     KycVerification,
     EscrowChainId,
+    IdempotencyKey,
   ],
   migrations:
     databaseType === 'postgres'
