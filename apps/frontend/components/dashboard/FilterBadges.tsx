@@ -1,6 +1,6 @@
 "use client";
 import React, { useState } from "react";
-import { X, QrCode } from "lucide-react";
+import { X } from "lucide-react";
 import { isValidStellarAddress } from "../../utils/validators";
 import { CanonicalEscrowStatus, escrowStatusLabel } from "@/utils/escrowStatus";
 
@@ -63,16 +63,9 @@ export default function FilterBadges({
               setLocalWallet(e.target.value);
               if (error) setError("");
             }}
+            aria-label="Search by Stellar address"
             className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-64 md:w-80"
           />
-          <button 
-            type="button" 
-            onClick={() => alert("QR Scanner not implemented yet")} 
-            className="p-1.5 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500" 
-            title="Scan QR Code"
-          >
-            <QrCode className="h-5 w-5 text-gray-500" />
-          </button>
           <button type="submit" className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
             Search Address
           </button>
