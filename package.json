@@ -6,7 +6,7 @@
     "npm": ">=10"
   },
   "dependencies": {
-    "@types/node": "^25.3.0",
+    "@types/node": "^26.6.5",
     "axios": "^1.13.5"
   },
   "scripts": {
