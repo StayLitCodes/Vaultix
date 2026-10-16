@@ -56,6 +56,7 @@ import databaseConfig, {
 import { ApiV2Module } from './modules/versioning/api-v2.module';
 import { BackupModule } from './modules/backup/backup.module';
 import { BackupRecord } from './modules/backup/entities/backup-record.entity';
+import { getDatabaseDriver } from './config/database.config';
 
 @Module({
   imports: [
@@ -95,43 +96,47 @@ import { BackupRecord } from './modules/backup/entities/backup-record.entity';
     ScheduleModule.forRoot(),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService): TypeOrmModuleOptions =>
-        ({
-          ...buildDatabaseConnectionOptions(),
-          entities: [
-            User,
-            RefreshToken,
-            EmailVerification,
-            Escrow,
-            EscrowCreationIntent,
-            Party,
-            Condition,
-            EscrowEvent,
-            Dispute,
-            Notification,
-            NotificationPreference,
-            ApiKey,
-            AdminAuditLog,
-            Webhook,
-            WebhookDelivery,
-            WebhookDeadLetter,
-            StellarEvent,
-            AllowedAsset,
-            SorobanTxIntent,
-            EmailOutbox,
-            BackupRecord,
-            KycVerification,
-            EscrowChainId,
-          ],
-          synchronize: configService.get('NODE_ENV') === 'test',
-          migrations: [
-            __dirname +
-              (getDatabaseType() === 'postgres'
-                ? '/migrations-postgres/*.ts'
-                : '/migrations/*.ts'),
-          ],
-          migrationsRun: configService.get('NODE_ENV') !== 'test',
-        }) as TypeOrmModuleOptions,
+      useFactory: (configService: ConfigService) => ({
+        type: getDatabaseDriver(configService.get<string>('DATABASE_DRIVER')),
+        ...(getDatabaseDriver(configService.get<string>('DATABASE_DRIVER')) === 'postgres'
+          ? {
+              url: configService.getOrThrow<string>('DATABASE_URL'),
+              extra: { max: 20, idleTimeoutMillis: 30_000 },
+            }
+          : {
+              database: configService.get<string>('DATABASE_PATH', './data/vaultix.db'),
+            }),
+        entities: [
+          User,
+          RefreshToken,
+          EmailVerification,
+          Escrow,
+          Party,
+          Condition,
+          EscrowEvent,
+          Dispute,
+          Notification,
+          NotificationPreference,
+          ApiKey,
+          AdminAuditLog,
+          Webhook,
+          WebhookDelivery,
+          WebhookDeadLetter,
+          StellarEvent,
+          AllowedAsset,
+          EmailOutbox,
+          BackupRecord,
+          KycVerification,
+        ],
+        synchronize: false,
+        migrations: [
+          getDatabaseDriver(configService.get<string>('DATABASE_DRIVER')) ===
+          'postgres'
+            ? __dirname + '/migrations/postgres/*.ts'
+            : __dirname + '/migrations/*.ts',
+        ],
+        migrationsRun: true,
+      }),
       inject: [ConfigService],
     }),
     AuthModule,

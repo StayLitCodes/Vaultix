@@ -26,15 +26,12 @@ import { AllowedAsset } from './modules/assets/entities/allowed-asset.entity';
 import { EmailOutbox } from './email/entities/email-outbox.entity';
 import { BackupRecord } from './modules/backup/entities/backup-record.entity';
 import { KycVerification } from './modules/kyc/entities/kyc-verification.entity';
-import { EscrowChainId } from './modules/escrow/entities/escrow-chain-id.entity';
+import { DataSourceOptions } from 'typeorm';
+import { getDatabaseDriver } from './config/database.config';
 
 config(); // Load .env file
 
-const databaseType = getDatabaseType();
-
-export default new DataSource({
-  ...buildDatabaseConnectionOptions(),
-  entities: [
+const entities = [
     User,
     RefreshToken,
     EmailVerification,
@@ -57,11 +54,32 @@ export default new DataSource({
     EmailOutbox,
     BackupRecord,
     KycVerification,
-    EscrowChainId,
-  ],
-  migrations:
-    databaseType === 'postgres'
-      ? ['./src/migrations-postgres/*.ts']
-      : ['./src/migrations/*.ts'],
+];
+
+export const SqliteConfig: DataSourceOptions = {
+  type: 'sqlite',
+  database: process.env.DATABASE_PATH || './data/vaultix.db',
+  entities,
+  migrations: ['./src/migrations/*.ts'],
   synchronize: false,
-} as import('typeorm').DataSourceOptions);
+  migrationsRun: true,
+};
+
+export const PostgresConfig: DataSourceOptions = {
+  type: 'postgres',
+  url: process.env.DATABASE_URL,
+  entities,
+  migrations: ['./src/migrations/postgres/*.ts'],
+  synchronize: false,
+  migrationsRun: true,
+  extra: {
+    max: 20,
+    idleTimeoutMillis: 30_000,
+  },
+};
+
+if (getDatabaseDriver() === 'postgres' && !process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL is required when DATABASE_DRIVER=postgres');
+}
+
+export default new DataSource(getDatabaseDriver() === 'postgres' ? PostgresConfig : SqliteConfig);

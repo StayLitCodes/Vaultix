@@ -69,7 +69,7 @@ export class User {
   @Column({ type: 'varchar', nullable: true })
   kycRejectionReason?: string;
 
-  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   kycVerifiedAt?: Date;
 
   // @ManyToOne(() => Organization, (org: Organization) => org.users, { nullable: false })

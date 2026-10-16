@@ -14,8 +14,25 @@ on:
 
 jobs:
   build:
-    name: Build and Test
+    name: Build and Test (${{ matrix.database }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        database: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vaultix
+          POSTGRES_PASSWORD: vaultix
+          POSTGRES_DB: vaultix
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vaultix -d vaultix"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: ./apps/backend
@@ -31,7 +48,18 @@ jobs:
           cache-dependency-path: apps/backend/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
+
+      - name: Configure database
+        shell: bash
+        run: |
+          if [ "${{ matrix.database }}" = "postgres" ]; then
+            echo "DATABASE_DRIVER=postgres" >> "$GITHUB_ENV"
+            echo "DATABASE_URL=postgres://vaultix:vaultix@localhost:5432/vaultix" >> "$GITHUB_ENV"
+          else
+            echo "DATABASE_DRIVER=sqlite" >> "$GITHUB_ENV"
+            echo "DATABASE_PATH=:memory:" >> "$GITHUB_ENV"
+          fi
 
       - name: Lint
         run: npm run lint
@@ -41,3 +69,6 @@ jobs:
 
       - name: Test
         run: npm run test
+
+      - name: Run migrations
+        run: npm run migration:run

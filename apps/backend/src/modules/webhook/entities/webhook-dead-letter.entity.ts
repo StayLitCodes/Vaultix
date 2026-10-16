@@ -27,7 +27,7 @@ export class WebhookDeadLetter {
   @Column()
   event!: string;
 
-  @Column({ type: 'simple-json' })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'jsonb' : 'simple-json' })
   payload!: Record<string, unknown>;
 
   @Column({ default: 0 })
@@ -39,10 +39,10 @@ export class WebhookDeadLetter {
   @Column({ type: 'text', nullable: true })
   lastError!: string | null;
 
-  @Column({ type: DATETIME_COLUMN_TYPE })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime' })
   failedAt!: Date;
 
-  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
+  @Column({ type: process.env.DATABASE_DRIVER === 'postgres' ? 'timestamp' : 'datetime', nullable: true })
   replayedAt!: Date | null;
 
   @CreateDateColumn()
