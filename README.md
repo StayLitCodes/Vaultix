@@ -88,6 +88,36 @@ vaultix/
 For workflows, see [DEVELOPMENT.md](DEVELOPMENT.md). API docs in [API.md](API.md).
 
 ## 🛠️ Local Development
+## Docker: Local Full Stack
+
+Prerequisites: Docker Engine and Docker Compose v2.24+ on Linux, or Docker
+Desktop on macOS/Windows. From the repository root, create a local env file and
+start the `full` profile:
+
+```bash
+cp .env.example .env
+docker compose --profile full up --build
+```
+
+The web app is available at <http://localhost:3001>, the API at
+<http://localhost:3000>, and PostgreSQL at `localhost:5432`. The example
+Postgres credentials and JWT secret are for local development only; replace
+them in `.env` before using this stack outside a local machine. The backend
+waits for the database health check, then TypeORM applies pending migrations
+during application startup. The frontend starts after the backend responds to
+its liveness check.
+
+`NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_API_BASE_URL`,
+`NEXT_PUBLIC_WS_URL`, and `NEXT_PUBLIC_STELLAR_NETWORK` are build arguments and
+are embedded in the frontend bundle. Rebuild the frontend after changing them.
+Other server-only values in `.env` are loaded by the containers at runtime.
+Commands shown use a POSIX shell; on Windows, run them in a WSL 2 shell with
+Docker Desktop WSL integration, or adapt them to PowerShell syntax.
+
+Stop the stack with `docker compose --profile full down`; the named Postgres
+volume is retained.
+
+## 🛠️ Local Development
 
 Get QuickEx running locally in minutes. This setup covers all three apps: frontend, backend, and onchain smart contract.
 

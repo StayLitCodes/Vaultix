@@ -21,6 +21,31 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
 ## Learn More
+## Docker
+
+Build from this directory with browser-visible configuration provided as build
+arguments:
+
+```bash
+docker build -t vaultix-frontend \
+	--build-arg NEXT_PUBLIC_API_URL=http://localhost:3000 \
+	--build-arg NEXT_PUBLIC_API_BASE_URL=http://localhost:3000 \
+	--build-arg NEXT_PUBLIC_WS_URL=http://localhost:3000 \
+	--build-arg NEXT_PUBLIC_STELLAR_NETWORK=testnet \
+	.
+```
+
+These `NEXT_PUBLIC_*` values are embedded in the browser bundle at build time;
+changing them requires rebuilding the image, and they must not contain secrets.
+Server-only environment variables are supplied at runtime with `docker run -e`
+or Compose `environment`/`env_file` settings.
+
+For the full local stack, use the root [Docker Compose setup](../../README.md#docker-local-full-stack).
+It runs PostgreSQL, the API, and this frontend. Docker Engine works on Linux;
+Docker Desktop works on macOS and Windows. On Windows, use WSL 2 integration and
+a WSL shell, or adapt the Bash commands to PowerShell.
+
+## Learn More
 
 To learn more about Next.js, take a look at the following resources:
 

@@ -194,6 +194,43 @@ verifying a Postgres cutover:
 }
 ```
 
+## Docker
+
+Prerequisites: Docker Engine on Linux, or Docker Desktop on macOS/Windows. Build
+the image from this directory:
+
+```bash
+docker build -t vaultix-backend .
+```
+
+Run it with a persistent SQLite database volume and a JWT secret of at least 32
+characters:
+
+```bash
+docker volume create vaultix-backend-data
+docker run -d --name vaultix-backend \
+  -p 3000:3000 \
+  -e JWT_SECRET='replace-with-at-least-32-characters' \
+  -v vaultix-backend-data:/app/data \
+  vaultix-backend
+```
+
+The container runs as the non-root `node` user. Docker checks
+`GET /health/live`; inspect the container's status with
+`docker inspect --format='{{.State.Health.Status}}' vaultix-backend`.
+
+To use the PostgreSQL service from `docker-compose.yml`, start it with
+`docker compose up -d` and set `DATABASE_URL` on the backend container to use
+`host.docker.internal` as the database host. Set `DATABASE_SSL=false` when
+connecting to this local Postgres instance. Docker Desktop provides
+`host.docker.internal` on macOS and Windows; on native Linux, add
+`--add-host=host.docker.internal:host-gateway` to `docker run`.
+
+Commands above use Bash/POSIX line continuation. On Windows, use Docker Desktop
+with WSL 2 integration and run them in a WSL shell, or convert the multiline
+commands to PowerShell syntax. The named volume keeps its data across Linux,
+macOS, and Docker Desktop environments.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.

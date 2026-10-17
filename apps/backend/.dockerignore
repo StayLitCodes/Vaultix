@@ -1,0 +1,16 @@
+**/node_modules
+**/dist
+**/coverage
+**/.env*
+**/.git
+**/.npm
+data
+logs
+*.log
+*.sqlite
+*.sqlite-*
+*.db
+build_errors*.txt
+build_output*.txt
+lint_*.txt
+test_results.json

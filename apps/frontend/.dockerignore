@@ -1,0 +1,9 @@
+**/node_modules
+**/.next
+**/coverage
+**/.env*
+**/.git
+**/.npm
+playwright-report
+test-results
+*.log
