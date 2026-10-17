@@ -16,6 +16,12 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## API Errors and Connectivity
+
+API requests use `NEXT_PUBLIC_API_URL` as their base URL and retain backend HTTP status and error-code metadata for consistent user feedback. Common validation, authentication, permission, missing-resource, conflict, rate-limit, network, and server failures are presented with friendly messages. Transient network, timeout, rate-limit, and server failures include a Retry action when handled through `useApiError`.
+
+The shared app, dashboard, admin, and escrow error boundaries use the same retry-capable fallback. A global banner appears when the browser reports that it is offline and clears when connectivity returns.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

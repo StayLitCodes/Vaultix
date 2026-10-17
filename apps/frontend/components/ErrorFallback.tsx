@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AlertTriangle, RefreshCw, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { classifyError } from '@/lib/errorUtils';
+import { classifyError, getFriendlyErrorMessage } from '@/lib/errorUtils';
 
 interface ErrorFallbackProps {
   error: Error & { digest?: string };
@@ -22,7 +22,7 @@ export function ErrorFallback({
   const router = useRouter();
   const { kind, title: kindTitle, description } = classifyError(error);
   const header = title || kindTitle;
-  const message = error.message || description;
+  const message = getFriendlyErrorMessage(error) || description;
 
   const primaryLabel = 'Try again';
   const secondaryLabel = kind === 'auth' ? 'Go Home' : 'Go to Dashboard';

@@ -92,7 +92,10 @@ const Toast: React.FC<ToastProps> = ({ toast, onRemove }) => {
         <p className="text-sm font-medium">{toast.message}</p>
         {toast.action && (
           <button
-            onClick={toast.action.onClick}
+            onClick={() => {
+              toast.action?.onClick();
+              handleDismiss();
+            }}
             className="mt-2 text-xs font-semibold underline hover:no-underline focus:outline-none"
           >
             {toast.action.label}

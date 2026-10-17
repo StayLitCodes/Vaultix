@@ -52,7 +52,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       (entry) => entry.message === message && now - entry.timestamp < DEDUPLICATION_WINDOW
     );
     
-    if (isDuplicate) {
+    if (isDuplicate && !action) {
       return;
     }
 

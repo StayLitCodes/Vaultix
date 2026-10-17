@@ -4,9 +4,10 @@ import { useState, useCallback, Dispatch, SetStateAction } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/useToast';
 import { clearSession } from '@/lib/session';
+import { getErrorStatus, getFriendlyErrorMessage } from '@/lib/errorUtils';
 
 interface UseApiErrorReturn {
-  handleError: (error: unknown) => void;
+  handleError: (error: unknown, retry?: () => void) => void;
   wrapAsync: <T>(fn: () => Promise<T>) => Promise<T | undefined>;
   isLoading: boolean;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
@@ -20,32 +21,19 @@ export function useApiError(): UseApiErrorReturn {
   const toast = useToast();
 
   const handleError = useCallback(
-    (err: unknown) => {
-      const message =
-        err instanceof Error ? err.message : 'An unexpected error occurred';
+    (err: unknown, retry?: () => void) => {
+      const message = getFriendlyErrorMessage(err);
       setError(message);
-
-      const statusMatch = message.match(/HTTP (\d{3})/);
-      const status = statusMatch ? parseInt(statusMatch[1], 10) : null;
+      const status = getErrorStatus(err);
 
       if (status === 401) {
         clearSession();
-        toast.error('Session expired. Please sign in again.');
+        toast.apiError(err);
         router.push('/');
         return;
       }
 
-      if (status === 403) {
-        toast.error('You do not have permission to perform this action.');
-        return;
-      }
-
-      if (status !== null && status >= 500) {
-        toast.error('A server error occurred. Please try again later.');
-        return;
-      }
-
-      toast.error(message);
+      toast.apiError(err, retry);
     },
     [router, toast],
   );
@@ -57,7 +45,9 @@ export function useApiError(): UseApiErrorReturn {
         setError(null);
         return await fn();
       } catch (err) {
-        handleError(err);
+        handleError(err, () => {
+          void wrapAsync(fn);
+        });
         return undefined;
       } finally {
         setIsLoading(false);
