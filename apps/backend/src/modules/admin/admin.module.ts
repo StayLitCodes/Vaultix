@@ -22,6 +22,8 @@ import { AdminWebhookController } from './controllers/admin-webhook.controller';
 import { AdminKycController } from './controllers/admin-kyc.controller';
 import { AdminEmailPreviewController } from './controllers/admin-email-preview.controller';
 import { EmailModule } from '../../email/email.module';
+import { EscrowChainId } from '../escrow/entities/escrow-chain-id.entity';
+import { ConsistencyCheckerScheduler } from './services/consistency-checker.scheduler';
 
 @Module({
   imports: [
@@ -33,6 +35,7 @@ import { EmailModule } from '../../email/email.module';
       EscrowEvent,
       AdminAuditLog,
       Dispute,
+      EscrowChainId,
     ]),
     forwardRef(() => EscrowModule),
     KycModule,
@@ -50,6 +53,7 @@ import { EmailModule } from '../../email/email.module';
   providers: [
     AdminService,
     ConsistencyCheckerService,
+    ConsistencyCheckerScheduler,
     AdminAuditLogService,
     AnalyticsService,
   ],

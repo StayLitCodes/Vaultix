@@ -65,11 +65,9 @@ export class ConsistencyCheckerService {
         const dbId =
           mappingByUuid?.escrowId ||
           (mappedId ? await this.chainIds.findEscrowId(mappedId) : null);
-        const dbEscrow = dbId
-          ? await this.escrowService.findOne(dbId).catch(() => null)
-          : null;
+        const dbEscrow = dbId ? await this.escrowService.findOne(dbId) : null;
         const onchainEscrow = mappedId
-          ? await this.sorobanClient.getEscrow(mappedId).catch(() => null)
+          ? await this.sorobanClient.getEscrow(mappedId)
           : null;
         const reportId = mappedId || escrowId;
 
@@ -122,6 +120,13 @@ export class ConsistencyCheckerService {
         const mismatches = this.compareEscrow(dbEscrow, onchainEscrow);
         const isConsistent = mismatches.length === 0;
         if (!isConsistent) totalInconsistent++;
+        if (!isConsistent) {
+          this.logger.warn({
+            msg: 'On-chain escrow state differs from database',
+            escrowId: reportId,
+            fieldsMismatched: mismatches,
+          });
+        }
         reports.push({
           escrowId: reportId,
           isConsistent,

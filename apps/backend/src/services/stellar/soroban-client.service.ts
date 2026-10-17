@@ -79,7 +79,7 @@ export class SorobanClientService {
       if (error instanceof Error) {
         this.logger.error(`Error fetching escrow: ${error.message}`);
       }
-      return null;
+      throw error;
     }
   }
 
