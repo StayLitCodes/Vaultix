@@ -10,11 +10,7 @@ import {
   HttpStatus,
   Req,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiBearerAuth,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { Request } from 'express';
 import { AuthGuard } from '../../auth/middleware/auth.guard';
 import { AdminGuard } from '../../auth/middleware/admin.guard';

@@ -42,7 +42,8 @@ export function disputeResolvedText(data: DisputeResolvedEmailData): string {
     `Dispute (${data.disputeId}) has been resolved for escrow "${data.escrowTitle}" (${data.escrowId}).`,
   ];
   if (data.outcome) lines.push(`Outcome: ${data.outcome}`);
-  if (data.resolutionNotes) lines.push(`Resolution notes: ${data.resolutionNotes}`);
+  if (data.resolutionNotes)
+    lines.push(`Resolution notes: ${data.resolutionNotes}`);
   if (data.resolvedAt) lines.push(`Resolved at: ${data.resolvedAt}`);
   if (data.actionUrl) lines.push('', `Review details: ${data.actionUrl}`);
   return lines.join('\n');

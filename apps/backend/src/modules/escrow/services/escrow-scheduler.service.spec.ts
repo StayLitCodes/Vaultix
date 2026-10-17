@@ -1,10 +1,10 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { EscrowSchedulerService } from './escrow-scheduler.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Escrow, EscrowStatus } from '../entities/escrow.entity';
 import { EscrowEvent } from '../entities/escrow-event.entity';
 import { EscrowService } from './escrow.service';
+import { NotificationService } from '../../../notifications/notifications.service';
 import { Repository } from 'typeorm';
 
 describe('EscrowSchedulerService', () => {
@@ -12,6 +12,7 @@ describe('EscrowSchedulerService', () => {
   let escrowRepo: jest.Mocked<Repository<Escrow>>;
   let eventRepo: jest.Mocked<Repository<EscrowEvent>>;
   let escrowService: jest.Mocked<EscrowService>;
+  let notificationService: jest.Mocked<NotificationService>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -38,6 +39,12 @@ describe('EscrowSchedulerService', () => {
             expireBySystem: jest.fn(),
           },
         },
+        {
+          provide: NotificationService,
+          useValue: {
+            handleEscrowEvent: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -45,6 +52,7 @@ describe('EscrowSchedulerService', () => {
     escrowRepo = module.get(getRepositoryToken(Escrow));
     eventRepo = module.get(getRepositoryToken(EscrowEvent));
     escrowService = module.get(EscrowService);
+    notificationService = module.get(NotificationService);
   });
 
   const mockEscrow = {
@@ -53,11 +61,13 @@ describe('EscrowSchedulerService', () => {
     expiresAt: new Date(Date.now() - 1000),
     isActive: true,
     title: 'Test Escrow',
+    creatorId: 'creator1',
+    creator: { email: 'creator@example.com' },
     parties: [{ user: { walletAddress: 'addr1' } }],
   };
 
   describe('handleExpiredEscrows', () => {
-    it('should process expired pending and active escrows', async () => {
+    it('should expire pending escrows and leave active refunds to the refund scheduler', async () => {
       escrowRepo.find.mockResolvedValueOnce([mockEscrow] as any); // pending
       escrowRepo.find.mockResolvedValueOnce([
         { ...mockEscrow, status: EscrowStatus.ACTIVE },
@@ -69,7 +79,7 @@ describe('EscrowSchedulerService', () => {
 
       await service.handleExpiredEscrows();
 
-      expect(escrowService.expireBySystem).toHaveBeenCalledTimes(2);
+      expect(escrowService.expireBySystem).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -87,6 +97,12 @@ describe('EscrowSchedulerService', () => {
 
       expect(escrowRepo.save).toHaveBeenCalled();
       expect(eventRepo.save).toHaveBeenCalled();
+      expect(notificationService.handleEscrowEvent).toHaveBeenCalledWith(
+        'creator1',
+        expect.any(String),
+        expect.objectContaining({ escrowId: 'e1' }),
+        expect.stringContaining('e1:creator1'),
+      );
     });
   });
 

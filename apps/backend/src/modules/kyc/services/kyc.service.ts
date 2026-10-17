@@ -119,7 +119,7 @@ export class KycService {
 
     const verification = this.kycVerificationRepository.create({
       userId,
-      provider: providerName as KycProvider,
+      provider: providerName,
       providerVerificationId: result.verificationId,
       status: KycStatus.PENDING,
       initiatedAt: new Date(),
@@ -284,10 +284,7 @@ export class KycService {
       if (reason) {
         verification.rejectionReason = reason;
       }
-      if (
-        status === KycStatus.VERIFIED ||
-        status === KycStatus.REJECTED
-      ) {
+      if (status === KycStatus.VERIFIED || status === KycStatus.REJECTED) {
         verification.completedAt = new Date();
       }
       await this.kycVerificationRepository.save(verification);
@@ -333,7 +330,6 @@ export class KycService {
       where.kycStatus = statusFilter as KycStatus;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const [users, total] = await this.userRepository.findAndCount({
       where,
       skip: (page - 1) * limit,

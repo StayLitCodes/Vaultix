@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { DigestService } from './digest.service';
 import { NotificationChannel } from './enums/notification-event.enum';
 

@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class MakeNotificationIdempotencyKeyUnique1781000000000
-  implements MigrationInterface
-{
+export class MakeNotificationIdempotencyKeyUnique1781000000000 implements MigrationInterface {
   name = 'MakeNotificationIdempotencyKeyUnique1781000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

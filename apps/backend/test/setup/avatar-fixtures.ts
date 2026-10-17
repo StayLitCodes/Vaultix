@@ -22,7 +22,7 @@ function crc32(buffer: Buffer): number {
   const table = getCrcTable();
   let crc = 0xffffffff;
   for (let i = 0; i < buffer.length; i++) {
-    crc = table[(crc ^ buffer[i]!) & 0xff]! ^ (crc >>> 8);
+    crc = table[(crc ^ buffer[i]) & 0xff] ^ (crc >>> 8);
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
@@ -87,7 +87,9 @@ export function createJpegBuffer(): Buffer {
 
   const dqt = Buffer.concat([
     Buffer.from([0xff, 0xdb]),
-    lengthPrefixed(Buffer.concat([Buffer.from([0x00]), Buffer.alloc(64, 0x10)])),
+    lengthPrefixed(
+      Buffer.concat([Buffer.from([0x00]), Buffer.alloc(64, 0x10)]),
+    ),
   ]);
 
   const frameHeaderData = Buffer.alloc(15);

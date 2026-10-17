@@ -57,26 +57,18 @@ export class AddKycAndAml1780700000000 implements MigrationInterface {
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     // Drop indexes
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "idx_users_kyc_status"`,
-    );
-    await queryRunner.query(
-      `DROP INDEX IF EXISTS "idx_kyc_provider_status"`,
-    );
+    await queryRunner.query(`DROP INDEX IF EXISTS "idx_users_kyc_status"`);
+    await queryRunner.query(`DROP INDEX IF EXISTS "idx_kyc_provider_status"`);
     await queryRunner.query(`DROP INDEX IF EXISTS "idx_kyc_user"`);
 
     // Drop kyc_verifications table
     await queryRunner.query(`DROP TABLE "kyc_verifications"`);
 
     // Remove KYC columns from users
-    await queryRunner.query(
-      `ALTER TABLE "users" DROP COLUMN "kycVerifiedAt"`,
-    );
+    await queryRunner.query(`ALTER TABLE "users" DROP COLUMN "kycVerifiedAt"`);
     await queryRunner.query(
       `ALTER TABLE "users" DROP COLUMN "kycRejectionReason"`,
     );
-    await queryRunner.query(
-      `ALTER TABLE "users" DROP COLUMN "kycStatus"`,
-    );
+    await queryRunner.query(`ALTER TABLE "users" DROP COLUMN "kycStatus"`);
   }
 }

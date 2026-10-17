@@ -107,9 +107,7 @@ describe('Refresh-token rotation (integration)', () => {
       // Exactly one should succeed (200), the other should fail.
       // The loser gets either 409 Conflict (replay) or 401 Unauthorized.
       expect(statuses).toContain(200);
-      expect(
-        statuses.includes(409) || statuses.includes(401),
-      ).toBe(true);
+      expect(statuses.includes(409) || statuses.includes(401)).toBe(true);
 
       // The winner must have received a new token pair.
       const winner = res1.status === 200 ? res1 : res2;

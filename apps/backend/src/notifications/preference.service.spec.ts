@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { PreferenceService } from './preference.service';
 import { getRepositoryToken } from '@nestjs/typeorm';

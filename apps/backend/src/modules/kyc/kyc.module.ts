@@ -12,10 +12,7 @@ import { MockKycProvider } from './providers/mock-kyc.provider';
 import { MockAmlProvider } from './providers/mock-aml.provider';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([KycVerification, User]),
-    ConfigModule,
-  ],
+  imports: [TypeOrmModule.forFeature([KycVerification, User]), ConfigModule],
   controllers: [KycController, KycWebhookController],
   providers: [
     KycService,

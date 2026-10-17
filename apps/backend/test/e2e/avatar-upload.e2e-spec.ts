@@ -96,8 +96,11 @@ describe('POST /auth/profile/avatar (e2e)', () => {
   });
 
   it('rejects an empty file', async () => {
-    const response = await upload(Buffer.alloc(0), 'avatar.png', 'image/png')
-      .expect(400);
+    const response = await upload(
+      Buffer.alloc(0),
+      'avatar.png',
+      'image/png',
+    ).expect(400);
 
     expect(response.body.message).toBe(AVATAR_ERROR_MESSAGES.EMPTY_FILE);
     expect(uploadFile).not.toHaveBeenCalled();
@@ -106,8 +109,9 @@ describe('POST /auth/profile/avatar (e2e)', () => {
   it('rejects an image above the documented size limit', async () => {
     const oversized = Buffer.alloc(AVATAR_MAX_SIZE_BYTES + 1, 0x41);
 
-    const response = await upload(oversized, 'avatar.png', 'image/png')
-      .expect(413);
+    const response = await upload(oversized, 'avatar.png', 'image/png').expect(
+      413,
+    );
 
     expect(response.body.message).toBe(AVATAR_ERROR_MESSAGES.FILE_TOO_LARGE);
     expect(uploadFile).not.toHaveBeenCalled();

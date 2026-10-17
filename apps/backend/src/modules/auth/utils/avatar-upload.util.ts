@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  PayloadTooLargeException,
-} from '@nestjs/common';
+import { BadRequestException, PayloadTooLargeException } from '@nestjs/common';
 
 /**
  * Avatar upload limits and validation.
@@ -50,7 +47,9 @@ export interface ValidatedAvatar {
   filename: string;
 }
 
-const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const PNG_SIGNATURE = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+]);
 const GIF87A = 'GIF87a';
 const GIF89A = 'GIF89a';
 
@@ -74,7 +73,7 @@ function crc32(buffer: Buffer): number {
   const table = getCrcTable();
   let crc = 0xffffffff;
   for (let i = 0; i < buffer.length; i++) {
-    crc = table[(crc ^ buffer[i]!) & 0xff]! ^ (crc >>> 8);
+    crc = table[(crc ^ buffer[i]) & 0xff] ^ (crc >>> 8);
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
@@ -98,7 +97,9 @@ function isPng(buffer: Buffer): boolean {
     }
 
     const declaredCrc = buffer.readUInt32BE(dataStart + length);
-    if (crc32(buffer.subarray(offset + 4, dataStart + length)) !== declaredCrc) {
+    if (
+      crc32(buffer.subarray(offset + 4, dataStart + length)) !== declaredCrc
+    ) {
       return false;
     }
 
@@ -143,7 +144,7 @@ function isJpeg(buffer: Buffer): boolean {
       return false;
     }
 
-    const marker = buffer[offset]!;
+    const marker = buffer[offset];
     offset++;
 
     if (marker === 0xd9) {
@@ -258,7 +259,7 @@ export function isAllowedAvatarMimeType(mimetype?: string): boolean {
   if (!mimetype) {
     return false;
   }
-  const normalized = mimetype.split(';')[0]!.trim().toLowerCase();
+  const normalized = mimetype.split(';')[0].trim().toLowerCase();
   return Object.values(AVATAR_MIME_TYPES).includes(normalized);
 }
 

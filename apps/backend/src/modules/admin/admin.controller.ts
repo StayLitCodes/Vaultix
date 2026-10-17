@@ -138,6 +138,9 @@ export class AdminController {
   @HttpCode(HttpStatus.OK)
   async manualRefundEscrow(@Param('id') id: string) {
     await this.escrowExpirySchedulerService.processRefundById(id);
-    return { success: true, message: `Escrow ${id} refunded successfully` };
+    return {
+      success: true,
+      message: `Escrow ${id} marked for depositor-authorized refund`,
+    };
   }
 }

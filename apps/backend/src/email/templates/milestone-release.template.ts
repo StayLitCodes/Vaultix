@@ -15,9 +15,7 @@ export function milestoneReleaseHtml(data: MilestoneReleaseEmailData): string {
     ) +
     detailRow('Escrow', data.escrowTitle) +
     detailRow('Escrow ID', data.escrowId) +
-    (data.milestoneTitle
-      ? detailRow('Milestone', data.milestoneTitle)
-      : '') +
+    (data.milestoneTitle ? detailRow('Milestone', data.milestoneTitle) : '') +
     (data.amount
       ? detailRow(
           'Released amount',

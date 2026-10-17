@@ -2,10 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import {
-  BadRequestException,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { KycService } from './kyc.service';
 import {
   KycVerification,
@@ -20,12 +17,13 @@ describe('KycService', () => {
   let service: KycService;
   let kycVerificationRepo: jest.Mocked<Repository<KycVerification>>;
   let userRepo: jest.Mocked<Repository<User>>;
-  let mockProvider: MockKycProvider;    const mockUser: Partial<User> = {
-      id: 'user-1',
-      walletAddress: 'GABCDEF1234567890',
-      isActive: true,
-      kycStatus: KycStatus.NOT_STARTED,
-    };
+  let mockProvider: MockKycProvider;
+  const mockUser: Partial<User> = {
+    id: 'user-1',
+    walletAddress: 'GABCDEF1234567890',
+    isActive: true,
+    kycStatus: KycStatus.NOT_STARTED,
+  };
 
   beforeEach(async () => {
     const mockKycVerificationRepo = {
@@ -104,9 +102,9 @@ describe('KycService', () => {
       userRepo.findOne.mockResolvedValue(verifiedUser as User);
 
       const dto: InitiateKycDto = {};
-      await expect(
-        service.initiateVerification('user-1', dto),
-      ).rejects.toThrow(BadRequestException);
+      await expect(service.initiateVerification('user-1', dto)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should throw if user does not exist', async () => {
@@ -160,9 +158,9 @@ describe('KycService', () => {
     it('should throw if user not found', async () => {
       userRepo.findOne.mockResolvedValue(null);
 
-      await expect(
-        service.getKycStatus('non-existent'),
-      ).rejects.toThrow(NotFoundException);
+      await expect(service.getKycStatus('non-existent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 

@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddSoundEnabledToNotificationPreference1782200000000
-  implements MigrationInterface
-{
+export class AddSoundEnabledToNotificationPreference1782200000000 implements MigrationInterface {
   name = 'AddSoundEnabledToNotificationPreference1782200000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

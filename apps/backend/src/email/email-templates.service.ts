@@ -127,14 +127,9 @@ export class EmailTemplatesService {
    * Render any supported template by name with its typed data.
    * Throws BadRequestException for unknown template names.
    */
-  renderTemplate(
-    template: string,
-    data: EmailTemplateData,
-  ): RenderedEmail {
+  renderTemplate(template: string, data: EmailTemplateData): RenderedEmail {
     if (!isEmailTemplateName(template)) {
-      throw new BadRequestException(
-        `Unknown email template: ${template}`,
-      );
+      throw new BadRequestException(`Unknown email template: ${template}`);
     }
     const name: EmailTemplateName = template;
     switch (name) {

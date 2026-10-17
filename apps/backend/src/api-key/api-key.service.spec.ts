@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { ApiKeysService } from './api-key.service';
 import { getRepositoryToken } from '@nestjs/typeorm';

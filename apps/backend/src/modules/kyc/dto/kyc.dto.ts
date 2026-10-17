@@ -1,9 +1,4 @@
-import {
-  IsOptional,
-  IsString,
-  IsEnum,
-  IsUUID,
-} from 'class-validator';
+import { IsOptional, IsString, IsEnum, IsUUID } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { KycProvider } from '../entities/kyc-verification.entity';
 

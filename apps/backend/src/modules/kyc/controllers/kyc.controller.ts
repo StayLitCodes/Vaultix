@@ -25,12 +25,9 @@ export class KycController {
   @Get('status')
   @ApiOperation({
     summary: 'Get current KYC verification status',
-    description:
-      'Returns the current KYC status for the authenticated user.',
+    description: 'Returns the current KYC status for the authenticated user.',
   })
-  async getStatus(
-    @Req() req: Request & { user: { userId: string } },
-  ) {
+  async getStatus(@Req() req: Request & { user: { userId: string } }) {
     return this.kycService.getKycStatus(req.user.userId);
   }
 
@@ -47,9 +44,6 @@ export class KycController {
     @Req() req: Request & { user: { userId: string } },
     @Body() dto: InitiateKycDto,
   ) {
-    return this.kycService.initiateVerification(
-      req.user.userId,
-      dto,
-    );
+    return this.kycService.initiateVerification(req.user.userId, dto);
   }
 }

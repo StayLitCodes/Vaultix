@@ -87,9 +87,7 @@ export class AmlService {
    * Screen all parties in an escrow transaction.
    * Returns true if all addresses pass screening.
    */
-  async screenTransactionParties(
-    walletAddresses: string[],
-  ): Promise<{
+  async screenTransactionParties(walletAddresses: string[]): Promise<{
     passed: boolean;
     results: Record<string, AmlScreeningResult>;
   }> {

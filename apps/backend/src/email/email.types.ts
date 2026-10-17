@@ -19,7 +19,9 @@ export const EMAIL_TEMPLATE_NAMES = [
 
 export type EmailTemplateName = (typeof EMAIL_TEMPLATE_NAMES)[number];
 
-export function isEmailTemplateName(value: unknown): value is EmailTemplateName {
+export function isEmailTemplateName(
+  value: unknown,
+): value is EmailTemplateName {
   return (
     typeof value === 'string' &&
     (EMAIL_TEMPLATE_NAMES as readonly string[]).includes(value)

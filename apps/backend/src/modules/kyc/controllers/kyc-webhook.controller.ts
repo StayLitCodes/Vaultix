@@ -9,11 +9,7 @@ import {
   BadRequestException,
   Logger,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiParam,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
 import { KycService } from '../services/kyc.service';
 
 /**
@@ -59,15 +55,9 @@ export class KycWebhookController {
       throw new BadRequestException('Missing webhook signature');
     }
 
-    this.logger.log(
-      `Received webhook from provider: ${provider}`,
-    );
+    this.logger.log(`Received webhook from provider: ${provider}`);
 
-    await this.kycService.processWebhook(
-      provider,
-      payload,
-      signature,
-    );
+    await this.kycService.processWebhook(provider, payload, signature);
 
     return { received: true };
   }

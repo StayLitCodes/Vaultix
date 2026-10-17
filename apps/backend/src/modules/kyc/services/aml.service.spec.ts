@@ -50,7 +50,8 @@ describe('AmlService', () => {
     });
 
     it('should cache results', async () => {
-      const address = 'GATEST1234567890123456789012345678901234567890123456789012';
+      const address =
+        'GATEST1234567890123456789012345678901234567890123456789012';
 
       const result1 = await service.screenAddress(address);
       const result2 = await service.screenAddress(address);

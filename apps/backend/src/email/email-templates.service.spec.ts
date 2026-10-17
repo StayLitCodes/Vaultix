@@ -116,8 +116,12 @@ describe('EmailTemplatesService', () => {
         resetUrl: string;
       },
     );
-    expect(reset.html).toContain('https://app.vaultix.io/reset?token=reset-456');
-    expect(reset.text).toContain('https://app.vaultix.io/reset?token=reset-456');
+    expect(reset.html).toContain(
+      'https://app.vaultix.io/reset?token=reset-456',
+    );
+    expect(reset.text).toContain(
+      'https://app.vaultix.io/reset?token=reset-456',
+    );
 
     const invitation = service.renderEscrowInvitation(
       exampleData['escrow-invitation'] as {
@@ -188,9 +192,7 @@ describe('EmailTemplatesService', () => {
       });
 
       expect(rendered.html).not.toContain('<img src=x onerror=alert(1)>');
-      expect(rendered.html).toContain(
-        '&lt;img src=x onerror=alert(1)&gt;',
-      );
+      expect(rendered.html).toContain('&lt;img src=x onerror=alert(1)&gt;');
     });
 
     it('drops unsafe (non-http) link targets instead of rendering them', () => {

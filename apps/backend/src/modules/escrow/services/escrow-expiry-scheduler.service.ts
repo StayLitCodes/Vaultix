@@ -1,10 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { Escrow, EscrowStatus } from '../entities/escrow.entity';
-import { EscrowStellarIntegrationService } from './escrow-stellar-integration.service';
+import { EscrowEvent, EscrowEventType } from '../entities/escrow-event.entity';
 import { AdminAuditLogService } from '../../admin/services/admin-audit-log.service';
+import { EventsGateway } from '../../../gateways/events.gateway';
 
 @Injectable()
 export class EscrowExpirySchedulerService {
@@ -13,13 +14,15 @@ export class EscrowExpirySchedulerService {
   constructor(
     @InjectRepository(Escrow)
     private readonly escrowRepository: Repository<Escrow>,
-    private readonly stellarIntegrationService: EscrowStellarIntegrationService,
+    @InjectRepository(EscrowEvent)
+    private readonly escrowEventRepository: Repository<EscrowEvent>,
     private readonly adminAuditLogService: AdminAuditLogService,
+    @Optional() private readonly eventsGateway?: EventsGateway,
   ) {}
 
   @Cron(CronExpression.EVERY_5_MINUTES)
   async handleExpiredFundedEscrows() {
-    this.logger.log('Starting expired funded escrow refund process...');
+    this.logger.log('Starting expired funded escrow refund-request process...');
 
     try {
       const now = new Date();
@@ -48,10 +51,10 @@ export class EscrowExpirySchedulerService {
         }
       }
 
-      this.logger.log('Completed expired funded escrow refund process');
+      this.logger.log('Completed expired funded escrow refund-request process');
     } catch (error) {
       this.logger.error(
-        'Error during expired funded escrow refund process:',
+        'Error during expired funded escrow refund-request process:',
         error,
       );
     }
@@ -71,80 +74,56 @@ export class EscrowExpirySchedulerService {
       throw new Error(`Escrow ${escrowId} is not ACTIVE`);
     }
 
+    if (!escrow.expiresAt || escrow.expiresAt > new Date()) {
+      throw new Error(`Escrow ${escrowId} has not passed its deadline`);
+    }
+
     await this.processRefund(escrow);
   }
 
-  async processRefund(escrow: Escrow) {
-    this.logger.log(
-      `Processing refund for expired active escrow: ${escrow.id}`,
-    );
+  async processRefund(escrow: Escrow): Promise<void> {
+    if (
+      escrow.status !== EscrowStatus.ACTIVE ||
+      !escrow.isActive ||
+      !escrow.expiresAt ||
+      escrow.expiresAt > new Date()
+    ) {
+      return;
+    }
 
-    // Call refund on chain
-    const txHash = await this.stellarIntegrationService.refundExpiredOnChain(
-      escrow.id,
-    );
-
-    // Update status
-    escrow.status = EscrowStatus.REFUNDED;
-    escrow.isActive = false; // Mark as inactive since it's refunded
-    await this.escrowRepository.save(escrow);
-
-    // Send notifications to both parties
-    this.notifyParties(escrow, 'ESCROW_REFUNDED', {
-      reason: 'Escrow expired past deadline',
-      txHash,
-      refundedAt: new Date(),
+    const existingRequest = await this.escrowEventRepository.findOne({
+      where: {
+        escrowId: escrow.id,
+        eventType: EscrowEventType.REFUND_REQUESTED,
+      },
     });
+    if (existingRequest) return;
 
-    // Log to audit log
+    const requestedAt = new Date();
+    const event = await this.escrowEventRepository.save({
+      escrowId: escrow.id,
+      eventType: EscrowEventType.REFUND_REQUESTED,
+      data: {
+        reason: 'Deadline passed; depositor authorization is required on-chain',
+        requestedAt,
+        deadline: escrow.expiresAt,
+      },
+    });
+    this.eventsGateway?.emitEscrowEvent(event);
+
     await this.adminAuditLogService.create({
       actorId: 'system',
-      actionType: 'ESCROW_REFUND',
+      actionType: 'ESCROW_REFUND_REQUESTED',
       resourceType: 'Escrow',
       resourceId: escrow.id,
       metadata: {
-        reason: 'Expired while active/funded',
-        txHash,
+        reason: 'Expired while active/funded; awaiting depositor authorization',
+        deadline: escrow.expiresAt?.toISOString(),
       },
     });
 
-    this.logger.log(`Successfully refunded escrow: ${escrow.id}`);
-  }
-
-  private notifyParties(
-    escrow: Escrow,
-    eventType: string,
-    data: Record<string, unknown>,
-  ) {
-    const notifications = escrow.parties.map((party) => ({
-      walletAddress: party.user.walletAddress,
-      type: eventType,
-      data: {
-        escrowId: escrow.id,
-        escrowTitle: escrow.title,
-        ...data,
-      },
-    }));
-
     this.logger.log(
-      `Sending ${notifications.length} notifications for escrow ${escrow.id}`,
-    );
-
-    for (const notification of notifications) {
-      try {
-        this.sendWebhookNotification(notification);
-      } catch (error) {
-        this.logger.error(
-          `Failed to send notification to ${notification.walletAddress}:`,
-          error,
-        );
-      }
-    }
-  }
-
-  private sendWebhookNotification(notification: Record<string, unknown>) {
-    this.logger.log(
-      `Sending webhook notification: ${JSON.stringify(notification)}`,
+      `Marked escrow for depositor-authorized refund: ${escrow.id}`,
     );
   }
 }

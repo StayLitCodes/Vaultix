@@ -31,8 +31,7 @@ export class MockAmlProvider implements IAmlProvider {
           flagged: true,
           riskLevel: 'high',
           sanctionsLists: ['OFAC_SDN_LIST'],
-          reason:
-            'Address found on sanctions screening list (OFAC SDN)',
+          reason: 'Address found on sanctions screening list (OFAC SDN)',
           metadata: { provider: 'mock', screenedAt: new Date().toISOString() },
         }
       : {

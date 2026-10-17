@@ -26,9 +26,7 @@ import {
 @Controller('admin/email-templates')
 @UseGuards(AuthGuard, AdminGuard)
 export class AdminEmailPreviewController {
-  constructor(
-    private readonly emailTemplatesService: EmailTemplatesService,
-  ) {}
+  constructor(private readonly emailTemplatesService: EmailTemplatesService) {}
 
   @Get()
   listTemplates(): { templates: readonly EmailTemplateName[] } {

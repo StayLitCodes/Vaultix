@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Test, TestingModule } from '@nestjs/testing';
 import { AdminService } from './admin.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -119,7 +117,7 @@ describe('AdminService', () => {
 
       expect(mockUser.isActive).toBe(false);
       expect(userRepo.save).toHaveBeenCalled();
-      // eslint-disable-next-line @typescript-eslint/unbound-method
+
       expect(auditLogService.create).toHaveBeenCalled();
       expect(result.message).toBe('User suspended successfully');
     });

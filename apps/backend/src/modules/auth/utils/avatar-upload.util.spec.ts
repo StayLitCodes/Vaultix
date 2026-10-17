@@ -1,7 +1,4 @@
-import {
-  BadRequestException,
-  PayloadTooLargeException,
-} from '@nestjs/common';
+import { BadRequestException, PayloadTooLargeException } from '@nestjs/common';
 import {
   AVATAR_ERROR_MESSAGES,
   AVATAR_MAX_SIZE_BYTES,
@@ -57,9 +54,9 @@ describe('avatar upload validation', () => {
     });
 
     it('rejects an empty file', () => {
-      expect(() =>
-        validateAvatarUpload({ buffer: Buffer.alloc(0) }),
-      ).toThrow(AVATAR_ERROR_MESSAGES.EMPTY_FILE);
+      expect(() => validateAvatarUpload({ buffer: Buffer.alloc(0) })).toThrow(
+        AVATAR_ERROR_MESSAGES.EMPTY_FILE,
+      );
     });
 
     it('rejects a file above the documented size limit', () => {
