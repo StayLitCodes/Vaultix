@@ -7,6 +7,10 @@ import {
 } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { Response } from 'express';
+import { ConfigService } from '@nestjs/config';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { EscrowEvidenceService } from './escrow-evidence.service';
 import { IpfsService } from '../../ipfs/ipfs.service';
 import { Dispute } from '../entities/dispute.entity';
@@ -20,11 +24,15 @@ describe('EscrowEvidenceService', () => {
   let ipfsService: jest.Mocked<IpfsService>;
 
   const mockEscrowId = 'escrow-123';
-  const mockDisputeId = 'dispute-123';
+  const mockDisputeId = '550e8400-e29b-41d4-a716-446655440000';
   const mockUserId = 'user-123';
   const mockCid = 'QmAbc123...';
+  let localStorageDir: string;
 
   beforeEach(async () => {
+    localStorageDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'vaultix-evidence-'),
+    );
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         EscrowEvidenceService,
@@ -39,6 +47,14 @@ describe('EscrowEvidenceService', () => {
           provide: getRepositoryToken(Escrow),
           useValue: {
             findOne: jest.fn(),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string, fallback?: string) =>
+              key === 'EVIDENCE_LOCAL_DIR' ? localStorageDir : fallback,
+            ),
           },
         },
         {
@@ -57,8 +73,12 @@ describe('EscrowEvidenceService', () => {
     ipfsService = module.get(IpfsService);
   });
 
+  afterEach(() => {
+    fs.rmSync(localStorageDir, { recursive: true, force: true });
+  });
+
   describe('uploadEvidence', () => {
-    it('should upload files to IPFS and persist CIDs to dispute', async () => {
+    it('should store files locally and persist signed download metadata to dispute', async () => {
       // Mock files
       const files = [
         {
@@ -91,9 +111,6 @@ describe('EscrowEvidenceService', () => {
 
       escrowRepo.findOne.mockResolvedValue(mockEscrow);
       disputeRepo.findOne.mockResolvedValue(mockDispute);
-      ipfsService.uploadFile.mockResolvedValueOnce(mockCid);
-      ipfsService.uploadFile.mockResolvedValueOnce('QmDef456...');
-
       const savedDispute = { ...mockDispute };
       disputeRepo.save.mockResolvedValue(savedDispute);
 
@@ -106,10 +123,16 @@ describe('EscrowEvidenceService', () => {
       expect(result.escrowId).toBe(mockEscrowId);
       expect(result.disputeId).toBe(mockDisputeId);
       expect(result.uploadedFiles).toHaveLength(2);
-      expect(result.uploadedFiles[0].cid).toBe(mockCid);
+      expect(result.uploadedFiles[0].cid).toMatch(/^[0-9a-f-]{36}$/i);
       expect(result.uploadedFiles[0].name).toBe('document.pdf');
       expect(result.uploadedFiles[1].name).toBe('screenshot.png');
-      expect(ipfsService.uploadFile).toHaveBeenCalledTimes(2);
+      expect(result.uploadedFiles[0].signedUrl).toContain(
+        '/v1/evidence-download/',
+      );
+      expect(ipfsService.uploadFile).not.toHaveBeenCalled();
+      expect(
+        fs.readdirSync(path.join(localStorageDir, mockDisputeId)),
+      ).toHaveLength(2);
       expect(disputeRepo.save).toHaveBeenCalled();
     });
 
@@ -184,8 +207,6 @@ describe('EscrowEvidenceService', () => {
 
       escrowRepo.findOne.mockResolvedValue(mockEscrow);
       disputeRepo.findOne.mockResolvedValue(mockDispute);
-      ipfsService.uploadFile.mockResolvedValue('QmNewCid');
-
       const updatedDispute = { ...mockDispute };
       disputeRepo.save.mockResolvedValue(updatedDispute);
 
@@ -232,7 +253,8 @@ describe('EscrowEvidenceService', () => {
 
       const result = await service.getEvidence(mockEscrowId, mockUserId);
 
-      expect(result).toEqual(mockMetadata);
+      expect(result[0]).toMatchObject(mockMetadata[0]);
+      expect(result[0].signedUrl).toContain('/v1/evidence-download/');
     });
 
     it('should throw 403 for non-party callers', async () => {

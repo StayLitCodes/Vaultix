@@ -50,10 +50,12 @@ export class Dispute {
   @Column({ type: 'simple-json', nullable: true })
   evidence: string[] | null;
 
-  // Evidence files with metadata stored on IPFS
+  // Evidence file metadata. `storage` and `storageKey` support local/S3; older IPFS rows remain readable.
   @Column({ type: 'simple-json', nullable: true, default: () => "'[]'" })
   evidenceFiles: Array<{
     cid: string;
+    storageKey?: string;
+    storage?: 'local' | 's3' | 'ipfs';
     name: string;
     type: string;
     size: number;

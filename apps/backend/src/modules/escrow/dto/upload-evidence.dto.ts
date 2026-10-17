@@ -24,6 +24,9 @@ export class EvidenceFileMetadataDto {
   @IsString()
   @IsNotEmpty()
   uploadedBy: string;
+
+  /** Short-lived, HMAC-signed download link. */
+  signedUrl?: string;
 }
 
 export class UploadEvidenceResponseDto {

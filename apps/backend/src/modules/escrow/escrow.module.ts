@@ -12,6 +12,7 @@ import { EscrowSchedulerService } from './services/escrow-scheduler.service';
 import { EscrowController } from './controllers/escrow.controller';
 import { EscrowSchedulerController } from './controllers/escrow-scheduler.controller';
 import { EventsController } from './controllers/events.controller';
+import { EvidenceDownloadController } from './controllers/evidence-download.controller';
 import { EscrowAccessGuard } from './guards/escrow-access.guard';
 import { EscrowExpireGuard } from './guards/escrow-expire.guard';
 import { AuthModule } from '../auth/auth.module';
@@ -59,7 +60,12 @@ import { EventsModule } from '../../gateways/events.module';
     EventsModule,
     forwardRef(() => AdminModule),
   ],
-  controllers: [EscrowController, EscrowSchedulerController, EventsController],
+  controllers: [
+    EscrowController,
+    EscrowSchedulerController,
+    EventsController,
+    EvidenceDownloadController,
+  ],
   providers: [
     EscrowService,
     EscrowCreationService,

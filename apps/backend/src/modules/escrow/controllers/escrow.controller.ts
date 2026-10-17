@@ -454,7 +454,11 @@ export class EscrowController {
    */
   @Post(':id/evidence')
   @UseGuards(EscrowAccessGuard)
-  @UseInterceptors(FilesInterceptor('files', 5))
+  @UseInterceptors(
+    FilesInterceptor('files', 5, {
+      limits: { fileSize: 10 * 1024 * 1024, files: 5 },
+    }),
+  )
   @ApiOperation({ summary: 'Upload evidence files for a dispute' })
   @ApiOkResponse({ type: UploadEvidenceResponseDto })
   async uploadEvidence(
