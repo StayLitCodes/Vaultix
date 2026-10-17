@@ -1,3 +1,4 @@
+<!-- apps/backend/README.md -->
 <p align="center">
   <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
 </p>
@@ -57,12 +58,21 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+## Request Logging & Correlation IDs
+
+Every request is assigned a correlation ID, exposed as the `X-Request-Id` response header and echoed back in error responses. If an inbound request already carries an `X-Request-Id` header, that value is propagated instead of generating a new one.
+
+- The ID is stored in an async-local-storage context so it is available anywhere in the request lifecycle without threading it through function signatures.
+- Outbound calls (Stellar and webhooks) include the `X-Request-Id` header so failures can be traced across services.
+- Logs are emitted as structured JSON and include the correlation ID. Secrets and tokens (e.g. `Authorization`, `token`, `secret`, `password`, `apiKey`) are redacted before being written.
+
+To trace a request end-to-end, grab the `X-Request-Id` from the response (or error body) and search your logs for it.
+
 ## Security Headers
 
 The backend uses [Helmet](https://helmetjs.github.io/) to automatically set security-related HTTP headers on all responses. Since this is an API-only server (no HTML serving), headers are tuned accordingly.
 
 ### Headers Configured
-
 | Header                      | Value                                        | Purpose                                          |
 | --------------------------- | -------------------------------------------- | ------------------------------------------------ |
 | `X-Frame-Options`           | `DENY`                                       | Prevents clickjacking by disallowing framing     |
@@ -73,7 +83,6 @@ The backend uses [Helmet](https://helmetjs.github.io/) to automatically set secu
 | `X-XSS-Protection`          | _(disabled)_                                 | Modern browsers use CSP instead                  |
 
 ### CORS Configuration
-
 CORS origins are configurable via the `CORS_ORIGINS` environment variable (comma-separated list). Defaults to `http://localhost:3000,http://localhost:3001` for local development.
 
 ```env
