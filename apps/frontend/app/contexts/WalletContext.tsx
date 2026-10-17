@@ -1,7 +1,22 @@
-'use client';
+"use client";
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { WalletType, WalletConnection, WalletServiceFactory } from '../services/wallet';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
+import {
+  WalletType,
+  WalletConnection,
+  WalletServiceFactory,
+} from "../services/wallet";
+import {
+  getConfiguredStellarNetwork,
+  isStellarNetworkMismatch,
+  normalizeStellarNetwork,
+} from "../services/wallet/network";
 
 export interface ConnectedAccount extends WalletConnection {
   provider?: string;
@@ -14,10 +29,13 @@ interface WalletContextType {
   connectedAccounts: WalletConnection[];
   isConnecting: boolean;
   error: string | null;
+  targetNetwork: string | null;
+  isNetworkMismatch: boolean;
   connect: (walletType: WalletType) => Promise<void>;
   switchAccount: (publicKey: string) => void;
   disconnect: (publicKey?: string) => void;
   signTransaction: (xdr: string) => Promise<string>;
+  refreshNetwork: () => Promise<void>;
   getAvailableWallets: () => Promise<WalletType[]>;
 }
 
@@ -28,15 +46,21 @@ interface WalletProviderProps {
 }
 
 export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
-  const [connectedAccounts, setConnectedAccounts] = useState<WalletConnection[]>([]);
-  const [activeAccount, setActiveAccount] = useState<WalletConnection | null>(null);
+  const [connectedAccounts, setConnectedAccounts] = useState<
+    WalletConnection[]
+  >([]);
+  const [activeAccount, setActiveAccount] = useState<WalletConnection | null>(
+    null,
+  );
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Load connected wallets from localStorage on mount
   useEffect(() => {
-    const savedWallets = window.localStorage.getItem('vaultix_connected_wallets');
-    const legacyWallet = window.localStorage.getItem('vaultix_wallet');
+    const savedWallets = window.localStorage.getItem(
+      "vaultix_connected_wallets",
+    );
+    const legacyWallet = window.localStorage.getItem("vaultix_wallet");
 
     if (savedWallets) {
       try {
@@ -46,7 +70,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
           setActiveAccount(parsed[0]);
         }
       } catch {
-        window.localStorage.removeItem('vaultix_connected_wallets');
+        window.localStorage.removeItem("vaultix_connected_wallets");
       }
     } else if (legacyWallet) {
       // Migrate legacy single wallet setup
@@ -54,18 +78,26 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         const parsed = JSON.parse(legacyWallet) as WalletConnection;
         setConnectedAccounts([parsed]);
         setActiveAccount(parsed);
-        window.localStorage.setItem('vaultix_connected_wallets', JSON.stringify([parsed]));
+        window.localStorage.setItem(
+          "vaultix_connected_wallets",
+          JSON.stringify([parsed]),
+        );
       } catch {
-        window.localStorage.removeItem('vaultix_wallet');
+        window.localStorage.removeItem("vaultix_wallet");
       }
     }
   }, []);
 
   const saveToStorage = (accounts: WalletConnection[]) => {
     setConnectedAccounts(accounts);
-    window.localStorage.setItem('vaultix_connected_wallets', JSON.stringify(accounts));
+    window.localStorage.setItem(
+      "vaultix_connected_wallets",
+      JSON.stringify(accounts),
+    );
     if (accounts.length > 0 && activeAccount) {
-      const stillActive = accounts.find((acc) => acc.publicKey === activeAccount.publicKey);
+      const stillActive = accounts.find(
+        (acc) => acc.publicKey === activeAccount.publicKey,
+      );
       if (!stillActive) {
         setActiveAccount(accounts[0]);
       }
@@ -81,13 +113,12 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     try {
       const service = WalletServiceFactory.getService(walletType);
       const publicKey = await service.connect();
-      
-      let network = 'testnet';
-      if (walletType === WalletType.FREIGHTER) {
-        network = await service.getNetwork?.() || 'testnet';
-      } else if (walletType === WalletType.ALBEDO) {
-        network = process.env.NEXT_PUBLIC_STELLAR_NETWORK || 'testnet';
-      }
+      const reportedNetwork = service.getNetwork
+        ? await service.getNetwork().catch(() => "unknown")
+        : walletType === WalletType.ALBEDO
+          ? process.env.NEXT_PUBLIC_STELLAR_NETWORK || "testnet"
+          : "unknown";
+      const network = normalizeStellarNetwork(reportedNetwork) || "unknown";
 
       const newConnection: WalletConnection = {
         publicKey,
@@ -96,22 +127,32 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       };
 
       // Check if account already exists in connected list, otherwise append or insert
-      const filtered = connectedAccounts.filter((acc) => acc.publicKey !== publicKey);
+      const filtered = connectedAccounts.filter(
+        (acc) => acc.publicKey !== publicKey,
+      );
       const updatedAccounts = [newConnection, ...filtered];
 
       const previousActiveKey = activeAccount?.publicKey;
       setConnectedAccounts(updatedAccounts);
       setActiveAccount(newConnection);
-      window.localStorage.setItem('vaultix_connected_wallets', JSON.stringify(updatedAccounts));
-      
+      window.localStorage.setItem(
+        "vaultix_connected_wallets",
+        JSON.stringify(updatedAccounts),
+      );
+
       // Keep legacy key in sync for backward compatibility
-      window.localStorage.setItem('vaultix_wallet', JSON.stringify(newConnection));
+      window.localStorage.setItem(
+        "vaultix_wallet",
+        JSON.stringify(newConnection),
+      );
 
       if (previousActiveKey !== publicKey) {
-        window.dispatchEvent(new CustomEvent('wallet:switched', { detail: newConnection }));
+        window.dispatchEvent(
+          new CustomEvent("wallet:switched", { detail: newConnection }),
+        );
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to connect wallet');
+      setError(err.message || "Failed to connect wallet");
       throw err;
     } finally {
       setIsConnecting(false);
@@ -122,46 +163,128 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     const target = connectedAccounts.find((acc) => acc.publicKey === publicKey);
     if (target) {
       setActiveAccount(target);
-      window.localStorage.setItem('vaultix_wallet', JSON.stringify(target));
-      window.dispatchEvent(new CustomEvent('wallet:switched', { detail: target }));
+      window.localStorage.setItem("vaultix_wallet", JSON.stringify(target));
+      window.dispatchEvent(
+        new CustomEvent("wallet:switched", { detail: target }),
+      );
     }
   };
 
   const disconnect = (publicKey?: string) => {
     if (publicKey) {
-      const updated = connectedAccounts.filter((acc) => acc.publicKey !== publicKey);
+      const updated = connectedAccounts.filter(
+        (acc) => acc.publicKey !== publicKey,
+      );
       saveToStorage(updated);
       if (activeAccount?.publicKey === publicKey) {
         const nextActive = updated.length > 0 ? updated[0] : null;
         setActiveAccount(nextActive);
         if (updated.length > 0) {
-          window.localStorage.setItem('vaultix_wallet', JSON.stringify(updated[0]));
+          window.localStorage.setItem(
+            "vaultix_wallet",
+            JSON.stringify(updated[0]),
+          );
           window.dispatchEvent(
-            new CustomEvent('wallet:switched', { detail: updated[0] }),
+            new CustomEvent("wallet:switched", { detail: updated[0] }),
           );
         } else {
-          window.localStorage.removeItem('vaultix_wallet');
-          window.dispatchEvent(new CustomEvent('wallet:disconnected'));
+          window.localStorage.removeItem("vaultix_wallet");
+          window.dispatchEvent(new CustomEvent("wallet:disconnected"));
         }
       }
     } else {
       // Full disconnect of all accounts
       setConnectedAccounts([]);
       setActiveAccount(null);
-      window.localStorage.removeItem('vaultix_connected_wallets');
-      window.localStorage.removeItem('vaultix_wallet');
-      window.dispatchEvent(new CustomEvent('wallet:disconnected'));
+      window.localStorage.removeItem("vaultix_connected_wallets");
+      window.localStorage.removeItem("vaultix_wallet");
+      window.dispatchEvent(new CustomEvent("wallet:disconnected"));
     }
     setError(null);
   };
 
   const signTransaction = async (xdr: string): Promise<string> => {
     if (!activeAccount) {
-      throw new Error('No active wallet connected');
+      throw new Error("No active wallet connected");
     }
 
     const service = WalletServiceFactory.getService(activeAccount.walletType);
-    return await service.signTransaction(xdr);
+    const currentNetwork = service.getNetwork
+      ? await service.getNetwork().catch(() => "unknown")
+      : activeAccount.network;
+    const normalizedNetwork =
+      normalizeStellarNetwork(currentNetwork) || "unknown";
+    if (normalizedNetwork !== activeAccount.network) {
+      const updatedAccount = { ...activeAccount, network: normalizedNetwork };
+      const updatedAccounts = connectedAccounts.map((account) =>
+        account.publicKey === activeAccount.publicKey
+          ? updatedAccount
+          : account,
+      );
+      setActiveAccount(updatedAccount);
+      setConnectedAccounts(updatedAccounts);
+      window.localStorage.setItem(
+        "vaultix_connected_wallets",
+        JSON.stringify(updatedAccounts),
+      );
+      window.localStorage.setItem(
+        "vaultix_wallet",
+        JSON.stringify(updatedAccount),
+      );
+    }
+    if (isStellarNetworkMismatch(currentNetwork)) {
+      const targetNetwork = getConfiguredStellarNetwork();
+      const expected = targetNetwork ?? "the configured Stellar network";
+      const actual =
+        normalizeStellarNetwork(currentNetwork) ?? "an unknown network";
+      throw new Error(
+        `Transaction signing is blocked because this wallet is on ${actual}; switch it to ${expected} and reconnect.`,
+      );
+    }
+    try {
+      return await service.signTransaction(xdr, activeAccount.publicKey);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const normalizedMessage = message.toLowerCase();
+      if (
+        normalizedMessage.includes("reject") ||
+        normalizedMessage.includes("cancel")
+      ) {
+        throw new Error(
+          "Transaction signing was cancelled in your wallet. Approve the request to continue.",
+        );
+      }
+      if (normalizedMessage.includes("locked")) {
+        throw new Error(
+          "Your wallet is locked. Unlock it and try signing again.",
+        );
+      }
+      throw error;
+    }
+  };
+
+  const refreshNetwork = async (): Promise<void> => {
+    if (!activeAccount) return;
+    const service = WalletServiceFactory.getService(activeAccount.walletType);
+    const currentNetwork = service.getNetwork
+      ? await service.getNetwork().catch(() => "unknown")
+      : activeAccount.network;
+    const normalizedNetwork =
+      normalizeStellarNetwork(currentNetwork) || "unknown";
+    const updatedAccount = { ...activeAccount, network: normalizedNetwork };
+    const updatedAccounts = connectedAccounts.map((account) =>
+      account.publicKey === activeAccount.publicKey ? updatedAccount : account,
+    );
+    setActiveAccount(updatedAccount);
+    setConnectedAccounts(updatedAccounts);
+    window.localStorage.setItem(
+      "vaultix_connected_wallets",
+      JSON.stringify(updatedAccounts),
+    );
+    window.localStorage.setItem(
+      "vaultix_wallet",
+      JSON.stringify(updatedAccount),
+    );
   };
 
   const getAvailableWallets = async (): Promise<WalletType[]> => {
@@ -176,6 +299,9 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
         connectedAccounts,
         isConnecting,
         error,
+        targetNetwork: getConfiguredStellarNetwork(),
+        isNetworkMismatch: isStellarNetworkMismatch(activeAccount?.network),
+        refreshNetwork,
         connect,
         switchAccount,
         disconnect,
@@ -191,7 +317,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
 export const useWallet = () => {
   const context = useContext(WalletContext);
   if (context === undefined) {
-    throw new Error('useWallet must be used within a WalletProvider');
+    throw new Error("useWallet must be used within a WalletProvider");
   }
   return context;
 };

@@ -1,14 +1,17 @@
-import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { ConnectWalletModal } from './ConnectWalletModal';
-import { useWallet } from '@/app/contexts/WalletContext';
+import React from "react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  ConnectWalletModal,
+  getWalletConnectionErrorMessage,
+} from "./ConnectWalletModal";
+import { useWallet } from "@/app/contexts/WalletContext";
 
 // Mock useWallet hook
-jest.mock('@/app/contexts/WalletContext', () => ({
+jest.mock("@/app/contexts/WalletContext", () => ({
   useWallet: jest.fn(),
 }));
 
-describe('ConnectWalletModal', () => {
+describe("ConnectWalletModal", () => {
   const mockOnClose = jest.fn();
   const mockConnect = jest.fn();
   const mockGetAvailableWallets = jest.fn();
@@ -21,48 +24,66 @@ describe('ConnectWalletModal', () => {
       isConnecting: false,
       error: null,
     });
-    mockGetAvailableWallets.mockResolvedValue(['freighter']);
+    mockGetAvailableWallets.mockResolvedValue(["freighter"]);
   });
 
-  it('does not render when isOpen is false', () => {
+  it("does not render when isOpen is false", () => {
     render(<ConnectWalletModal isOpen={false} onClose={mockOnClose} />);
-    expect(screen.queryByText('Connect Wallet')).not.toBeInTheDocument();
+    expect(screen.queryByText("Connect Wallet")).not.toBeInTheDocument();
   });
 
-  it('renders correctly when open', async () => {
+  it("renders correctly when open", async () => {
     render(<ConnectWalletModal isOpen={true} onClose={mockOnClose} />);
-    expect(screen.getByText('Connect Wallet')).toBeInTheDocument();
-    
+    expect(screen.getByText("Connect Wallet")).toBeInTheDocument();
+
     await waitFor(() => {
-      expect(screen.getByText('Freighter')).toBeInTheDocument();
+      expect(screen.getByText("Freighter")).toBeInTheDocument();
     });
   });
 
-  it('calls connect when a wallet is clicked', async () => {
+  it("calls connect when a wallet is clicked", async () => {
     render(<ConnectWalletModal isOpen={true} onClose={mockOnClose} />);
-    
-    await waitFor(() => screen.getByText('Freighter'));
-    
-    fireEvent.click(screen.getByText('Freighter'));
-    
-    expect(mockConnect).toHaveBeenCalledWith('freighter');
+
+    await waitFor(() => screen.getByText("Freighter"));
+
+    fireEvent.click(screen.getByText("Freighter"));
+
+    expect(mockConnect).toHaveBeenCalledWith("freighter");
   });
 
-  it('shows error message if there is an error', () => {
+  it("shows error message if there is an error", () => {
     (useWallet as jest.Mock).mockReturnValue({
       connect: mockConnect,
       getAvailableWallets: mockGetAvailableWallets,
       isConnecting: false,
-      error: 'Failed to connect',
+      error: "Failed to connect",
     });
-    
+
     render(<ConnectWalletModal isOpen={true} onClose={mockOnClose} />);
-    expect(screen.getByText('Failed to connect')).toBeInTheDocument();
+    expect(screen.getByText("Failed to connect")).toBeInTheDocument();
   });
 
-  it('calls onClose when close button is clicked', () => {
+  it("calls onClose when close button is clicked", () => {
     render(<ConnectWalletModal isOpen={true} onClose={mockOnClose} />);
-    fireEvent.click(screen.getByRole('button', { name: /close modal/i }));
+    fireEvent.click(screen.getByRole("button", { name: /close modal/i }));
     expect(mockOnClose).toHaveBeenCalled();
+  });
+
+  it("shows xBull as a selectable provider when available", async () => {
+    mockGetAvailableWallets.mockResolvedValue(["xbull"]);
+    render(<ConnectWalletModal isOpen onClose={mockOnClose} />);
+    await waitFor(() => expect(screen.getByText("xBull")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("xBull"));
+    expect(mockConnect).toHaveBeenCalledWith("xbull");
+  });
+
+  it.each([
+    [new Error("User rejected the request"), "cancelled"],
+    [new Error("Wallet is locked"), "locked"],
+    [new Error("Could not read network"), "switch your wallet to testnet"],
+  ])("gives actionable feedback for wallet errors", (error, expected) => {
+    expect(
+      getWalletConnectionErrorMessage(error, "testnet").toLowerCase(),
+    ).toContain(expected);
   });
 });

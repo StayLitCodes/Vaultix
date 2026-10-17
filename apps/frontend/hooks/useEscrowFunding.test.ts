@@ -1,6 +1,12 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { useEscrowFunding } from "./useEscrowFunding";
 
+const mockSignTransaction = jest.fn();
+
+jest.mock("@/app/contexts/WalletContext", () => ({
+  useWallet: () => ({ signTransaction: mockSignTransaction }),
+}));
+
 const FUND_URL = /\/escrows\/.*\/fund$/;
 const HORIZON_URL = /horizon.*\.stellar\.org\/transactions\//;
 
@@ -26,23 +32,25 @@ const transportError = (code: number) =>
   }) as Response;
 
 describe("useEscrowFunding", () => {
-  const originalFreighter = (window as any).freighter;
-
   afterEach(() => {
-    (window as any).freighter = originalFreighter;
     jest.restoreAllMocks();
   });
 
+  beforeEach(() => {
+    mockSignTransaction.mockReset();
+    mockSignTransaction.mockResolvedValue("signed-xdr");
+  });
+
   it("transitions through building, wallet, submitting, confirming, and complete", async () => {
-    let resolveSigning!: (value: { signedXDR: string }) => void;
+    let resolveSigning!: (value: string) => void;
     let resolveResponseBody!: (value: { txHash: string }) => void;
-    const signing = new Promise<{ signedXDR: string }>((resolve) => {
+    const signing = new Promise<string>((resolve) => {
       resolveSigning = resolve;
     });
     const responseBody = new Promise<{ txHash: string }>((resolve) => {
       resolveResponseBody = resolve;
     });
-    (window as any).freighter = { signTransaction: jest.fn(() => signing) };
+    mockSignTransaction.mockReturnValue(signing);
     global.fetch = jest.fn().mockImplementation(async (url: string) => {
       if (FUND_URL.test(String(url))) {
         return { ok: true, status: 200, json: () => responseBody } as Response;
@@ -51,7 +59,7 @@ describe("useEscrowFunding", () => {
     });
 
     const { result } = renderHook(() =>
-      useEscrowFunding({ pollInterval: 5, confirmationTimeoutMs: 500 })
+      useEscrowFunding({ pollInterval: 5, confirmationTimeoutMs: 500 }),
     );
 
     let funding!: Promise<boolean>;
@@ -62,7 +70,7 @@ describe("useEscrowFunding", () => {
     expect(result.current.phase).toBe("waiting");
 
     await act(async () => {
-      resolveSigning({ signedXDR: "signed-xdr" });
+      resolveSigning("signed-xdr");
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     await waitFor(() => expect(result.current.phase).toBe("confirming"));
@@ -76,9 +84,6 @@ describe("useEscrowFunding", () => {
   });
 
   it("does not treat an accepted submission as on-chain completion", async () => {
-    (window as any).freighter = {
-      signTransaction: jest.fn().mockResolvedValue({ signedXDR: "signed-xdr" }),
-    };
     global.fetch = jest.fn().mockImplementation(async (url: string) => {
       if (FUND_URL.test(String(url))) return submitted("tx_hash_unconfirmed");
       // Horizon has not indexed it within the confirmation window.
@@ -86,7 +91,7 @@ describe("useEscrowFunding", () => {
     });
 
     const { result } = renderHook(() =>
-      useEscrowFunding({ pollInterval: 5, confirmationTimeoutMs: 30 })
+      useEscrowFunding({ pollInterval: 5, confirmationTimeoutMs: 30 }),
     );
 
     let ok!: boolean;
@@ -102,9 +107,6 @@ describe("useEscrowFunding", () => {
   });
 
   it("keeps waiting through a transient outage instead of reporting a failed payment", async () => {
-    (window as any).freighter = {
-      signTransaction: jest.fn().mockResolvedValue({ signedXDR: "signed-xdr" }),
-    };
     let chainCalls = 0;
     global.fetch = jest.fn().mockImplementation(async (url: string) => {
       if (FUND_URL.test(String(url))) return submitted("tx_hash_flaky");
@@ -115,7 +117,7 @@ describe("useEscrowFunding", () => {
     });
 
     const { result } = renderHook(() =>
-      useEscrowFunding({ pollInterval: 5, confirmationTimeoutMs: 2000 })
+      useEscrowFunding({ pollInterval: 5, confirmationTimeoutMs: 2000 }),
     );
 
     let ok!: boolean;
@@ -130,16 +132,13 @@ describe("useEscrowFunding", () => {
   });
 
   it("reports the chain's own verdict when a ledger marks the transaction unsuccessful", async () => {
-    (window as any).freighter = {
-      signTransaction: jest.fn().mockResolvedValue({ signedXDR: "signed-xdr" }),
-    };
     global.fetch = jest.fn().mockImplementation(async (url: string) => {
       if (FUND_URL.test(String(url))) return submitted("tx_hash_failed");
       return chain({ successful: false });
     });
 
     const { result } = renderHook(() =>
-      useEscrowFunding({ pollInterval: 5, confirmationTimeoutMs: 500 })
+      useEscrowFunding({ pollInterval: 5, confirmationTimeoutMs: 500 }),
     );
 
     let ok!: boolean;
@@ -153,19 +152,18 @@ describe("useEscrowFunding", () => {
   });
 
   it("resumes confirmation without re-submitting", async () => {
-    (window as any).freighter = {
-      signTransaction: jest.fn().mockResolvedValue({ signedXDR: "signed-xdr" }),
-    };
     let chainCalls = 0;
     let chainAnswering = false;
     global.fetch = jest.fn().mockImplementation(async (url: string) => {
       if (FUND_URL.test(String(url))) return submitted("tx_hash_resume");
       chainCalls += 1;
-      return chainAnswering ? chain({ successful: true, ledger: 303 }) : transportError(404);
+      return chainAnswering
+        ? chain({ successful: true, ledger: 303 })
+        : transportError(404);
     });
 
     const { result } = renderHook(() =>
-      useEscrowFunding({ pollInterval: 5, confirmationTimeoutMs: 25 })
+      useEscrowFunding({ pollInterval: 5, confirmationTimeoutMs: 25 }),
     );
 
     await act(async () => {
@@ -182,7 +180,9 @@ describe("useEscrowFunding", () => {
 
     expect(result.current.phase).toBe("complete");
     expect(
-      (global.fetch as jest.Mock).mock.calls.filter((call) => FUND_URL.test(String(call[0]))).length
+      (global.fetch as jest.Mock).mock.calls.filter((call) =>
+        FUND_URL.test(String(call[0])),
+      ).length,
     ).toBe(1);
   });
 
@@ -191,7 +191,7 @@ describe("useEscrowFunding", () => {
     const signing = new Promise<never>((_, reject) => {
       rejectSigning = reject;
     });
-    (window as any).freighter = { signTransaction: jest.fn(() => signing) };
+    mockSignTransaction.mockReturnValue(signing);
     const { result } = renderHook(() => useEscrowFunding());
 
     let funding!: Promise<boolean>;

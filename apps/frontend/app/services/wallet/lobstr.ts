@@ -1,6 +1,11 @@
 declare global {
   interface Window {
-    lobstr?: any;
+    lobstr?: {
+      getPublicKey: () => Promise<string>;
+      getNetwork?: () => Promise<unknown>;
+      network?: string;
+      signTransaction: (xdr: string) => Promise<unknown>;
+    };
   }
 }
 
@@ -18,7 +23,7 @@ export class LobstrService {
 
   async isInstalled(): Promise<boolean> {
     try {
-      if (typeof window === 'undefined') return false;
+      if (typeof window === "undefined") return false;
       return !!window.lobstr;
     } catch {
       return false;
@@ -26,8 +31,8 @@ export class LobstrService {
   }
 
   async connect(): Promise<string> {
-    if (typeof window === 'undefined' || !window.lobstr) {
-      throw new Error('Lobstr wallet is not installed');
+    if (typeof window === "undefined" || !window.lobstr) {
+      throw new Error("Lobstr wallet is not installed");
     }
     try {
       const publicKey = await window.lobstr.getPublicKey();
@@ -37,15 +42,41 @@ export class LobstrService {
     }
   }
 
+  async getNetwork(): Promise<string> {
+    if (typeof window === "undefined" || !window.lobstr) {
+      throw new Error("Lobstr wallet is not installed");
+    }
+    const response = window.lobstr.getNetwork
+      ? await window.lobstr.getNetwork()
+      : window.lobstr.network;
+    if (typeof response === "string") return response;
+    if (typeof response === "object" && response !== null) {
+      const network =
+        (response as Record<string, unknown>).network ??
+        (response as Record<string, unknown>).id;
+      if (typeof network === "string") return network;
+    }
+    throw new Error("Lobstr did not report its active Stellar network.");
+  }
+
   async signTransaction(xdr: string): Promise<string> {
-    if (typeof window === 'undefined' || !window.lobstr) {
-      throw new Error('Lobstr wallet is not installed');
+    if (typeof window === "undefined" || !window.lobstr) {
+      throw new Error("Lobstr wallet is not installed");
     }
     try {
-      const signedXdr = await window.lobstr.signTransaction(xdr);
-      return signedXdr;
+      const response = await window.lobstr.signTransaction(xdr);
+      if (typeof response === "string") return response;
+      if (typeof response === "object" && response !== null) {
+        const signedXdr =
+          (response as Record<string, unknown>).signedXDR ??
+          (response as Record<string, unknown>).signedTxXdr;
+        if (typeof signedXdr === "string") return signedXdr;
+      }
+      throw new Error("Lobstr did not return a signed transaction.");
     } catch (error: any) {
-      throw new Error(`Failed to sign transaction with Lobstr: ${error.message}`);
+      throw new Error(
+        `Failed to sign transaction with Lobstr: ${error.message}`,
+      );
     }
   }
 }

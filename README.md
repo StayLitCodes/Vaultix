@@ -20,7 +20,7 @@ QuickEx is a Soroban-based dApp built on Stellar, utilizing:
 - **Stellar Blockchain**: For fast, low-cost token transfers
 - **Soroban Smart Contracts**: For on-chain escrow logic (Rust-based)
 - **Stellar SDK**: For transaction building and submission
-- **Freighter Wallet**: For user wallet interactions
+- **Stellar Wallets**: Freighter, xBull, Lobstr, and Albedo adapters for user wallet interactions
 
 ## 🎯 MVP Scope (8-Week Timeline)
 
@@ -101,7 +101,7 @@ Before you begin, ensure you have the following installed:
 - **Rust** latest stable ([Download](https://rustup.rs)) - For Soroban smart contracts
 - **Soroban CLI** (`cargo install --locked soroban-cli`) - For contract deployment
 - **Git** - Version control
-- **Stellar Wallet** - Freighter or Lobster wallet browser extension ([Install Freighter](https://freighter.app))
+- **Stellar Wallet** - Freighter, xBull, or Lobstr browser extension, or the Albedo web wallet ([Freighter](https://www.freighter.app/), [xBull](https://chromewebstore.google.com/detail/xbull-wallet/omajpeaffjgmlpmhbfdjepdejoemifpe), [Lobstr](https://lobstr.co/vault/), [Albedo](https://albedo.link/))
 
 **Optional:**
 - **Docker** - For containerized PostgreSQL
@@ -252,7 +252,7 @@ cargo build --target wasm32v1-none --release
 ### Testing Your Setup
 
 1. **Open frontend**: Navigate to http://localhost:3001
-2. **Connect wallet**: Click "Connect Wallet" and approve Freighter connection
+2. **Connect wallet**: Click "Connect Wallet", choose an available Stellar wallet, and approve its connection request. The wallet must be set to the network configured by `NEXT_PUBLIC_STELLAR_NETWORK` (defaults to testnet); signing is blocked until the network matches.
 3. **Create test escrow**: Go to Create Escrow page and set up a mock transaction
 4. **Check backend**: Visit http://localhost:3000/api/docs to explore API endpoints
 
@@ -278,8 +278,8 @@ cd apps/frontend && npm run lint
 ```
 
 **Wallet connection issues**:
-- Make sure Freighter/Lobster extension is installed
-- Switch wallet to **Testnet** network
+- Install one of the supported wallets (Freighter, xBull, or Lobstr) or use Albedo from the wallet picker
+- Switch your wallet to the network configured by `NEXT_PUBLIC_STELLAR_NETWORK` (default: **Testnet**); the connected-wallet warning identifies a mismatch, and transactions cannot be signed until it is corrected
 - Ensure you have test XLM (get from [Stellar Laboratory](https://laboratory.stellar.org))
 
 **Build errors**:
@@ -425,7 +425,7 @@ vaultix/
 
 #### 1. Authentication & Wallet Connect
 1. User visits frontend and clicks "Connect Wallet"
-2. Freighter wallet popup requests connection approval
+2. User selects an available wallet and approves the connection request
 3. Frontend calls backend `/auth/wallet-connect` with public key
 4. Backend creates/updates user, returns JWT token
 5. Frontend stores JWT in localStorage, attaches to subsequent requests
@@ -435,7 +435,7 @@ vaultix/
 2. Fills form: recipient, amount, milestones, deadline
 3. Frontend calls POST `/api/escrows` with escrow details
 4. Backend creates escrow record, returns escrow ID
-5. User approves Stellar transaction via Freighter
+5. User approves the Stellar transaction via the connected wallet
 6. Frontend submits transaction to Stellar network
 7. Backend webhook receives event, updates escrow status to "funded"
 

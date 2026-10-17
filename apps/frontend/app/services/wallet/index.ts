@@ -1,11 +1,13 @@
-import { FreighterService } from './freighter';
-import { AlbedoService } from './albedo';
-import { LobstrService } from './lobstr';
+import { FreighterService } from "./freighter";
+import { AlbedoService } from "./albedo";
+import { LobstrService } from "./lobstr";
+import { XBullService } from "./xbull";
 
 export enum WalletType {
-  FREIGHTER = 'freighter',
-  ALBEDO = 'albedo',
-  LOBSTR = 'lobstr',
+  FREIGHTER = "freighter",
+  ALBEDO = "albedo",
+  LOBSTR = "lobstr",
+  XBULL = "xbull",
 }
 
 export interface WalletConnection {
@@ -16,7 +18,7 @@ export interface WalletConnection {
 
 export interface IWalletService {
   connect(): Promise<string>;
-  signTransaction(xdr: string): Promise<string>;
+  signTransaction(xdr: string, publicKey?: string): Promise<string>;
   getNetwork?(): Promise<string>;
   isInstalled?(): Promise<boolean>;
   disconnect?(): Promise<void>;
@@ -36,6 +38,8 @@ export class WalletServiceFactory {
         return AlbedoService.getInstance();
       case WalletType.LOBSTR:
         return LobstrService.getInstance();
+      case WalletType.XBULL:
+        return XBullService.getInstance();
       default:
         throw new Error(`Unsupported wallet type: ${walletType}`);
     }
@@ -69,6 +73,11 @@ export class WalletServiceFactory {
       }
     } catch {
       // Lobstr not available
+    }
+
+    const xBullService = XBullService.getInstance();
+    if (await xBullService.isInstalled?.()) {
+      availableWallets.push(WalletType.XBULL);
     }
 
     return availableWallets;

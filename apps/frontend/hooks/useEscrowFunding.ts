@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from "react";
+import { useWallet } from "@/app/contexts/WalletContext";
 import {
   DEFAULT_POLL_INTERVAL_MS,
   StellarNetwork,
@@ -37,6 +38,12 @@ const getFundingError = (error: unknown): string => {
 
   if (normalized.includes("balance") || normalized.includes("underfunded")) {
     return "Insufficient balance to fund this escrow, including the network fee.";
+  }
+  if (
+    normalized.includes("signing is blocked") ||
+    normalized.includes("network could not be verified")
+  ) {
+    return message;
   }
   if (normalized.includes("sequence") || normalized.includes("tx_bad_seq")) {
     return "Your wallet sequence number is out of date. Refresh your wallet and try again.";
@@ -85,6 +92,7 @@ export const useEscrowFunding = (options: UseEscrowFundingOptions = {}) => {
   const abortControllerRef = useRef<AbortController | null>(null);
   const confirmationAbortRef = useRef<AbortController | null>(null);
   const txHashRef = useRef<string | null>(null);
+  const { signTransaction } = useWallet();
 
   const waitForConfirmation = useCallback(
     async (txHash: string): Promise<boolean> => {
@@ -107,7 +115,12 @@ export const useEscrowFunding = (options: UseEscrowFundingOptions = {}) => {
         }
 
         if (result.kind === "failed") {
-          setState({ loading: false, error: result.detail, txHash, phase: "error" });
+          setState({
+            loading: false,
+            error: result.detail,
+            txHash,
+            phase: "error",
+          });
           return false;
         }
 
@@ -148,16 +161,15 @@ export const useEscrowFunding = (options: UseEscrowFundingOptions = {}) => {
       await Promise.resolve();
       setState((current: FundingState) => ({ ...current, phase: "waiting" }));
 
-      // Sign the XDR envelope via the injected wallet
-      const signedResponse = await Promise.race([
-        (window as any).freighter.signTransaction(xdr, {
-          networkPassphrase: "Test SDF Network ; September 2015",
-        }),
+      const signedXDR = await Promise.race([
+        signTransaction(xdr),
         timeoutPromise,
       ]);
-      const signedXDR = signedResponse.signedXDR ?? signedResponse.signedTxXdr;
 
-      setState((current: FundingState) => ({ ...current, phase: "submitting" }));
+      setState((current: FundingState) => ({
+        ...current,
+        phase: "submitting",
+      }));
 
       const res = await fetch(
         `${API_URL}${API_VERSION_PREFIX}/escrows/${escrowId}/fund`,
@@ -177,11 +189,16 @@ export const useEscrowFunding = (options: UseEscrowFundingOptions = {}) => {
       // The submission endpoint accepted the signed envelope, so from here on the
       // question is whether a ledger confirms it — not whether the HTTP call
       // succeeded.
-      setState((current: FundingState) => ({ ...current, phase: "confirming" }));
+      setState((current: FundingState) => ({
+        ...current,
+        phase: "confirming",
+      }));
 
       const { txHash } = await res.json();
       if (!txHash) {
-        throw new Error("Funding submission did not return a transaction hash.");
+        throw new Error(
+          "Funding submission did not return a transaction hash.",
+        );
       }
 
       txHashRef.current = txHash;
