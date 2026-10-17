@@ -120,6 +120,8 @@ jobs:
         run: stellar --version
 
       - name: Build contract
+        env:
+          VAULTIX_BUILD_COMMIT: ${{ github.sha }}
         run: cargo build --target wasm32v1-none --release
 
       - name: Optimize wasm

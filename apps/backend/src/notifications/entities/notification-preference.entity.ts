@@ -27,6 +27,15 @@ export class NotificationPreference {
   @Column('simple-array')
   eventTypes: NotificationEventType[];
 
+  // User-level in-app chime toggle, mirrored on each of the user's rows
+  @Column({ default: true })
+  soundEnabled: boolean;
+
+  // When true on the email row, email is batched into the daily digest
+  // instead of being sent per event
+  @Column({ default: false })
+  digestEnabled: boolean;
+
   @CreateDateColumn()
   createdAt: Date;
 

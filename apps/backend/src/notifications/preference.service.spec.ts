@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { PreferenceService } from './preference.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -92,6 +93,23 @@ describe('PreferenceService', () => {
       expect(repo.create).toHaveBeenCalled();
       expect(repo.save).toHaveBeenCalled();
       expect(result).toEqual([mockPref]);
+    });
+
+    it('should persist digestEnabled', async () => {
+      const existing = { ...mockPref, digestEnabled: false };
+      repo.findOne.mockResolvedValue(existing as any);
+      repo.save.mockImplementation((p: any) => Promise.resolve(p));
+
+      const result = await service.updatePreferences('u1', [
+        {
+          channel: NotificationChannel.EMAIL,
+          enabled: true,
+          eventTypes: [],
+          digestEnabled: true,
+        },
+      ] as any);
+
+      expect(result[0].digestEnabled).toBe(true);
     });
 
     it('should update existing preference', async () => {

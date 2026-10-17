@@ -9,22 +9,31 @@ import { ExportModal } from "@/components/ExportModal";
 import { useToast } from "@/hooks/useToast";
 import EscrowTimeline from "@/components/escrow/EscrowTimeline";
 import { AdminTableSkeleton } from "@/components/ui/AdminTableSkeleton";
+import { CanonicalEscrowStatus, escrowStatusLabel, normalizeEscrowStatus } from '@/utils/escrowStatus';
 
-const STATUS_CONFIG: Record<string, { color: string; bg: string; icon: React.ElementType }> = {
-  ACTIVE: { color: "text-emerald-400", bg: "bg-emerald-500/10", icon: CheckCircle2 },
-  COMPLETED: { color: "text-blue-400", bg: "bg-blue-500/10", icon: CheckCircle2 },
-  PENDING: { color: "text-yellow-400", bg: "bg-yellow-500/10", icon: Clock },
-  CANCELLED: { color: "text-gray-400", bg: "bg-gray-500/10", icon: XCircle },
-  DISPUTED: { color: "text-red-400", bg: "bg-red-500/10", icon: AlertTriangle },
+const STATUS_CONFIG: Record<CanonicalEscrowStatus, { color: string; bg: string; icon: React.ElementType }> = {
+  [CanonicalEscrowStatus.ACTIVE]: { color: "text-emerald-400", bg: "bg-emerald-500/10", icon: CheckCircle2 },
+  [CanonicalEscrowStatus.FUNDED]: { color: "text-emerald-400", bg: "bg-emerald-500/10", icon: CheckCircle2 },
+  [CanonicalEscrowStatus.COMPLETED]: { color: "text-blue-400", bg: "bg-blue-500/10", icon: CheckCircle2 },
+  [CanonicalEscrowStatus.RESOLVED]: { color: "text-blue-400", bg: "bg-blue-500/10", icon: CheckCircle2 },
+  [CanonicalEscrowStatus.CREATED]: { color: "text-yellow-400", bg: "bg-yellow-500/10", icon: Clock },
+  [CanonicalEscrowStatus.CANCELLED]: { color: "text-gray-400", bg: "bg-gray-500/10", icon: XCircle },
+  [CanonicalEscrowStatus.REFUNDED]: { color: "text-gray-400", bg: "bg-gray-500/10", icon: XCircle },
+  [CanonicalEscrowStatus.DISPUTED]: { color: "text-red-400", bg: "bg-red-500/10", icon: AlertTriangle },
+  [CanonicalEscrowStatus.EXPIRED]: { color: "text-amber-400", bg: "bg-amber-500/10", icon: Clock },
+  [CanonicalEscrowStatus.UNKNOWN]: { color: "text-gray-400", bg: "bg-gray-500/10", icon: AlertTriangle },
 };
 
 function StatusBadge({ status }: { status: string }) {
-  const config = STATUS_CONFIG[status] || STATUS_CONFIG.PENDING;
+  // Normalize here so a lowercase API value no longer falls through to the
+  // PENDING config and mis-renders `active` escrows as pending.
+  const canonical = normalizeEscrowStatus(status);
+  const config = STATUS_CONFIG[canonical];
   const Icon = config.icon;
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium ${config.color} ${config.bg}`}>
       <Icon className="w-3 h-3" />
-      {status}
+      {escrowStatusLabel(canonical)}
     </span>
   );
 }

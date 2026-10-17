@@ -1,4 +1,5 @@
 import React from 'react';
+import { CanonicalEscrowStatus, canTakeFinancialAction, escrowStatusLabel } from '@/utils/escrowStatus';
 import { AlertTriangle, Clock, CheckCircle, XCircle, ShareIcon } from 'lucide-react';
 import { IEscrowExtended } from '@/types/escrow';
 import { useToast } from '@/hooks/useToast';
@@ -13,26 +14,36 @@ interface EscrowHeaderProps {
   onFileDispute?: () => void;
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300',
-  active: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
-  completed: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
-  cancelled: 'bg-gray-100 text-gray-800 dark:bg-zinc-800 dark:text-gray-300',
-  disputed: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
+const STATUS_STYLES: Record<CanonicalEscrowStatus, string> = {
+  [CanonicalEscrowStatus.CREATED]: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300',
+  [CanonicalEscrowStatus.FUNDED]: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300',
+  [CanonicalEscrowStatus.ACTIVE]: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
+  [CanonicalEscrowStatus.COMPLETED]: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
+  [CanonicalEscrowStatus.RESOLVED]: 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300',
+  [CanonicalEscrowStatus.CANCELLED]: 'bg-gray-100 text-gray-800 dark:bg-zinc-800 dark:text-gray-300',
+  [CanonicalEscrowStatus.REFUNDED]: 'bg-gray-100 text-gray-800 dark:bg-zinc-800 dark:text-gray-300',
+  [CanonicalEscrowStatus.DISPUTED]: 'bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300',
+  [CanonicalEscrowStatus.EXPIRED]: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+  [CanonicalEscrowStatus.UNKNOWN]: 'bg-gray-100 text-gray-800 dark:bg-zinc-800 dark:text-gray-300',
 };
 
-const STATUS_ICONS: Record<string, React.ReactNode> = {
-  pending: <Clock className="h-3.5 w-3.5" />,
-  active: <CheckCircle className="h-3.5 w-3.5" />,
-  completed: <CheckCircle className="h-3.5 w-3.5" />,
-  cancelled: <XCircle className="h-3.5 w-3.5" />,
-  disputed: <AlertTriangle className="h-3.5 w-3.5" />,
+const STATUS_ICONS: Record<CanonicalEscrowStatus, React.ReactNode> = {
+  [CanonicalEscrowStatus.CREATED]: <Clock className="h-3.5 w-3.5" />,
+  [CanonicalEscrowStatus.FUNDED]: <Clock className="h-3.5 w-3.5" />,
+  [CanonicalEscrowStatus.ACTIVE]: <CheckCircle className="h-3.5 w-3.5" />,
+  [CanonicalEscrowStatus.COMPLETED]: <CheckCircle className="h-3.5 w-3.5" />,
+  [CanonicalEscrowStatus.RESOLVED]: <CheckCircle className="h-3.5 w-3.5" />,
+  [CanonicalEscrowStatus.CANCELLED]: <XCircle className="h-3.5 w-3.5" />,
+  [CanonicalEscrowStatus.REFUNDED]: <XCircle className="h-3.5 w-3.5" />,
+  [CanonicalEscrowStatus.DISPUTED]: <AlertTriangle className="h-3.5 w-3.5" />,
+  [CanonicalEscrowStatus.EXPIRED]: <Clock className="h-3.5 w-3.5" />,
+  [CanonicalEscrowStatus.UNKNOWN]: <Clock className="h-3.5 w-3.5" />,
 };
 
 const EscrowHeader: React.FC<EscrowHeaderProps> = ({ escrow, userRole, connected, connect, onFileDispute }) => {
-  const statusKey = escrow.status.toLowerCase();
-  const statusStyle = STATUS_STYLES[statusKey] || 'bg-gray-100 text-gray-800 dark:bg-zinc-850 dark:text-gray-300';
-  const statusIcon = STATUS_ICONS[statusKey] || <Clock className="h-3.5 w-3.5" />;
+  const statusKey = escrow.status;
+  const statusStyle = STATUS_STYLES[statusKey];
+  const statusIcon = STATUS_ICONS[statusKey];
   const { success } = useToast();
 
   const handleCopyLink = () => {
@@ -40,7 +51,7 @@ const EscrowHeader: React.FC<EscrowHeaderProps> = ({ escrow, userRole, connected
     success('Link copied to clipboard!');
   };
 
-  const isPaused = escrow.status.toLowerCase() === 'disputed';
+  const isPaused = escrow.status === CanonicalEscrowStatus.DISPUTED;
   const hasDeadline = escrow.expiresAt || escrow.deadline;
 
   return (
@@ -52,7 +63,7 @@ const EscrowHeader: React.FC<EscrowHeaderProps> = ({ escrow, userRole, connected
         </h1>
         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium flex-shrink-0 ${statusStyle}`}>
           {statusIcon}
-          <span className="capitalize">{escrow.status}</span>
+          <span>{escrowStatusLabel(escrow.status)}</span>
         </span>
       </div>
 
@@ -95,7 +106,9 @@ const EscrowHeader: React.FC<EscrowHeaderProps> = ({ escrow, userRole, connected
           Share
         </button>
 
-        {connected && userRole && ['creator', 'counterparty'].includes(userRole) && escrow.status === 'ACTIVE' && onFileDispute && (
+        {connected && userRole && ['creator', 'counterparty'].includes(userRole) && escrow.status === CanonicalEscrowStatus.ACTIVE &&
+          canTakeFinancialAction(escrow.status) &&
+          onFileDispute && (
           <button
             onClick={onFileDispute}
             className="min-h-[44px] inline-flex items-center gap-2 px-4 py-2 border border-destructive/30 text-sm font-medium rounded-lg text-destructive bg-destructive/10 hover:bg-destructive/20 transition-colors cursor-pointer"

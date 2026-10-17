@@ -15,6 +15,7 @@ import {
 import { IEscrowExtended } from "@/types/escrow";
 import TransactionTracker from "@/components/stellar/TransactionTracker";
 import { toast } from "sonner";
+import { CanonicalEscrowStatus } from '@/utils/escrowStatus';
 
 type ReleaseMode = "manual" | "auto";
 
@@ -70,7 +71,8 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
 
   const isAlreadyReleased =
     Boolean(existingTxHash) ||
-    ["completed", "released", "COMPLETED", "RELEASED"].includes(escrow.status);
+    escrow.status === CanonicalEscrowStatus.COMPLETED ||
+    escrow.status === CanonicalEscrowStatus.RESOLVED;
 
   const [step, setStep] = useState<Step>(
     isAlreadyReleased ? "success" : "review",

@@ -141,6 +141,21 @@ on current stable rustc with `collapsible_match` in
 `src/invariants.rs::validate_status_field_consistency`. Rewritten as a match
 guard (semantically identical) so CI is green.
 
+### 7a. `num-bigint` pin must not enable `std` (#739)
+
+`num-bigint = "=0.4.6"` was later added as a direct dependency to pin the
+version `soroban-sdk`'s build-time crates resolve. With default features it
+pulls `std` into the contract target, and `cargo build --target wasm32v1-none
+--release` fails (`can't find crate for std`). The contract itself never uses
+it, so the pin is kept with `default-features = false`:
+
+```toml
+num-bigint = { version = "=0.4.6", default-features = false }
+```
+
+Host/test builds are unaffected (`soroban-env-host` still enables `std` for
+them); `Cargo.lock` is unchanged.
+
 ### 8. Test snapshots regenerated
 
 All 93 files under `test_snapshots/` were rewritten. This is `stellar-xdr`'s JSON

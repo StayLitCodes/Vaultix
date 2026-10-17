@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { Webhook } from '../webhook.entity';
 import { WebhookDeliveryStatus } from '../../../types/webhook/webhook.types';
+import { DATETIME_COLUMN_TYPE } from '../../../utils/database-column-types';
 
 @Entity('webhook_delivery')
 @Index(['status', 'nextRetryAt'])
@@ -41,7 +42,7 @@ export class WebhookDelivery {
   @Column({ default: 5 })
   maxAttempts!: number;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
   nextRetryAt!: Date | null;
 
   @Column({ type: 'integer', nullable: true })
@@ -50,7 +51,7 @@ export class WebhookDelivery {
   @Column({ type: 'text', nullable: true })
   lastError!: string | null;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
   lastAttemptAt!: Date | null;
 
   @CreateDateColumn()

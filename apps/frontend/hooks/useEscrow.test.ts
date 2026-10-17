@@ -3,13 +3,21 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { useEscrow } from './useEscrow';
 import { useNotifications } from './useNotifications';
 import { WebSocketProvider } from '@/app/contexts/WebSocketContext';
+import { CanonicalEscrowStatus } from '@/utils/escrowStatus';
 
 jest.mock('socket.io-client', () => ({
   io: jest.fn(() => ({
     on: jest.fn(),
     off: jest.fn(),
+    removeAllListeners: jest.fn(),
     emit: jest.fn(),
     disconnect: jest.fn(),
+    // Real sockets expose the underlying Manager here; WebSocketContext
+    // listens on it for low-level reconnect-failure notifications.
+    io: {
+      on: jest.fn(),
+      removeAllListeners: jest.fn(),
+    },
   })),
 }));
 
@@ -49,7 +57,12 @@ describe('useEscrow', () => {
     
     await waitFor(() => expect(result.current.loading).toBe(false), { timeout: 3000 });
 
-    expect(result.current.escrow).toEqual(mockEscrow);
+    // A response without a status normalizes to the explicit UNKNOWN state
+    // rather than leaking undefined into comparisons.
+    expect(result.current.escrow).toEqual({
+      ...mockEscrow,
+      status: CanonicalEscrowStatus.UNKNOWN,
+    });
     expect(result.current.error).toBe(null);
   });
 

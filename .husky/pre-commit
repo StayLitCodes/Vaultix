@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+# Vaultix pre-commit hook entrypoint (issue #854).
+#
+# Installed by husky; delegates the actual staged-file checks to
+# scripts/pre-commit.sh so the logic can also be run manually:
+#
+#   ./scripts/pre-commit.sh
+#
+# Bypass with: SKIP_HOOKS=1 git commit …   or   git commit --no-verify
+exec bash scripts/pre-commit.sh

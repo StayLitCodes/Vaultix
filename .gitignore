@@ -22,4 +22,10 @@ npm-debug.log*
 
 # Vaultix Specific Secrets
 wallet_secrets.json
-auth_tokens.json
+auth_tokens.jsonbranch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+
+# Dependency audit reports (see scripts/audit.sh)
+audit-reports/
+

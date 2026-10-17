@@ -3,7 +3,15 @@
  * Auto-dismisses after `durationMs`. Uses the app's dark theme palette.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  AccessibilityInfo,
+  Animated,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 export interface ToastConfig {
   message: string;
@@ -12,9 +20,9 @@ export interface ToastConfig {
 }
 
 const TYPE_COLORS: Record<string, { bg: string; text: string; icon: string }> = {
-  success: { bg: '#06d6a0', text: '#1a1a2e', icon: '✓' },
-  error: { bg: '#ef476f', text: '#fff', icon: '✕' },
-  info: { bg: '#6c63ff', text: '#fff', icon: 'ℹ' },
+  success: { bg: colors.successBright, text: colors.textInverse, icon: '✓' },
+  error: { bg: colors.danger, text: colors.onAccent, icon: '✕' },
+  info: { bg: colors.accent, text: colors.onAccent, icon: 'ℹ' },
 };
 
 interface ToastState extends ToastConfig {
@@ -35,6 +43,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   _showToast = useCallback((config: ToastConfig) => {
     if (timerRef.current) clearTimeout(timerRef.current);
     setToast({ ...config, visible: true });
+    // iOS has no live regions, so announce explicitly. Android is covered by
+    // `accessibilityLiveRegion` below — announcing there too would double-speak.
+    if (Platform.OS === 'ios') {
+      AccessibilityInfo.announceForAccessibility(config.message);
+    }
     Animated.sequence([
       Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
     ]).start();
@@ -56,19 +69,33 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   }, [toast, dismiss]);
 
   const type = toast?.type ?? 'success';
-  const colors = TYPE_COLORS[type];
+  const palette = TYPE_COLORS[type];
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       {children}
       {toast?.visible && (
-        <Animated.View style={[styles.wrapper, { opacity }]} pointerEvents="box-none">
+        <Animated.View
+          style={[styles.wrapper, { opacity }]}
+          pointerEvents="box-none"
+          accessibilityLiveRegion="polite"
+          accessibilityRole="alert"
+        >
           <TouchableOpacity
-            style={[styles.toast, { backgroundColor: colors.bg }]}
+            style={[styles.toast, { backgroundColor: palette.bg }]}
             onPress={dismiss}
             activeOpacity={0.85}
+            accessibilityRole="button"
+            accessibilityLabel={toast.message}
+            accessibilityHint="Dismisses this message"
           >
-            <Text style={[styles.icon, { color: colors.text }]}>{colors.icon}</Text>
+            <Text
+              style={[styles.icon, { color: colors.text }]}
+              importantForAccessibility="no"
+              accessibilityElementsHidden
+            >
+              {colors.icon}
+            </Text>
             <Text style={[styles.message, { color: colors.text }]}>{toast.message}</Text>
           </TouchableOpacity>
         </Animated.View>
@@ -93,7 +120,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     gap: 8,
     elevation: 6,
-    shadowColor: '#000',
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
     shadowRadius: 6,

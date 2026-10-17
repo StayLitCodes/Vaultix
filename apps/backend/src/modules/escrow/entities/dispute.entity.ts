@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { Escrow } from './escrow.entity';
 import { User } from '../../user/entities/user.entity';
+import { DATETIME_COLUMN_TYPE } from '../../../utils/database-column-types';
 
 export enum DisputeStatus {
   OPEN = 'open',
@@ -84,7 +85,7 @@ export class Dispute {
   @Column({ type: 'varchar', nullable: true })
   outcome: DisputeOutcome | null;
 
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
   resolvedAt: Date | null;
 
   @CreateDateColumn()

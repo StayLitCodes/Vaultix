@@ -1,0 +1,98 @@
+name: API Smoke Test
+
+# Runs scripts/smoke-test.sh for post-deploy verification.
+#
+#   * Manually: "Run workflow" (optionally with a base_url to check a deployed
+#     environment, e.g. https://api.staging.example).
+#   * Nightly: only when the repository variable SMOKE_TEST_BASE_URL is set, so
+#     the job verifies staging/production automatically once configured.
+#
+# When no base_url is supplied the workflow boots the API locally with SQLite
+# and tests that. Note that the repository does not ship a full docker-compose
+# stack for the API yet - apps/backend/docker-compose.yml only provides
+# PostgreSQL (see issue #852). Replace the "boot" steps with `docker compose up
+# -d` once that stack exists.
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Base URL to smoke test (leave empty to boot the API locally)
+        required: false
+        type: string
+  schedule:
+    # Nightly at 07:00 UTC. Skipped unless SMOKE_TEST_BASE_URL is set.
+    - cron: '0 7 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke-test:
+    name: API smoke test
+    # Never run the nightly schedule until a target URL is configured.
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.SMOKE_TEST_BASE_URL != '' }}
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: ${{ inputs.base_url || vars.SMOKE_TEST_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        if: ${{ env.BASE_URL == '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/backend/package-lock.json
+
+      - name: Install backend dependencies
+        if: ${{ env.BASE_URL == '' }}
+        working-directory: apps/backend
+        run: npm ci
+
+      - name: Build backend
+        if: ${{ env.BASE_URL == '' }}
+        working-directory: apps/backend
+        run: npm run build
+
+      - name: Start API (SQLite)
+        if: ${{ env.BASE_URL == '' }}
+        working-directory: apps/backend
+        env:
+          NODE_ENV: test
+          PORT: '3000'
+          DATABASE_PATH: ./data/smoke.db
+          JWT_SECRET: smoke-test-secret-key-at-least-32-characters
+        run: |
+          mkdir -p data
+          nohup node dist/main > server.log 2>&1 &
+          echo "$!" > server.pid
+
+      - name: Run smoke test
+        run: |
+          if [ -n "${BASE_URL}" ]; then
+            ./scripts/smoke-test.sh "$BASE_URL" --retries 10 --delay 3
+          else
+            ./scripts/smoke-test.sh http://127.0.0.1:3000 --retries 30 --delay 2
+          fi
+
+      - name: Show API logs
+        if: always()
+        working-directory: apps/backend
+        run: |
+          if [ -f server.log ]; then
+            echo '--- server.log ---'
+            tail -200 server.log
+          fi
+
+      - name: Stop API
+        if: always()
+        working-directory: apps/backend
+        run: |
+          if [ -f server.pid ]; then
+            kill "$(cat server.pid)" 2>/dev/null || true
+          fi

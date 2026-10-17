@@ -14,6 +14,11 @@ import {
 import { IEscrowEvent, EscrowEventType } from '@/types/escrow';
 import { useEscrowTimeline } from '@/hooks/useEscrowTimeline';
 import { Skeleton } from '@/components/ui/Skeleton';
+import {
+  CanonicalEscrowStatus,
+  isTerminalStatus,
+  normalizeEscrowStatus,
+} from '@/utils/escrowStatus';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -35,11 +40,7 @@ interface EventMeta {
 
 const STELLAR_EXPLORER = 'https://stellar.expert/explorer/testnet/account';
 
-const TERMINAL_STATUSES = new Set([
-  'COMPLETED', 'completed',
-  'CANCELLED', 'cancelled',
-  'EXPIRED',   'expired',
-]);
+
 
 const SVG = (d: string) => (
   <svg className="h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -100,16 +101,17 @@ function labelFor(eventType: EscrowEventType): string {
   );
 }
 
-function getPendingSteps(escrowStatus: string, hasConditions: boolean): PendingStep[] {
-  if (TERMINAL_STATUSES.has(escrowStatus)) return [];
+function getPendingSteps(rawEscrowStatus: string, hasConditions: boolean): PendingStep[] {
+  const status = normalizeEscrowStatus(rawEscrowStatus);
+  if (isTerminalStatus(status)) return [];
 
   const steps: PendingStep[] = [];
-  const s = escrowStatus.toUpperCase();
+  const s = status;
 
-  if (s === 'PENDING') {
+  if (s === CanonicalEscrowStatus.CREATED) {
     steps.push({ key: 'FUNDED', label: 'Awaiting funding' });
   }
-  if (s === 'PENDING' || s === 'ACTIVE') {
+  if (s === CanonicalEscrowStatus.CREATED || s === CanonicalEscrowStatus.ACTIVE) {
     if (hasConditions) {
       steps.push({ key: 'CONDITION_MET', label: 'All conditions to be confirmed' });
     }

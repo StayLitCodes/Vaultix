@@ -1,5 +1,7 @@
 # Data Models & Storage Layout
 
+> **See also:** [STATUS_MAPPING.md](../STATUS_MAPPING.md) for cross-layer status mapping · [EVENTS.md](EVENTS.md) for event schema · [WORKFLOWS.md](WORKFLOWS.md) for state transitions
+
 This document outlines the core data structures and key-value storage layout of the `VaultixEscrow` smart contract.
 
 ## Structs & Enums

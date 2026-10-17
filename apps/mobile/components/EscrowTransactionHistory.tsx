@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, FlatList, StyleSheet } from 'react-native';
+import { colors } from '../theme';
 
 export type TxStatus = 'pending' | 'completed' | 'failed' | 'cancelled';
 
@@ -16,10 +17,10 @@ interface Props {
 }
 
 const STATUS_COLOR: Record<TxStatus, string> = {
-  pending: '#F59E0B',
-  completed: '#10B981',
-  failed: '#EF4444',
-  cancelled: '#6B7280',
+  pending: colors.warning,
+  completed: colors.success,
+  failed: colors.danger,
+  cancelled: colors.textTertiary,
 };
 
 const EscrowTransactionHistory: React.FC<Props> = ({ transactions }) => {
@@ -55,13 +56,13 @@ const EscrowTransactionHistory: React.FC<Props> = ({ transactions }) => {
 
 const styles = StyleSheet.create({
   empty: { padding: 16, alignItems: 'center' },
-  emptyText: { color: '#6B7280', fontSize: 14 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', padding: 12, borderBottomWidth: 1, borderColor: '#E5E7EB' },
+  emptyText: { color: colors.textTertiary, fontSize: 14 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', padding: 12, borderBottomWidth: 1, borderColor: colors.text },
   left: { flex: 1 },
   right: { alignItems: 'flex-end' },
-  type: { fontSize: 14, fontWeight: '500', color: '#111827' },
-  date: { fontSize: 12, color: '#6B7280', marginTop: 2 },
-  amount: { fontSize: 14, fontWeight: '600', color: '#111827' },
+  type: { fontSize: 14, fontWeight: '500', color: colors.background },
+  date: { fontSize: 12, color: colors.textTertiary, marginTop: 2 },
+  amount: { fontSize: 14, fontWeight: '600', color: colors.background },
   status: { fontSize: 12, marginTop: 2, textTransform: 'capitalize' },
 });
 

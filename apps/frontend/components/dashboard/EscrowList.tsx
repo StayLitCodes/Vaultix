@@ -4,27 +4,8 @@ import { Button } from '@/components/ui/button';
 import EscrowCard from './EscrowCard';
 import { EscrowCardSkeleton } from '@/components/ui/EscrowCardSkeleton';
 import { ErrorFallback } from '@/components/ErrorFallback';
-
-// Define the interface here since we can't import from types yet
-interface IEscrow {
-  id: string;
-  title: string;
-  description: string;
-  amount: string;
-  asset: string;
-  creatorAddress: string;
-  counterpartyAddress: string;
-  deadline: string;
-  status: 'created' | 'funded' | 'confirmed' | 'released' | 'completed' | 'cancelled' | 'disputed';
-  createdAt: string;
-  updatedAt: string;
-  milestones?: Array<{
-    id: string;
-    title: string;
-    amount: string;
-    status: 'pending' | 'released';
-  }>;
-}
+import type { IEscrow } from '@/types/escrow';
+import { CanonicalEscrowStatus } from '@/utils/escrowStatus';
 
 interface EscrowListProps {
   escrows: IEscrow[];
@@ -32,7 +13,7 @@ interface EscrowListProps {
   isError: boolean;
   error?: unknown;
   refetch?: () => void;
-  activeTab: 'all' | 'active' | 'pending' | 'completed' | 'disputed';
+  activeTab: 'all' | CanonicalEscrowStatus;
   hasNextPage?: boolean;
   fetchNextPage?: () => void;
   isFetchingNextPage?: boolean;
@@ -90,17 +71,28 @@ const EscrowList: React.FC<EscrowListProps> = ({
       case 'all':
         emptyMessage = 'You have no escrow agreements yet.';
         break;
-      case 'active':
+      case CanonicalEscrowStatus.ACTIVE:
+      case CanonicalEscrowStatus.FUNDED:
         emptyMessage = 'You have no active escrow agreements.';
         break;
-      case 'pending':
+      case CanonicalEscrowStatus.CREATED:
         emptyMessage = 'You have no escrows pending confirmation.';
         break;
-      case 'completed':
+      case CanonicalEscrowStatus.COMPLETED:
+      case CanonicalEscrowStatus.RESOLVED:
         emptyMessage = 'You have no completed escrow agreements.';
         break;
-      case 'disputed':
+      case CanonicalEscrowStatus.DISPUTED:
         emptyMessage = 'You have no disputed escrow agreements.';
+        break;
+      case CanonicalEscrowStatus.EXPIRED:
+        emptyMessage = 'You have no expired escrow agreements.';
+        break;
+      case CanonicalEscrowStatus.REFUNDED:
+        emptyMessage = 'You have no refunded escrow agreements.';
+        break;
+      case CanonicalEscrowStatus.CANCELLED:
+        emptyMessage = 'You have no cancelled escrow agreements.';
         break;
       default:
         emptyMessage = 'No escrow agreements found.';

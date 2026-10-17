@@ -1,5 +1,6 @@
 import React from "react";
 import { Text, StyleSheet } from "react-native";
+import { colors } from '../theme';
 
 type Props = {
   timestamp?: number;
@@ -22,7 +23,7 @@ export default function CacheTimestamp({
 const styles = StyleSheet.create({
   text: {
     fontSize: 12,
-    color: '#a3a3a3',
+    color: colors.textSecondary,
     marginTop: 8,
   },
 });

@@ -1,0 +1,15 @@
+{
+  "default_branch": "main",
+  "branches": [
+    "fix/issue-554-mobile-replace-emoji-tab-icon-stubs-with-real",
+    "main"
+  ],
+  "parent": {
+    "fix/issue-554-mobile-replace-emoji-tab-icon-stubs-with-real": "main",
+    "main": null
+  },
+  "order": [
+    "main",
+    "fix/issue-554-mobile-replace-emoji-tab-icon-stubs-with-real"
+  ]
+}

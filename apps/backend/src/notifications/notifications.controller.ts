@@ -32,7 +32,8 @@ export class NotificationController {
 
   @Get('preferences')
   getPreferences(@Req() req: AuthenticatedRequest) {
-    return this.preferenceService.getUserPreferences(req.user.userId);
+    // Returns existing prefs, or seeds and returns defaults for users who never set any
+    return this.preferenceService.seedDefaultPreferences(req.user.userId);
   }
 
   @Patch('preferences')

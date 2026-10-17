@@ -1,31 +1,46 @@
-'use client';
+'use client'; // Next.js directive: this component runs on the client (uses state, localStorage, etc.)
 
 import React, { useState } from 'react';
-import { Bell, CheckCheck, X, Trash2, ChevronRight, Loader2 } from 'lucide-react';
-import { useNotifications } from '@/hooks/useNotifications';
-import { formatDistanceToNow } from '@/utils/date';
-import Link from 'next/link';
-import { motion, AnimatePresence } from 'framer-motion';
-import { toast } from 'sonner';
+import { Bell, CheckCheck, X, Trash2, ChevronRight, Loader2 } from 'lucide-react'; // Icons
+import { useNotifications } from '@/hooks/useNotifications'; // Custom hook providing notification data and actions
+import { formatDistanceToNow } from '@/utils/date'; // Formats a date as relative time (e.g. "5 minutes ago")
+import Link from 'next/link'; // Client-side navigation
+import { motion, AnimatePresence } from 'framer-motion'; // AnimatePresence lets the dropdown animate on exit as well
+import { toast } from 'sonner'; // Toast notifications for user feedback
 
+/**
+ * Props for NotificationBell.
+ */
 interface NotificationBellProps {
+  /** Extra classes applied to the root wrapper */
   className?: string;
 }
 
+/**
+ * NotificationBell
+ * A bell icon with an unread-count badge. Clicking it opens a dropdown panel
+ * showing the 10 most recent notifications, grouped by date
+ * (Today / Yesterday / Earlier), with actions to mark as read and dismiss.
+ */
 const NotificationBell: React.FC<NotificationBellProps> = ({ className = '' }) => {
+  // Whether the dropdown panel is open
   const [isOpen, setIsOpen] = useState(false);
+  // Notification data and actions from the custom hook
   const { notifications, unreadCount, isLoading, markAsRead, markAllAsRead, refetch } = useNotifications();
 
   // Limit to 10 most recent notifications in the dropdown
   const recentNotifications = notifications.slice(0, 10);
 
-  // Group notifications by date
+  // Group notifications by date into { Today: [...], Yesterday: [...], Earlier: [...] }
   const groupedNotifications = recentNotifications.reduce((acc, notification) => {
     const date = new Date(notification.createdAt);
     const now = new Date();
+    // Compute yesterday's date by subtracting one day from now
     const yesterday = new Date(now);
     yesterday.setDate(yesterday.getDate() - 1);
 
+    // Default group; overridden below if the date matches today or yesterday.
+    // toDateString() compares calendar days while ignoring the time of day.
     let group = 'Earlier';
     if (date.toDateString() === now.toDateString()) {
       group = 'Today';
@@ -33,6 +48,7 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ className = '' }) =
       group = 'Yesterday';
     }
 
+    // Create the group's array on first use, then add this notification to it
     if (!acc[group]) {
       acc[group] = [];
     }
@@ -40,6 +56,10 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ className = '' }) =
     return acc;
   }, {} as Record<string, typeof notifications>);
 
+  /**
+   * Returns an emoji icon for a given notification event type.
+   * Unknown event types fall back to a generic bell.
+   */
   const getEventIcon = (eventType: string) => {
     switch (eventType) {
       case 'ESCROW_CREATED':
@@ -69,6 +89,10 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ className = '' }) =
     }
   };
 
+  /**
+   * Returns a human-readable message for a given event type.
+   * Falls back to a generic "Notification" if the type isn't recognized.
+   */
   const getEventMessage = (eventType: string) => {
     const messages: Record<string, string> = {
       ESCROW_CREATED: 'New escrow created',
@@ -86,23 +110,41 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ className = '' }) =
     return messages[eventType] || 'Notification';
   };
 
+  /**
+   * Called when a notification link is clicked.
+   * Marks the notification as read (if it isn't already) and closes the dropdown.
+   * Navigation itself is handled by the surrounding <Link>.
+   */
   const handleNotificationClick = async (notificationId: string) => {
     const matched = notifications.find(n => n.id === notificationId);
+    // readAt is only set once a notification has been read
     if (matched && !matched.readAt) {
       await markAsRead(notificationId);
     }
     setIsOpen(false);
   };
 
+  /**
+   * Marks every notification as read and shows a confirmation toast.
+   */
   const handleMarkAllAsRead = async () => {
     await markAllAsRead();
     toast.success('All notifications marked as read');
   };
 
+  /**
+   * Dismisses a single notification.
+   * The dismissed ID is stored in localStorage (client-side only, per browser),
+   * then the list is refetched so the hook can filter it out.
+   * preventDefault/stopPropagation stop the click from also triggering
+   * the parent <Link> navigation.
+   */
   const handleDismissItem = (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
+    // Read the existing list of dismissed IDs (or start with an empty list)
     const currentDismissed = JSON.parse(localStorage.getItem('vaultix_dismissed_notifications') || '[]');
+    // Append the new ID and save it back
     localStorage.setItem('vaultix_dismissed_notifications', JSON.stringify([...currentDismissed, id]));
     refetch();
     toast.success('Notification dismissed');
@@ -110,13 +152,14 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ className = '' }) =
 
   return (
     <div className={`relative ${className}`}>
-      {/* Bell Icon */}
+      {/* Bell Icon: toggles the dropdown */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="relative p-2 text-gray-300 hover:text-white transition-colors cursor-pointer"
         aria-label="Notifications"
       >
         <Bell className="w-5.5 h-5.5" />
+        {/* Unread badge: only shown when there are unread notifications; caps the display at 99+ */}
         {unreadCount > 0 && (
           <span className="absolute top-1 right-1 inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold leading-none text-white transform translate-x-1/4 -translate-y-1/4 bg-red-500 rounded-full">
             {unreadCount > 99 ? '99+' : unreadCount}
@@ -128,13 +171,15 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ className = '' }) =
       <AnimatePresence>
         {isOpen && (
           <>
-            {/* Backdrop */}
+            {/* Backdrop: full-screen click catcher that closes the panel when clicked outside.
+                Slightly dimmed on mobile, transparent on desktop. */}
             <div 
               className="fixed inset-0 z-40 bg-black/10 md:bg-transparent" 
               onClick={() => setIsOpen(false)}
             />
             
-            {/* Panel (Full width on mobile, w-96 on desktop) */}
+            {/* Panel (Full width on mobile, w-96 on desktop).
+                Animates in/out by fading, sliding up/down and scaling slightly. */}
             <motion.div
               initial={{ opacity: 0, y: 15, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -142,7 +187,7 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ className = '' }) =
               transition={{ duration: 0.2, ease: 'easeOut' }}
               className="fixed md:absolute right-0 left-0 md:left-auto top-16 md:top-auto mt-2 w-full md:w-96 bg-[#12121a] border border-white/5 md:rounded-xl shadow-2xl z-50 overflow-hidden"
             >
-              {/* Header */}
+              {/* Header: title, "Mark all read" button (only when unread exist) and close button */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
                 <h3 className="text-sm font-semibold text-white">Recent Notifications</h3>
                 <div className="flex items-center gap-3">
@@ -165,7 +210,7 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ className = '' }) =
                 </div>
               </div>
 
-              {/* View all link */}
+              {/* View all link: goes to the full notifications page and closes the panel */}
               <div className="px-4 py-2 border-b border-white/5 bg-white/[0.01]">
                 <Link
                   href="/notifications"
@@ -177,61 +222,76 @@ const NotificationBell: React.FC<NotificationBellProps> = ({ className = '' }) =
                 </Link>
               </div>
 
-              {/* Content */}
+              {/* Content: scrollable list (max 50% of viewport height).
+                  Renders one of three states: loading, empty, or grouped list. */}
               <div className="max-h-[50vh] overflow-y-auto divide-y divide-white/5">
                 {isLoading ? (
+                  // Loading state
                   <div className="p-8 text-center text-gray-500">
                     <Loader2 className="animate-spin h-5 w-5 border-b-2 border-purple-500 mx-auto mb-2" />
                     <p className="text-xs">Loading notifications...</p>
                   </div>
                 ) : recentNotifications.length === 0 ? (
+                  // Empty state: no notifications at all
                   <div className="p-8 text-center text-gray-500">
                     <Bell className="w-8 h-8 mx-auto mb-2 opacity-30 text-purple-400" />
                     <p className="text-xs font-semibold text-white">No notifications yet</p>
                     <p className="text-[11px] mt-1">We&apos;ll notify you when there&apos;s something new</p>
                   </div>
                 ) : (
+                  // Grouped list: one section per date group (Today / Yesterday / Earlier)
                   Object.entries(groupedNotifications).map(([group, groupNotifications]) => (
                     <div key={group}>
+                      {/* Group label */}
                       <div className="px-4 py-1 bg-white/[0.02] border-b border-white/5">
                         <span className="text-[9px] font-bold text-gray-500 uppercase tracking-wider">
                           {group}
                         </span>
                       </div>
+                      {/* Notifications within this group */}
                       {groupNotifications.map((notification) => (
+                        // Row: `group` enables showing the dismiss button on hover.
+                        // Unread notifications get a subtle purple background.
                         <div
                           key={notification.id}
                           className={`relative group flex items-start justify-between gap-2 px-4 py-3 hover:bg-white/[0.02] transition-colors ${
                             !notification.readAt ? 'bg-purple-950/5' : ''
                           }`}
                         >
+                          {/* Clickable area: links to the related escrow, or to the dashboard
+                              if the notification isn't tied to an escrow */}
                           <Link
                             href={notification.escrowId ? `/escrow/${notification.escrowId}` : '/dashboard'}
                             onClick={() => handleNotificationClick(notification.id)}
                             className="flex-1 flex gap-3 min-w-0"
                           >
+                            {/* Event emoji */}
                             <span className="text-base flex-shrink-0 mt-0.5">
                               {getEventIcon(notification.eventType)}
                             </span>
                             <div className="flex-1 min-w-0">
+                              {/* Event message */}
                               <p className="text-xs font-medium text-white truncate">
                                 {getEventMessage(notification.eventType)}
                               </p>
+                              {/* Shortened escrow ID (first 8 chars), if present */}
                               {notification.escrowId && (
                                 <p className="text-[10px] text-gray-500 mt-0.5">
                                   Escrow: {notification.escrowId.slice(0, 8)}...
                                 </p>
                               )}
+                              {/* Relative timestamp */}
                               <p className="text-[9px] text-gray-600 mt-1">
                                 {formatDistanceToNow(new Date(notification.createdAt))}
                               </p>
                             </div>
+                            {/* Unread indicator dot */}
                             {!notification.readAt && (
                               <span className="w-1.5 h-1.5 bg-purple-500 rounded-full flex-shrink-0 mt-1.5" />
                             )}
                           </Link>
 
-                          {/* Per-item dismiss button */}
+                          {/* Per-item dismiss button: hidden until the row is hovered */}
                           <button
                             onClick={(e) => handleDismissItem(e, notification.id)}
                             className="opacity-0 group-hover:opacity-100 p-1 text-gray-500 hover:text-white rounded transition-all cursor-pointer flex-shrink-0"

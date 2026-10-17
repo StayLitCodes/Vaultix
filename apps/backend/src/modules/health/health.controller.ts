@@ -1,5 +1,5 @@
 import { TypeOrmHealthIndicator } from '@nestjs/terminus';
-import { EscrowGateway } from '../../gateways/escrow.gateway';
+import { EventsGateway } from '../../gateways/events.gateway';
 import { Controller, Get, Logger, VERSION_NEUTRAL } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -9,13 +9,14 @@ import {
   HealthCheckError,
   HealthIndicatorResult,
 } from '@nestjs/terminus';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { User } from '../user/entities/user.entity';
 import { Escrow, EscrowStatus } from '../escrow/entities/escrow.entity';
 import { StellarService } from '../../services/stellar.service';
 import { EmailService } from '../../email/email.service';
 import { IpfsProviderService } from '../ipfs/services/ipfs-provider.service';
+import { getDatabaseType } from '../../config/database.config';
 
 interface HealthInfo {
   version: string;
@@ -59,6 +60,17 @@ interface LivenessResponse {
   uptime: number;
 }
 
+interface DatabaseHealthResponse {
+  status: DependencyStatus;
+  databaseType: 'postgres' | 'better-sqlite3';
+  responseTimeMs: number;
+  migrations: {
+    pending: boolean;
+    total: number;
+  } | null;
+  error?: string;
+}
+
 // Version-neutral so orchestrator probes can hit /health directly
 @Controller({ path: 'health', version: VERSION_NEUTRAL })
 export class HealthController {
@@ -69,7 +81,7 @@ export class HealthController {
     private health: HealthCheckService,
     private readonly typeOrmHealthIndicator: TypeOrmHealthIndicator,
     private readonly stellarService: StellarService,
-    private readonly escrowGateway: EscrowGateway,
+    private readonly eventsGateway: EventsGateway,
     private readonly emailService: EmailService,
     private readonly ipfsProviderService: IpfsProviderService,
     private readonly configService: ConfigService,
@@ -77,6 +89,8 @@ export class HealthController {
     private userRepository: Repository<User>,
     @InjectRepository(Escrow)
     private escrowRepository: Repository<Escrow>,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {
     this.checkTimeoutMs = this.configService.get<number>(
       'HEALTH_CHECK_TIMEOUT_MS',
@@ -140,6 +154,48 @@ export class HealthController {
     ]);
   }
 
+  /**
+   * Database-specific health: connection status, which driver is active,
+   * and whether any migrations are still pending.
+   */
+  @Get('database')
+  async database(): Promise<DatabaseHealthResponse> {
+    const startedAt = Date.now();
+    const databaseType = getDatabaseType();
+
+    try {
+      await this.dataSource.query('SELECT 1');
+      let migrations: DatabaseHealthResponse['migrations'] = null;
+      try {
+        const pending = await this.dataSource.showMigrations();
+        migrations = { pending, total: this.dataSource.migrations.length };
+      } catch (migrationError) {
+        this.logger.warn(
+          `Unable to determine migration status: ${
+            migrationError instanceof Error
+              ? migrationError.message
+              : String(migrationError)
+          }`,
+        );
+      }
+
+      return {
+        status: 'up',
+        databaseType,
+        responseTimeMs: Date.now() - startedAt,
+        migrations,
+      };
+    } catch (error) {
+      return {
+        status: 'down',
+        databaseType,
+        responseTimeMs: Date.now() - startedAt,
+        migrations: null,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   @Get('info')
   async info(): Promise<HealthInfo> {
     const activeEscrows = await this.escrowRepository.count({
@@ -152,7 +208,7 @@ export class HealthController {
       nodeVersion: process.version,
       uptime: process.uptime(),
       network: process.env.STELLAR_NETWORK || 'testnet',
-      databaseType: 'sqlite',
+      databaseType: getDatabaseType(),
       metrics: {
         activeEscrows,
         totalUsers,
@@ -242,7 +298,7 @@ export class HealthController {
   }
 
   private probeWebSocket(): DependencyHealth {
-    return { status: this.escrowGateway.isHealthy() ? 'up' : 'down' };
+    return { status: this.eventsGateway.isHealthy() ? 'up' : 'down' };
   }
 
   private async probeEmail(): Promise<DependencyHealth> {
@@ -308,7 +364,7 @@ export class HealthController {
   }
 
   private checkWebSocket(): HealthIndicatorResult {
-    const healthy = this.escrowGateway.isHealthy();
+    const healthy = this.eventsGateway.isHealthy();
     const result: HealthIndicatorResult = {
       websocket: { status: healthy ? 'up' : 'down' },
     };

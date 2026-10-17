@@ -66,6 +66,13 @@ export class PreferenceService {
         pref.enabled = update.enabled;
         pref.eventTypes = update.eventTypes;
       }
+      if (update.soundEnabled !== undefined) {
+        pref.soundEnabled = update.soundEnabled;
+      }
+
+      if (update.digestEnabled !== undefined) {
+        pref.digestEnabled = update.digestEnabled;
+      }
 
       const saved = await this.repo.save(pref);
       results.push(saved);

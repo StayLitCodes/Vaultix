@@ -1,6 +1,7 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import EscrowCard from './EscrowCard';
+import { CanonicalEscrowStatus } from '@/utils/escrowStatus';
 
 const mockEscrow: any = {
   id: '1',
@@ -11,7 +12,7 @@ const mockEscrow: any = {
   creatorAddress: 'G...',
   counterpartyAddress: 'G1234567890abcdef',
   deadline: '2025-12-31T23:59:59Z',
-  status: 'funded',
+  status: CanonicalEscrowStatus.FUNDED,
   createdAt: '2025-01-01T00:00:00Z',
   updatedAt: '2025-01-01T00:00:00Z',
 };
@@ -34,7 +35,7 @@ describe('EscrowCard', () => {
   });
 
   it('renders correct status colors for disputed status', () => {
-    const disputedEscrow = { ...mockEscrow, status: 'disputed' };
+    const disputedEscrow = { ...mockEscrow, status: CanonicalEscrowStatus.DISPUTED };
     render(<EscrowCard escrow={disputedEscrow} />);
     const badge = screen.getByText('Disputed');
     expect(badge).toHaveClass('bg-red-100');
@@ -47,14 +48,53 @@ describe('EscrowCard', () => {
     expect(link).toHaveAttribute('href', '/escrow/1');
   });
 
-  it('shows Confirm Delivery and Dispute actions for confirmed status', () => {
-    const confirmedEscrow = { ...mockEscrow, status: 'confirmed' };
-    render(<EscrowCard escrow={confirmedEscrow} />);
-    
+  it('shows Confirm Delivery and Dispute actions for an active escrow', () => {
+    const activeEscrow = { ...mockEscrow, status: CanonicalEscrowStatus.ACTIVE };
+    render(<EscrowCard escrow={activeEscrow} />);
+
     const confirmLink = screen.getByText('Confirm Delivery');
     const disputeLink = screen.getByText('Dispute');
-    
+
     expect(confirmLink).toHaveAttribute('href', '/escrow/1/confirm');
     expect(disputeLink).toHaveAttribute('href', '/escrow/1/dispute');
+  });
+
+  it('does not offer financial actions for terminal statuses', () => {
+    for (const status of [
+      CanonicalEscrowStatus.COMPLETED,
+      CanonicalEscrowStatus.CANCELLED,
+      CanonicalEscrowStatus.EXPIRED,
+      CanonicalEscrowStatus.REFUNDED,
+      CanonicalEscrowStatus.RESOLVED,
+    ]) {
+      const { unmount } = render(<EscrowCard escrow={{ ...mockEscrow, status }} />);
+      expect(screen.queryByText('Confirm Delivery')).not.toBeInTheDocument();
+      expect(screen.queryByText('Dispute')).not.toBeInTheDocument();
+      unmount();
+    }
+  });
+
+  it('does not offer financial actions for an unknown status', () => {
+    const unknownEscrow = {
+      ...mockEscrow,
+      status: CanonicalEscrowStatus.UNKNOWN,
+    };
+    render(<EscrowCard escrow={unknownEscrow} />);
+
+    expect(screen.getByText('Unknown')).toBeInTheDocument();
+    expect(screen.queryByText('Confirm Delivery')).not.toBeInTheDocument();
+    expect(screen.queryByText('Dispute')).not.toBeInTheDocument();
+  });
+
+  it('renders an explicit label for an expired escrow', () => {
+    const expiredEscrow = {
+      ...mockEscrow,
+      status: CanonicalEscrowStatus.EXPIRED,
+    };
+    render(<EscrowCard escrow={expiredEscrow} />);
+
+    const badge = screen.getByText('Expired');
+    expect(badge).toHaveClass('bg-amber-100');
+    expect(badge).toHaveClass('text-amber-800');
   });
 });

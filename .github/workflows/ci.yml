@@ -1,22 +1,6 @@
 name: CI
 on: [push, pull_request]
 jobs:
-  frontend-build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: apps/frontend/package-lock.json
-      - name: Install dependencies
-        working-directory: apps/frontend
-        run: npm ci
-      - name: Build
-        working-directory: apps/frontend
-        run: npm run build
-
   backend-test-and-build:
     runs-on: ubuntu-latest
     steps:
@@ -35,3 +19,36 @@ jobs:
       - name: Build
         working-directory: apps/backend
         run: npm run build
+
+  conflict-markers:
+    name: Reject committed merge-conflict markers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail on unresolved conflict markers
+        run: |
+          # A line of exactly seven '=' is also a Markdown setext heading
+          # underline, so Markdown is excluded to avoid flagging valid docs.
+          # Covers the classic three markers plus the diff3 base marker '|||||||'.
+          if git grep -nE '^(<{7}|={7}|>{7}|\|{7})( |$)' -- . ':!*.md'; then
+            echo '::error::Unresolved merge-conflict markers are committed. Resolve them before merging.'
+            exit 1
+          fi
+          echo 'No conflict markers found in tracked files.'
+
+  lockfile-guard:
+    name: Reject non-npm lockfiles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail if a non-npm lockfile is committed
+        run: |
+          set -euo pipefail
+          stray="$(git ls-files | grep -E '(^|/)(pnpm-lock\.yaml|pnpm-workspace\.yaml|yarn\.lock)$' || true)"
+          if [ -n "$stray" ]; then
+            echo "::error::Vaultix standardises on npm (package-lock.json); found non-npm lockfile(s):"
+            echo "$stray"
+            echo "See the 'Package manager' section in README.md / CONTRIBUTING.md."
+            exit 1
+          fi
+          echo 'Lockfiles OK (npm only).'

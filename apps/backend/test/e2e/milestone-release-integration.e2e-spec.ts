@@ -24,7 +24,7 @@ import { User } from '../../src/modules/user/entities/user.entity';
 import { SorobanClientService } from '../../src/services/stellar/soroban-client.service';
 import { ConfigService } from '@nestjs/config';
 import { ConsistencyCheckerService } from '../../src/modules/admin/services/consistency-checker.service';
-import { EscrowGateway } from '../../src/gateways/escrow.gateway';
+import { EventsGateway } from '../../src/gateways/events.gateway';
 import { NotificationService } from '../../src/notifications/notifications.service';
 
 /**
@@ -32,7 +32,7 @@ import { NotificationService } from '../../src/notifications/notifications.servi
  *
  * Uses a real in-memory SQLite database with actual TypeORM entities,
  * the real StellarEventListenerService, and mocked external dependencies
- * (SorobanClient, EscrowGateway, NotificationService).
+ * (SorobanClient, EventsGateway, NotificationService).
  *
  * Flow:
  * 1. Seed escrow + conditions + parties in DB
@@ -51,13 +51,13 @@ describe('Milestone Release Integration (e2e-style)', () => {
   let escrowEventRepo: Repository<EscrowEvent>;
   let partyRepo: Repository<Party>;
   let stellarEventRepo: Repository<StellarEvent>;
-  let escrowGateway: { broadcastMilestoneReleased: jest.Mock };
+  let eventsGateway: { emitEscrowEvent: jest.Mock };
   let notificationService: { handleEscrowEvent: jest.Mock };
 
   const escrowId = 'test-escrow-id';
 
   beforeEach(async () => {
-    escrowGateway = { broadcastMilestoneReleased: jest.fn() };
+    eventsGateway = { emitEscrowEvent: jest.fn() };
     notificationService = {
       handleEscrowEvent: jest.fn().mockResolvedValue(undefined),
     };
@@ -98,7 +98,7 @@ describe('Milestone Release Integration (e2e-style)', () => {
           provide: ConsistencyCheckerService,
           useValue: { checkConsistency: jest.fn().mockResolvedValue({}) },
         },
-        { provide: EscrowGateway, useValue: escrowGateway },
+        { provide: EventsGateway, useValue: eventsGateway },
         { provide: NotificationService, useValue: notificationService },
       ],
     }).compile();
@@ -354,12 +354,10 @@ describe('Milestone Release Integration (e2e-style)', () => {
     expect(escrowEvents[0].actorId).toBe('stellar-network');
 
     // 4. Verify WebSocket broadcast
-    expect(escrowGateway.broadcastMilestoneReleased).toHaveBeenCalledWith(
-      escrowId,
+    expect(eventsGateway.emitEscrowEvent).toHaveBeenCalledWith(
       expect.objectContaining({
-        milestoneIndex: 0,
-        amount: 100,
-        txHash: 'tx-milestone-1',
+        escrowId,
+        eventType: EscrowEventType.MILESTONE_RELEASED,
       }),
     );
 

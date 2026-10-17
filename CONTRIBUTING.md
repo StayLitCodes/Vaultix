@@ -32,15 +32,15 @@ cd vaultix
 Follow the setup instructions in [README.md](README.md) to install dependencies and configure your environment:
 
 ```bash
-# Install dependencies
-pnpm install
+# Install dependencies (root tooling + git hooks)
+npm install
 
 # Set up environment variables
 cp apps/backend/.env.example apps/backend/.env
 # Edit .env with your configuration
 
 # Run database migrations
-cd apps/backend && pnpm typeorm migration:run
+cd apps/backend && npm run typeorm -- migration:run
 ```
 
 ### 3. Find an Issue
@@ -52,6 +52,22 @@ Browse our [GitHub Issues](https://github.com/Vaultix/vaultix/issues) to find so
 - **Priority: High**: Important issues for the roadmap
 
 **Tip**: Comment on an issue before starting to ensure it's available and no one else is working on it.
+
+## Package Manager
+
+Vaultix standardises on **npm** (the version bundled with Node.js 20+).
+
+- Each package keeps its own `package-lock.json`; these are the only lockfiles
+  committed.
+- `pnpm-lock.yaml`, `pnpm-workspace.yaml` and `yarn.lock` must not be added -
+  a `lockfile-guard` CI job fails the build if they are.
+- The root `package.json` pins the manager and Node version via the
+  `packageManager` and `engines` fields.
+
+```bash
+npm install                        # install root tooling
+npm --prefix apps/backend install  # install an app's dependencies
+```
 
 ## Development Workflow
 
@@ -89,7 +105,12 @@ chore/update-dependencies             # Maintenance tasks
 4. **Run checks locally**:
 
    ```bash
-   pnpm turbo run lint test build
+   npm --prefix apps/backend run lint
+   npm --prefix apps/frontend run lint
+   npm --prefix apps/backend test
+   npm --prefix apps/frontend test
+   npm --prefix apps/backend run build
+   npm --prefix apps/frontend run build
    ```
 
 5. **Keep your branch updated**:
@@ -153,9 +174,9 @@ Add detailed prerequisites section and troubleshooting tips
 Ensure your PR meets these criteria:
 
 - [ ] **Tests**: Added/updated unit or E2E tests for new functionality
-- [ ] **Linting**: Code passes `pnpm turbo run lint` with no errors
-- [ ] **TypeScript**: No type errors (`pnpm turbo run type-check` if configured)
-- [ ] **Build**: Project builds successfully (`pnpm turbo run build`)
+- [ ] **Linting**: Code passes `npm --prefix apps/<app> run lint` with no errors
+- [ ] **TypeScript**: No type errors (each app's build runs `tsc`)
+- [ ] **Build**: Each app builds successfully (`npm --prefix apps/<app> run build`)
 - [ ] **Description**: Clear description explaining the "what" and "why"
 - [ ] **Issue Link**: Reference related GitHub issue (e.g., "Closes #123")
 - [ ] **Screenshots**: For UI changes, include before/after screenshots
@@ -283,12 +304,24 @@ Organize code logically following the existing structure:
 ```
 apps/backend/src/
 ├── modules/        # Feature modules (auth, escrow, stellar, etc.)
-├── entities/       # TypeORM database entities
 ├── guards/         # Auth & authorization guards
 ├── middleware/     # Custom middleware
 ├── services/       # Business logic
 └── utils/          # Shared utilities
 ```
+
+### Entity Locations
+
+The canonical entity files live within each module (co-located with their feature), not in a top-level `src/entities/` directory:
+
+| Entity | Canonical Location |
+|--------|-------------------|
+| Escrow | `src/modules/escrow/entities/escrow.entity.ts` |
+| Dispute | `src/modules/escrow/entities/dispute.entity.ts` |
+| Condition | `src/modules/escrow/entities/condition.entity.ts` |
+| Notification | `src/notifications/entities/notification.entity.ts` |
+
+Do not create or import from `src/entities/` — that directory has been removed. When working with backend entities, always reference the module-co-located canonical file and register it in `src/app.module.ts` / `src/data-source.ts`.
 
 **Frontend:**
 
@@ -315,17 +348,14 @@ apps/frontend/
 ### Running Tests
 
 ```bash
-# All tests across monorepo
-pnpm turbo run test
+# Backend tests
+cd apps/backend && npm test
 
-# Backend tests only
-cd apps/backend && pnpm test
-
-# Frontend tests only
-cd apps/frontend && pnpm test
+# Frontend tests
+cd apps/frontend && npm test
 
 # E2E tests
-pnpm turbo run test:e2e
+cd apps/frontend && npm run test:e2e
 
 # Contract tests
 cd apps/onchain && cargo test
@@ -623,34 +653,45 @@ const url = `${API_BASE_URL}${API_VERSION_PREFIX}${path}`;
 
 ## Monorepo Tips
 
-### Filtering Commands
+### Running a command in one app
 
 ```bash
-# Build only backend
-pnpm turbo run build --filter=backend
+# Build the backend
+npm --prefix apps/backend run build
 
-# Build backend and its dependencies
-pnpm turbo run build --filter=backend...
+# Run the frontend dev server
+npm --prefix apps/frontend run dev
 
-# Run dev server for frontend only
-pnpm turbo run dev --filter=frontend
-
-# Test specific app
-pnpm turbo run test --filter=@vaultix/backend
+# Test a specific app
+npm --prefix apps/backend test
 ```
 
 ### Adding Dependencies
 
 ```bash
-# Add to specific app
-cd apps/backend && pnpm add @nestjs/config
+# Add to a specific app
+cd apps/backend && npm install @nestjs/config
 
-# Add dev dependency to frontend
-cd apps/frontend && pnpm add -D @types/node
+# Add a dev dependency to an app
+cd apps/frontend && npm install -D @types/node
 
-# Add to workspace root (shared)
-pnpm add axios
+# Add to the repository root (shared tooling)
+npm install axios
 ```
+
+## Dependency Audits & Smoke Tests
+
+- **Dependency audit** - `./scripts/audit.sh` runs `npm audit` (JS apps) and
+  `cargo audit` (`apps/onchain`) and fails on HIGH/CRITICAL advisories. It runs
+  weekly in CI and whenever a lockfile changes. Install `cargo-audit` locally
+  with `cargo install cargo-audit`.
+- **API smoke test** - `./scripts/smoke-test.sh <base-url>` verifies health and
+  auth endpoints (status codes and latency) and exits non-zero on failure. It is
+  used by the `API Smoke Test` workflow and for staging/production verification.
+
+Both scripts live in `scripts/` and require `curl` (plus Node.js for the audit
+summariser). See the README's "Dependency Audit & Health Checks" section for the
+full option list.
 
 ## Questions?
 

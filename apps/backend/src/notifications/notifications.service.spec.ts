@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method */
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationService } from './notifications.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -17,7 +18,6 @@ describe('NotificationService', () => {
   let repo: jest.Mocked<Repository<Notification>>;
   let preferenceService: jest.Mocked<PreferenceService>;
   let emailSender: jest.Mocked<EmailSender>;
-  let webhookSender: jest.Mocked<WebhookSender>;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -59,7 +59,6 @@ describe('NotificationService', () => {
     repo = module.get(getRepositoryToken(Notification));
     preferenceService = module.get(PreferenceService);
     emailSender = module.get(EmailSender);
-    webhookSender = module.get(WebhookSender);
   });
 
   const mockPref = {
@@ -94,6 +93,23 @@ describe('NotificationService', () => {
       expect(repo.save).toHaveBeenCalled();
     });
 
+    it('should persist one record when multiple channels are enabled', async () => {
+      preferenceService.getUserPreferences.mockResolvedValue([
+        mockPref,
+        { ...mockPref, channel: NotificationChannel.WEBHOOK },
+      ] as any);
+      repo.create.mockReturnValue(mockNotification as any);
+
+      await service.handleEscrowEvent(
+        'u1',
+        NotificationEventType.ESCROW_CREATED,
+        { escrowId: 'e1' },
+        'ESCROW_CREATED:e1:actor:u1:1',
+      );
+
+      expect(repo.save).toHaveBeenCalledTimes(1);
+    });
+
     it('should skip if preference disabled', async () => {
       preferenceService.getUserPreferences.mockResolvedValue([
         { ...mockPref, enabled: false },
@@ -120,6 +136,18 @@ describe('NotificationService', () => {
       expect(emailSender.send).toHaveBeenCalledWith(mockNotification);
       expect(mockNotification.status).toBe(NotificationStatus.SENT);
       expect(repo.save).toHaveBeenCalledWith(mockNotification);
+    });
+
+    it('should skip email dispatch when the user opted into the digest', async () => {
+      repo.find.mockResolvedValue([mockNotification] as any);
+      preferenceService.getUserPreferences.mockResolvedValue([
+        { ...mockPref, digestEnabled: true },
+      ] as any);
+
+      await service.processPendingNotifications();
+
+      expect(emailSender.send).not.toHaveBeenCalled();
+      expect(mockNotification.status).toBe(NotificationStatus.SENT);
     });
 
     it('should increment retryCount on failure', async () => {

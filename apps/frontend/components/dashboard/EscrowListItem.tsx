@@ -2,24 +2,28 @@ import React, { memo } from "react";
 import Link from "next/link";
 import { useCurrency } from "@/context/CurrencyContext";
 import { useFiatPrice } from "@/hooks/useFiatPrice";
+import { CanonicalEscrowStatus, escrowStatusLabel } from "@/utils/escrowStatus";
 
 interface IEscrow {
   id: string;
   title: string;
   amount: string;
   asset: string;
-  status: string;
+  status: CanonicalEscrowStatus;
   deadline: string;
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  created: "bg-blue-100 text-blue-800",
-  funded: "bg-indigo-100 text-indigo-800",
-  confirmed: "bg-yellow-100 text-yellow-800",
-  completed: "bg-green-100 text-green-800",
-  cancelled: "bg-gray-100 text-gray-800",
-  disputed: "bg-red-100 text-red-800",
-  expired: "bg-orange-100 text-orange-800",
+const STATUS_COLORS: Record<CanonicalEscrowStatus, string> = {
+  [CanonicalEscrowStatus.CREATED]: "bg-blue-100 text-blue-800",
+  [CanonicalEscrowStatus.FUNDED]: "bg-indigo-100 text-indigo-800",
+  [CanonicalEscrowStatus.ACTIVE]: "bg-indigo-100 text-indigo-800",
+  [CanonicalEscrowStatus.COMPLETED]: "bg-green-100 text-green-800",
+  [CanonicalEscrowStatus.RESOLVED]: "bg-green-100 text-green-800",
+  [CanonicalEscrowStatus.CANCELLED]: "bg-gray-100 text-gray-800",
+  [CanonicalEscrowStatus.REFUNDED]: "bg-gray-100 text-gray-800",
+  [CanonicalEscrowStatus.DISPUTED]: "bg-red-100 text-red-800",
+  [CanonicalEscrowStatus.EXPIRED]: "bg-orange-100 text-orange-800",
+  [CanonicalEscrowStatus.UNKNOWN]: "bg-gray-100 text-gray-800",
 };
 
 const formatFiat = (amount: number, currency: string) => {
@@ -37,8 +41,7 @@ const EscrowListItem = memo(function EscrowListItem({
   const { showFiat, currency } = useCurrency();
   const { prices } = useFiatPrice();
 
-  const colorClass =
-    STATUS_COLORS[escrow.status] ?? "bg-gray-100 text-gray-800";
+  const colorClass = STATUS_COLORS[escrow.status];
 
   let fiatDisplay = null;
   if (showFiat && escrow.asset === 'XLM' && prices[currency]) {
@@ -63,7 +66,7 @@ const EscrowListItem = memo(function EscrowListItem({
           </p>
         </div>
         <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${colorClass}`}>
-          {escrow.status}
+          {escrowStatusLabel(escrow.status)}
         </span>
       </div>
       <p className="mt-2 text-xs text-gray-400">

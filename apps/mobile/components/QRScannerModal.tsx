@@ -16,6 +16,7 @@ import {
 
 import { processScannedQRCode } from "../services/qrScanner";
 import ScanResultBanner from "./ScanResultBanner";
+import { colors } from '../theme';
 
 type Props = {
   visible: boolean;
@@ -86,16 +87,19 @@ export default function QRScannerModal({
 
   if (permission && !permission.granted) {
     return (
-      <Modal visible={visible} transparent>
+      <Modal visible={visible} transparent onRequestClose={onClose}>
         <View style={styles.permissionBackdrop}>
-          <View style={styles.permissionCard}>
-            <Text style={styles.permissionTitle}>
+          <View style={styles.permissionCard} accessibilityViewIsModal>
+            <Text style={styles.permissionTitle} accessibilityRole="header">
               Camera access denied
             </Text>
 
             <TouchableOpacity
               onPress={onClose}
               style={styles.permissionButton}
+              accessibilityRole="button"
+              accessibilityLabel="Close QR scanner"
+              accessibilityHint="Camera access was denied. Closes the scanner and returns to the previous screen"
             >
               <Text style={styles.permissionButtonText}>
                 Close
@@ -108,19 +112,21 @@ export default function QRScannerModal({
   }
 
   return (
-    <Modal visible={visible} animationType="slide">
-      <View style={styles.scannerContainer}>
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={styles.scannerContainer} accessibilityViewIsModal>
 
-        {permission?.granted && (
-          <CameraView
-            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-            onBarcodeScanned={handleScan}
-            style={{ flex: 1 }}
-          />
-        )}
+        <CameraView
+          style={styles.camera}
+          facing="back"
+          barcodeScannerSettings={{
+            barcodeTypes: ['qr'],
+          }}
+          onBarcodeScanned={hasScanned ? undefined : handleScan}
+          accessibilityLabel="Camera viewfinder. Point it at a Stellar address or escrow QR code"
+        />
 
         <View style={styles.header}>
-          <Text style={styles.headerText}>
+          <Text style={styles.headerText} accessibilityRole="header">
             Scan Stellar Address or Escrow ID
           </Text>
 
@@ -136,6 +142,9 @@ export default function QRScannerModal({
           <TouchableOpacity
             onPress={onClose}
             style={styles.cancelButton}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel scanning"
+            accessibilityHint="Closes the QR scanner without scanning a code"
           >
             <Text style={styles.cancelButtonText}>
               Cancel
@@ -150,34 +159,40 @@ export default function QRScannerModal({
 const styles = StyleSheet.create({
   permissionBackdrop: {
     alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    backgroundColor: colors.overlay,
     flex: 1,
     justifyContent: "center",
     paddingHorizontal: 24,
   },
   permissionCard: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: 16,
+    borderWidth: 1,
     padding: 24,
     width: "100%",
   },
   permissionTitle: {
+    color: colors.text,
     fontSize: 16,
     fontWeight: "600",
   },
   permissionButton: {
-    backgroundColor: "#000",
+    backgroundColor: colors.accent,
     borderRadius: 12,
     marginTop: 16,
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
   permissionButtonText: {
-    color: "#fff",
+    color: colors.onAccent,
     textAlign: "center",
   },
   scannerContainer: {
-    backgroundColor: "#000",
+    backgroundColor: colors.scrim,
+    flex: 1,
+  },
+  camera: {
     flex: 1,
   },
   header: {
@@ -188,7 +203,7 @@ const styles = StyleSheet.create({
     top: 64,
   },
   headerText: {
-    color: "#fff",
+    color: colors.text,
     fontSize: 18,
     fontWeight: "600",
     textAlign: "center",
@@ -201,11 +216,14 @@ const styles = StyleSheet.create({
     right: 0,
   },
   cancelButton: {
-    backgroundColor: "#fff",
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
     borderRadius: 16,
+    borderWidth: 1,
     paddingVertical: 16,
   },
   cancelButtonText: {
+    color: colors.text,
     fontWeight: "600",
     textAlign: "center",
   },

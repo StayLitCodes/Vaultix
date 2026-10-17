@@ -5,6 +5,7 @@ import {
   Logger,
   UnauthorizedException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -17,8 +18,13 @@ import { EmailVerification } from '../../user/entities/email-verification.entity
 import { UpdateProfileDto } from '../dto/profile.dto';
 import { IpfsService } from '../../ipfs/ipfs.service';
 import { EmailService } from '../../../email/email.service';
+import { EmailTemplatesService } from '../../../email/email-templates.service';
 import { PreferenceService } from '../../../notifications/preference.service';
 import { validateJwtSecret } from './jwt-validation.util';
+import {
+  AvatarUploadFile,
+  validateAvatarUpload,
+} from '../utils/avatar-upload.util';
 
 // Stellar SDK types for signature verification
 interface StellarKeypair {
@@ -34,6 +40,9 @@ interface StellarSdkModule {
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const StellarSdk: StellarSdkModule = require('stellar-sdk') as StellarSdkModule;
 
+/** Wallets must sign a challenge within this window (milliseconds). */
+const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -46,6 +55,7 @@ export class AuthService {
     private emailVerificationRepository: Repository<EmailVerification>,
     private ipfsService: IpfsService,
     private emailService: EmailService,
+    private emailTemplatesService: EmailTemplatesService,
     @Inject(forwardRef(() => PreferenceService))
     private preferenceService: PreferenceService,
   ) {}
@@ -55,7 +65,8 @@ export class AuthService {
   ): Promise<{ nonce: string; message: string }> {
     this.logger.log({ msg: 'Generating challenge', walletAddress });
     const nonce = crypto.randomBytes(16).toString('hex');
-    const message = `Sign this message to authenticate with Vaultix: ${nonce}`;
+    const message = this.buildChallengeMessage(nonce);
+    const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MS);
 
     let user = await this.userService.findByWalletAddress(walletAddress);
 
@@ -63,6 +74,7 @@ export class AuthService {
       user = await this.userService.create({
         walletAddress,
         nonce,
+        nonceExpiresAt: expiresAt,
       });
 
       // Seed default notification preferences for the new user. Failures
@@ -76,7 +88,9 @@ export class AuthService {
         );
       }
     } else {
-      user = await this.userService.update(user.id, { nonce });
+      // Storing the new nonce and expiry together invalidates any previously
+      // issued challenge for this wallet.
+      await this.userService.setChallengeNonce(user.id, nonce, expiresAt);
     }
 
     return { nonce, message };
@@ -98,7 +112,17 @@ export class AuthService {
       );
     }
 
-    const message = `Sign this message to authenticate with Vaultix: ${user.nonce}`;
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account is not active');
+    }
+
+    if (user.nonceExpiresAt && user.nonceExpiresAt.getTime() < Date.now()) {
+      throw new UnauthorizedException(
+        'Challenge expired. Please request a new one.',
+      );
+    }
+
+    const message = this.buildChallengeMessage(user.nonce);
 
     try {
       const verifier = StellarSdk.Keypair.fromPublicKey(publicKey);
@@ -113,7 +137,18 @@ export class AuthService {
       throw new UnauthorizedException('Signature verification failed');
     }
 
-    await this.userService.update(user.id, { nonce: undefined });
+    // Consume the exact challenge atomically. A replayed, superseded or
+    // concurrently-submitted challenge loses the conditional update and is
+    // rejected, so only one verification can ever succeed.
+    const consumed = await this.userService.consumeChallenge(
+      user.id,
+      user.nonce,
+    );
+    if (!consumed) {
+      throw new UnauthorizedException(
+        'Invalid challenge. Please request a new one.',
+      );
+    }
 
     const accessToken = this.generateAccessToken(user.id, walletAddress);
     const refreshToken = await this.generateRefreshToken(user.id);
@@ -126,24 +161,81 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
+  /**
+   * The supported wallet signing format. Both challenge issuance and
+   * verification derive the message from this single helper so the signed
+   * payload always matches, and the format stays stable for clients.
+   */
+  private buildChallengeMessage(nonce: string): string {
+    return `Sign this message to authenticate with Vaultix: ${nonce}`;
+  }
+
+  /**
+   * Rotate a refresh token atomically.
+   *
+   * The consumed token is deactivated and its successor is issued within a
+   * single serialised database transaction so that exactly one concurrent
+   * caller wins the race.
+   *
+   * @returns A new access + refresh token pair.
+   * @throws UnauthorizedException  Token is invalid, expired, already used,
+   *                                or belongs to an inactive user.
+   * @throws ConflictException       Another request already consumed this
+   *                                 token (concurrent replay).
+   */
   async refreshAccessToken(
     refreshToken: string,
   ): Promise<{ accessToken: string; refreshToken: string }> {
-    const token = await this.userService.findRefreshToken(refreshToken);
+    // Pre-generate successor token material *before* entering the transaction
+    // so the crypto work happens outside the critical section.
+    const newTokenValue = crypto.randomBytes(32).toString('hex');
+    const newExpiresAt = new Date();
+    newExpiresAt.setDate(newExpiresAt.getDate() + 7); // 7 days
 
-    if (!token || token.expiresAt < new Date()) {
-      throw new UnauthorizedException('Invalid or expired refresh token');
+    try {
+      const result = await this.userService.atomicRotateRefreshToken(
+        refreshToken,
+        newTokenValue,
+        newExpiresAt,
+      );
+
+      const newAccessToken = this.generateAccessToken(
+        result.consumed.user.id,
+        result.consumed.user.walletAddress,
+      );
+
+      this.logger.log({
+        msg: 'Refresh token rotated successfully',
+        userId: result.consumed.user.id,
+      });
+
+      return { accessToken: newAccessToken, refreshToken: result.newToken };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      // Map domain errors to HTTP-layer exceptions without leaking token
+      // values into logs.
+      if (message === 'REFRESH_TOKEN_ALREADY_CONSUMED') {
+        this.logger.warn({ msg: 'Refresh token replay detected' });
+        throw new ConflictException(
+          'Refresh token has already been used. Please re-authenticate.',
+        );
+      }
+      if (
+        message === 'REFRESH_TOKEN_NOT_FOUND' ||
+        message === 'REFRESH_TOKEN_EXPIRED'
+      ) {
+        throw new UnauthorizedException('Invalid or expired refresh token');
+      }
+      if (message === 'USER_INACTIVE') {
+        throw new UnauthorizedException(
+          'Account is deactivated. Please contact support.',
+        );
+      }
+
+      // Unexpected error — re-throw so it surfaces as 500.
+      throw error;
     }
-
-    await this.userService.invalidateRefreshToken(refreshToken);
-
-    const newAccessToken = this.generateAccessToken(
-      token.user.id,
-      token.user.walletAddress,
-    );
-    const newRefreshToken = await this.generateRefreshToken(token.user.id);
-
-    return { accessToken: newAccessToken, refreshToken: newRefreshToken };
   }
 
   async logout(refreshToken: string): Promise<void> {
@@ -169,14 +261,23 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    // If email is being updated, reset emailVerified
+    // emailVerified is only ever set by verifyEmail, never by the client
+    const updateData: Partial<User> = { ...updateProfileDto };
+    delete updateData.emailVerified;
+
+    // If email is being updated, reset emailVerified and invalidate any
+    // outstanding tokens issued for the previous address
     const emailChanged =
       Boolean(updateProfileDto.email) && updateProfileDto.email !== user.email;
     if (emailChanged) {
-      updateProfileDto.emailVerified = false;
+      updateData.emailVerified = false;
+      await this.emailVerificationRepository.update(
+        { userId, isUsed: false },
+        { isUsed: true },
+      );
     }
 
-    const updated = await this.userService.update(userId, updateProfileDto);
+    const updated = await this.userService.update(userId, updateData);
 
     // Automatically send a verification email whenever a new address is set
     if (emailChanged) {
@@ -193,16 +294,20 @@ export class AuthService {
 
   async uploadAvatar(
     userId: string,
-    file: { buffer: Buffer; originalname: string },
+    file: AvatarUploadFile | null | undefined,
   ): Promise<User> {
+    // Validate the payload before anything leaves the process: rejected uploads
+    // must never reach the storage provider.
+    const avatar = validateAvatarUpload(file);
+
     const user = await this.userService.findById(userId);
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
 
     const cid = await this.ipfsService.uploadFile(
-      file.buffer,
-      file.originalname,
+      avatar.buffer,
+      avatar.filename,
     );
     const avatarUrl = this.ipfsService.getGatewayUrl(cid);
 
@@ -226,6 +331,7 @@ export class AuthService {
     // Save token
     const emailVerification = this.emailVerificationRepository.create({
       userId,
+      email: user.email,
       token,
       expiresAt,
     });
@@ -233,14 +339,16 @@ export class AuthService {
 
     // Queue the verification email for async delivery (retried on failure)
     const verificationUrl = this.buildVerificationUrl(token);
+    const rendered = this.emailTemplatesService.renderVerification({
+      userName: user.displayName ?? undefined,
+      email: user.email,
+      verificationUrl,
+    });
     await this.emailService.sendEmail(
       user.email,
-      'Verify your email address - Vaultix',
-      this.buildVerificationEmailHtml(user, verificationUrl),
-      `Hi${user.displayName ? ` ${user.displayName}` : ''},\n\n` +
-        `Please verify your email address by opening the link below:\n\n` +
-        `${verificationUrl}\n\n` +
-        `This link expires in 24 hours. If you did not request this, you can ignore this email.`,
+      rendered.subject,
+      rendered.html,
+      rendered.text,
     );
     this.logger.log(`Verification email queued for user ${userId}`);
   }
@@ -253,33 +361,59 @@ export class AuthService {
     return `${baseUrl}?token=${encodeURIComponent(token)}`;
   }
 
-  private buildVerificationEmailHtml(
-    user: User,
-    verificationUrl: string,
-  ): string {
-    const greeting = user.displayName ? `Hi ${user.displayName},` : 'Hi,';
-    return (
-      `<p>${greeting}</p>` +
-      `<p>Please verify your email address to finish setting up your Vaultix account.</p>` +
-      `<p><a href="${verificationUrl}">Verify email address</a></p>` +
-      `<p>Or copy and paste this link into your browser:<br/>${verificationUrl}</p>` +
-      `<p><small>This link expires in 24 hours. If you did not request this, you can ignore this email.</small></p>`
-    );
-  }
-
+  /**
+   * Consume a verification token and mark the user's email verified.
+   *
+   * The token is only accepted while the user's current email still equals
+   * the address it was issued for. Both writes are single conditional
+   * UPDATEs whose affected-row count decides the outcome:
+   * 1. the token is flipped to used only if it is still unused, so
+   *    concurrent requests with the same token have exactly one winner;
+   * 2. the winner marks the user verified only if their email still equals
+   *    the token's address, so a change racing in between is never verified.
+   * Stale, used or expired tokens are rejected without touching the user.
+   */
   async verifyEmail(token: string): Promise<void> {
-    const verification = await this.emailVerificationRepository.findOne({
-      where: { token, isUsed: false },
-    });
+    const invalid = () =>
+      new BadRequestException('Invalid or expired verification token');
 
-    if (!verification || verification.expiresAt < new Date()) {
-      throw new BadRequestException('Invalid or expired verification token');
+    const verification = await this.emailVerificationRepository.findOne({
+      where: { token },
+    });
+    if (
+      !verification ||
+      verification.isUsed ||
+      !verification.email ||
+      verification.expiresAt < new Date()
+    ) {
+      throw invalid();
     }
 
-    verification.isUsed = true;
-    await this.emailVerificationRepository.save(verification);
+    const user = await this.userService.findById(verification.userId);
+    if (!user || user.email !== verification.email) {
+      throw invalid();
+    }
 
-    await this.userService.update(verification.userId, { emailVerified: true });
+    const consumed = await this.emailVerificationRepository
+      .createQueryBuilder()
+      .update(EmailVerification)
+      .set({ isUsed: true })
+      .where('id = :id AND isUsed = :used', {
+        id: verification.id,
+        used: false,
+      })
+      .execute();
+    if ((consumed.affected ?? 0) !== 1) {
+      throw invalid();
+    }
+
+    const marked = await this.userService.markEmailVerified(
+      verification.userId,
+      verification.email,
+    );
+    if (!marked) {
+      throw invalid();
+    }
   }
 
   async validateToken(

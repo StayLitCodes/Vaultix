@@ -4,6 +4,7 @@
  */
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { colors } from '../theme';
 
 interface OfflineBannerProps {
   visible: boolean;
@@ -27,13 +28,13 @@ const styles = StyleSheet.create({
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f77f00',
+    backgroundColor: colors.warning,
     paddingHorizontal: 16,
     paddingVertical: 10,
     gap: 10,
   },
   icon: { fontSize: 18 },
   textContainer: { flex: 1 },
-  title: { color: '#1a1a2e', fontWeight: '700', fontSize: 13 },
-  subtitle: { color: '#1a1a2e', fontSize: 11, marginTop: 1, opacity: 0.85 },
+  title: { color: colors.surface, fontWeight: '700', fontSize: 13 },
+  subtitle: { color: colors.surface, fontSize: 11, marginTop: 1, opacity: 0.85 },
 });

@@ -13,10 +13,11 @@ import {
 import { IDispute, IDisputeTimeline } from "@/types/escrow";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { CanonicalEscrowStatus } from '@/utils/escrowStatus';
 
 interface DisputeSectionProps {
   escrowId: string;
-  escrowStatus: string;
+  escrowStatus: CanonicalEscrowStatus;
   userRole: "creator" | "counterparty" | "arbitrator" | null;
   publicKey: string | null;
   dispute: IDispute | null;
@@ -37,7 +38,7 @@ const DisputeSection: React.FC<DisputeSectionProps> = ({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (escrowStatus === "DISPUTED" && dispute) {
+    if (escrowStatus === CanonicalEscrowStatus.DISPUTED && dispute) {
       fetchTimeline();
     } else {
       setLoading(false);

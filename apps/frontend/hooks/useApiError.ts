@@ -3,12 +3,8 @@
 import { useState, useCallback, Dispatch, SetStateAction } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/useToast';
-<<<<<<< Updated upstream
-import { apiClient } from '@/lib/api-client';
-=======
 import { clearSession } from '@/lib/session';
 import { getErrorStatus, getFriendlyErrorMessage } from '@/lib/errorUtils';
->>>>>>> Stashed changes
 
 interface UseApiErrorReturn {
   handleError: (error: unknown, retry?: () => void) => void;
@@ -31,13 +27,8 @@ export function useApiError(): UseApiErrorReturn {
       const status = getErrorStatus(err);
 
       if (status === 401) {
-<<<<<<< Updated upstream
-        apiClient.setToken(null);
-        toast.error('Session expired. Please sign in again.');
-=======
         clearSession();
         toast.apiError(err);
->>>>>>> Stashed changes
         router.push('/');
         return;
       }

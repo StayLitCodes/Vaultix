@@ -1,0 +1,58 @@
+name: Dependency Audit
+
+# Weekly vulnerability scan plus a check whenever a lockfile changes.
+# Fails on HIGH/CRITICAL advisories and uploads the JSON reports as artifacts.
+on:
+  schedule:
+    # Every Monday at 06:17 UTC.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - '**/package-lock.json'
+      - 'apps/onchain/Cargo.lock'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '**/package-lock.json'
+      - 'apps/onchain/Cargo.lock'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: npm + cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: Run dependency audit
+        run: ./scripts/audit.sh --report-dir audit-reports
+
+      - name: Upload audit reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-reports
+          path: audit-reports/
+          if-no-files-found: warn
+          retention-days: 30

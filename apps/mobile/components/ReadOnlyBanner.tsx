@@ -5,6 +5,7 @@
  */
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { colors } from '../theme';
 
 export function ReadOnlyBanner({ onConnect }: { onConnect: () => void }) {
   return (
@@ -30,19 +31,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#3d2f00',
+    backgroundColor: colors.warningSurface,
     borderBottomWidth: 1,
-    borderBottomColor: '#5c4700',
+    borderBottomColor: colors.warningSurfaceBorder,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   icon: { fontSize: 14 },
-  text: { color: '#ffd166', flex: 1, fontSize: 12, lineHeight: 16 },
+  text: { color: colors.warningSoft, flex: 1, fontSize: 12, lineHeight: 16 },
   action: {
-    backgroundColor: '#ffd166',
+    backgroundColor: colors.warningSoft,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
-  actionText: { color: '#3d2f00', fontSize: 12, fontWeight: '700' },
+  actionText: { color: colors.textInverse, fontSize: 12, fontWeight: '700' },
 });

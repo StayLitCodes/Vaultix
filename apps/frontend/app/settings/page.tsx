@@ -186,20 +186,14 @@ function NotificationPrefsSection() {
     preferences,
     preferencesLoading,
     savingPreferences,
+    soundEnabled,
+    preferencesError,
+    refetchPreferences,
     updatePreferences,
   } = useNotifications();
 
-  const [soundEnabled, setSoundEnabled] = useState(true);
   const [lastSaveSucceeded, setLastSaveSucceeded] = useState<boolean | null>(null);
   const successTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Load sound preference from localStorage on mount
-  useEffect(() => {
-    const savedSound = localStorage.getItem('vaultix_sound_enabled');
-    if (savedSound !== null) {
-      setSoundEnabled(savedSound !== 'false');
-    }
-  }, []);
 
   // Cleanup timer on unmount
   useEffect(() => {
@@ -218,7 +212,10 @@ function NotificationPrefsSection() {
       },
     };
 
-    const success = await updatePreferences(updated);
+    trackSaveResult(await updatePreferences(updated));
+  };
+
+  const trackSaveResult = (success: boolean) => {
     setLastSaveSucceeded(success);
 
     // Clear success/failure indicator after 3 seconds
@@ -226,11 +223,29 @@ function NotificationPrefsSection() {
     successTimerRef.current = setTimeout(() => setLastSaveSucceeded(null), 3000);
   };
 
-  const handleToggleSound = () => {
-    const nextVal = !soundEnabled;
-    setSoundEnabled(nextVal);
-    localStorage.setItem('vaultix_sound_enabled', String(nextVal));
+  /** Sound is persisted server-side alongside the email/in-app toggles. */
+  const handleToggleSound = async () => {
+    trackSaveResult(await updatePreferences(preferences, !soundEnabled));
   };
+
+  if (preferencesError && !preferencesLoading) {
+    return (
+      <SectionCard title="Notification Preferences" icon={Bell}>
+        <div className="flex flex-col items-start gap-3">
+          <p className="text-sm text-red-600 dark:text-red-400">
+            Couldn&apos;t load your notification preferences.
+          </p>
+          <button
+            type="button"
+            onClick={() => void refetchPreferences()}
+            className="text-sm font-medium px-3 py-1.5 rounded-lg border border-border hover:bg-muted"
+          >
+            Retry
+          </button>
+        </div>
+      </SectionCard>
+    );
+  }
 
   // Loading skeleton
   if (preferencesLoading) {
@@ -276,7 +291,7 @@ function NotificationPrefsSection() {
             <span className="text-sm font-medium text-foreground block">Notification Sound</span>
             <span className="text-xs text-muted-foreground">Play a chime when a new notification is received</span>
           </div>
-          <Toggle checked={soundEnabled} onChange={handleToggleSound} />
+          <Toggle checked={soundEnabled} onChange={handleToggleSound} disabled={savingPreferences} />
         </div>
 
         {/* Status indicator */}

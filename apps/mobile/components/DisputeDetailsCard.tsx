@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { DisputeStatus } from '../hooks/useDisputes';
+import { colors } from '../theme';
 
 interface DisputeDetailsCardProps {
   status: DisputeStatus;
@@ -10,11 +11,11 @@ interface DisputeDetailsCardProps {
 export const DisputeDetailsCard: React.FC<DisputeDetailsCardProps> = ({ status, reason }) => {
   const getStatusColor = () => {
     switch (status) {
-      case 'OPEN': return '#EF4444'; // Red
-      case 'UNDER_REVIEW': return '#F59E0B'; // Amber
-      case 'RESOLVED': return '#10B981'; // Green
-      case 'REJECTED': return '#64748B'; // Slate
-      default: return '#3B82F6';
+      case 'OPEN': return colors.danger; // Red
+      case 'UNDER_REVIEW': return colors.warning; // Amber
+      case 'RESOLVED': return colors.success; // Green
+      case 'REJECTED': return colors.textTertiary; // Slate
+      default: return colors.infoStrong;
     }
   };
 
@@ -34,12 +35,12 @@ export const DisputeDetailsCard: React.FC<DisputeDetailsCardProps> = ({ status, 
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#1E293B',
+    backgroundColor: colors.surface,
     padding: 16,
     borderRadius: 8,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: colors.border,
   },
   header: {
     flexDirection: 'row',
@@ -50,7 +51,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#FFF',
+    color: colors.text,
   },
   badge: {
     paddingHorizontal: 8,
@@ -58,17 +59,17 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   badgeText: {
-    color: '#FFF',
+    color: colors.text,
     fontSize: 12,
     fontWeight: 'bold',
   },
   reasonLabel: {
-    color: '#94A3B8',
+    color: colors.textSecondary,
     fontSize: 12,
     marginBottom: 4,
   },
   reasonText: {
-    color: '#FFF',
+    color: colors.text,
     fontSize: 14,
   },
 });
