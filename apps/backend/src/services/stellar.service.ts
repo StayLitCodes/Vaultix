@@ -3,6 +3,7 @@ import { ConfigType } from '@nestjs/config';
 import stellarConfig from '../config/stellar.config';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { retryWithBackoff } from '../utils/retry.util';
+import { getCorrelationId } from '../utils/logger.util';
 import {
   StellarAccountResponse,
   StellarSubmitTransactionResponse,
@@ -21,10 +22,10 @@ export class StellarService {
     private config: ConfigType<typeof stellarConfig>,
   ) {
     this.networkPassphrase = this.config.networkPassphrase;
-    this.server = new StellarSdk.Horizon.Server(this.config.horizonUrl);
+    this.server = new StellarSdk.horizon.Server(this.config.horizonUrl);
 
     this.logger.log(
-      `Initialized Stellar service for ${this.config.network} network`,
+      `Initialized Stellar service for ${this.config.network} network with correlation-aware logging`,
     );
     this.logger.log(`Horizon URL: ${this.config.horizonUrl}`);
   }
@@ -46,20 +47,21 @@ export class StellarService {
 
   async getAccount(publicKey: string): Promise<StellarAccountResponse> {
     try {
-      this.logger.log(`Fetching account info for: ${publicKey}`);
+      this.logStructured('stellar_get_account_start', { publicKey });
 
       const account = (await this.server
         .accounts()
         .accountId(publicKey)
         .call()) as unknown as StellarAccountResponse;
 
-      this.logger.log(`Successfully retrieved account info for: ${publicKey}`);
+      this.logStructured('stellar_get_account_success', { publicKey });
 
       return account;
     } catch (error) {
-      this.logger.error(
-        `Failed to fetch account ${publicKey}: ${this.getErrorMessage(error)}`,
-      );
+      this.logStructured('stellar_get_account_failure', {
+        publicKey,
+        error: this.getErrorMessage(error),
+      });
       throw this.mapStellarError(error, `Error fetching account ${publicKey}`);
     }
   }
@@ -71,7 +73,7 @@ export class StellarService {
    */
   async validateAsset(code: string, issuer: string): Promise<boolean> {
     try {
-      this.logger.log(`Validating asset: ${code} from ${issuer}`);
+      this.logStructured('stellar_validate_asset_start', { code, issuer });
       const assets = await this.server
         .assets()
         .forCode(code)
@@ -79,9 +81,10 @@ export class StellarService {
         .call();
       return assets.records.length > 0;
     } catch (error) {
-      this.logger.error(
-        `Failed to validate asset ${code}: ${this.getErrorMessage(error)}`,
-      );
+      this.logStructured('stellar_validate_asset_failure', {
+        code,
+        error: this.getErrorMessage(error),
+      });
       return false;
     }
   }
@@ -101,7 +104,7 @@ export class StellarService {
     fee?: number,
   ): Promise<StellarSdk.Transaction> {
     try {
-      this.logger.log(`Building transaction for account: ${sourcePublicKey}`);
+      this.logStructured('stellar_build_tx_start', { sourcePublicKey });
 
       // Fetch the account to get the latest sequence number
       const account = await this.getAccount(sourcePublicKey);
@@ -126,15 +129,17 @@ export class StellarService {
       }
 
       const transaction = transactionBuilder.build();
-      this.logger.log(
-        `Successfully built transaction with hash: ${transaction.hash().toString('hex')}`,
-      );
+      this.logStructured('stellar_build_tx_success', {
+        sourcePublicKey,
+        hash: transaction.hash().toString('hex'),
+      });
 
       return transaction;
     } catch (error) {
-      this.logger.error(
-        `Failed to build transaction for account ${sourcePublicKey}: ${this.getErrorMessage(error)}`,
-      );
+      this.logStructured('stellar_build_tx_failure', {
+        sourcePublicKey,
+        error: this.getErrorMessage(error),
+      });
       throw this.mapStellarError(
         error,
         `Error building transaction for account ${sourcePublicKey}`,
@@ -151,7 +156,9 @@ export class StellarService {
     transaction: StellarSdk.Transaction,
   ): Promise<StellarSubmitTransactionResponse> {
     try {
-      this.logger.log('Submitting transaction with retry logic');
+      this.logStructured('stellar_submit_tx_start', {
+        hash: transaction.hash().toString('hex'),
+      });
 
       const result = await retryWithBackoff(
         async () => {
@@ -164,12 +171,14 @@ export class StellarService {
         this.config.retryDelay,
       );
 
-      this.logger.log(`Successfully submitted transaction: ${result.hash}`);
+      this.logStructured('stellar_submit_tx_success', { hash: result.hash });
       return result;
     } catch (error) {
-      this.logger.error(
-        `Failed to submit transaction after ${this.config.maxRetries + 1} attempts: ${this.getErrorMessage(error)}`,
-      );
+      this.logStructured('stellar_submit_tx_failure', {
+        hash: transaction.hash().toString('hex'),
+        attempts: this.config.maxRetries + 1,
+        error: this.getErrorMessage(error),
+      });
       throw this.mapStellarError(
         error,
         `Error submitting transaction after ${this.config.maxRetries + 1} attempts`,
@@ -187,14 +196,15 @@ export class StellarService {
     accountId: string,
     callback: (transaction: StellarTransactionResponse) => void,
   ): any {
-    this.logger.log(`Starting transaction stream for account: ${accountId}`);
+    this.logStructured('stellar_stream_start', { accountId });
 
     const handler = (transaction: any) => {
       const typedTransaction =
         transaction as unknown as StellarTransactionResponse;
-      this.logger.log(
-        `Received transaction: ${typedTransaction.id} for account: ${accountId}`,
-      );
+      this.logStructured('stellar_stream_tx', {
+        accountId,
+        txId: typedTransaction.id,
+      });
       callback(typedTransaction);
     };
 
@@ -208,7 +218,7 @@ export class StellarService {
         onmessage: handler,
       });
 
-    this.logger.log(`Transaction stream established for account: ${accountId}`);
+    this.logStructured('stellar_stream_established', { accountId });
     return eventSource;
   }
 
@@ -221,29 +231,29 @@ export class StellarService {
     transactionHash: string,
   ): Promise<StellarTransactionResponse | null> {
     try {
-      this.logger.log(`Checking status for transaction: ${transactionHash}`);
+      this.logStructured('stellar_check_tx_start', { transactionHash });
 
       const transaction = (await this.server
         .transactions()
         .transaction(transactionHash)
         .call()) as unknown as StellarTransactionResponse;
 
-      this.logger.log(
-        `Transaction ${transactionHash} status: ${transaction.successful ? 'SUCCESS' : 'FAILED'}`,
-      );
+      this.logStructured('stellar_check_tx_success', {
+        transactionHash,
+        successful: transaction.successful,
+      });
       return transaction;
     } catch (error) {
       if (this.isNotFoundError(error)) {
         // Transaction not found (possibly still pending)
-        this.logger.log(
-          `Transaction ${transactionHash} not found (may still be pending)`,
-        );
+        this.logStructured('stellar_check_tx_not_found', { transactionHash });
         return null;
       }
 
-      this.logger.error(
-        `Failed to check transaction status ${transactionHash}: ${this.getErrorMessage(error)}`,
-      );
+      this.logStructured('stellar_check_tx_failure', {
+        transactionHash,
+        error: this.getErrorMessage(error),
+      });
       throw this.mapStellarError(
         error,
         `Error checking transaction status ${transactionHash}`,
@@ -283,10 +293,34 @@ export class StellarService {
    */
   createKeypair(): StellarSdk.Keypair {
     const keypair = StellarSdk.Keypair.random();
-    this.logger.log(
-      `Created new keypair with public key: ${keypair.publicKey()}`,
-    );
+    this.logStructured('stellar_keypair_created', {
+      publicKey: keypair.publicKey(),
+    });
     return keypair;
+  }
+
+  /**
+   * Emits a structured JSON log line that automatically includes the current
+   * request correlation ID when available.
+   */
+  private logStructured(
+    event: string,
+    data: Record<string, unknown>,
+  ): void {
+    const correlationId = getCorrelationId();
+    const payload = JSON.stringify({
+      type: 'stellar',
+      event,
+      correlationId,
+      ...data,
+    });
+    if (event.endsWith('_failure')) {
+      this.logger.error(payload);
+    } else if (event.endsWith('_not_found')) {
+      this.logger.warn(payload);
+    } else {
+      this.logger.log(payload);
+    }
   }
 
   /**
@@ -359,21 +393,6 @@ export class StellarService {
         }
       }
       /* eslint-enable @typescript-eslint/no-unsafe-member-access */
-
-      // Check for specific Stellar SDK error types
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      if (errorObj.constructor?.name?.includes('NetworkError')) {
-        return new Error(
-          `Network Error: Failed to connect to Stellar network (${this.getErrorMessage(error)})`,
-        );
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      if (errorObj.constructor?.name?.includes('NotFoundError')) {
-        return new Error(`Not Found: ${this.getErrorMessage(error)}`);
-      }
-
-      return new Error(`${defaultMessage}: ${this.getErrorMessage(error)}`);
     }
 
     return new Error(defaultMessage);

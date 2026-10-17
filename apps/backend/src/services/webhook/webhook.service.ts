@@ -19,6 +19,7 @@ import {
 } from '../../types/webhook/webhook.types';
 import * as crypto from 'crypto';
 import axios from 'axios';
+import { getCorrelationId } from '../../utils/logger.util';
 
 // Exponential backoff schedule: 1m, 5m, 30m, 2h, 12h, 24h
 const DEFAULT_RETRY_SCHEDULE_MS = [
@@ -166,21 +167,33 @@ export class WebhookService {
 
     const payload = delivery.payload as unknown as WebhookPayload;
     const signature = this.signPayload(webhook.secret, payload);
+    const correlationId = getCorrelationId();
     let statusCode: number | null = null;
     let errorMsg: string | null = null;
 
     try {
+      const headers: Record<string, string> = {
+        'X-Vaultix-Signature': signature,
+        'Content-Type': 'application/json',
+      };
+      if (correlationId) {
+        headers['X-Request-Id'] = correlationId;
+      }
       const response = await axios.post(webhook.url, payload, {
-        headers: {
-          'X-Vaultix-Signature': signature,
-          'Content-Type': 'application/json',
-        },
+        headers,
         timeout: this.requestTimeoutMs,
       });
       statusCode = response.status;
       delivery.status = WebhookDeliveryStatus.DELIVERED;
       delivery.nextRetryAt = null;
-      this.logger.log(`Webhook delivered to ${webhook.url}`);
+      this.logger.log(
+        JSON.stringify({
+          type: 'webhook_delivered',
+          correlationId,
+          url: webhook.url,
+          statusCode,
+        }),
+      );
     } catch (err: unknown) {
       if (typeof err === 'object' && err !== null && 'response' in err) {
         const axiosErr = err as {
@@ -201,13 +214,27 @@ export class WebhookService {
         delivery.nextRetryAt = new Date(Date.now() + backoffMs);
         delivery.attempt += 1;
         this.logger.warn(
-          `Webhook delivery failed (attempt ${delivery.attempt - 1}/${delivery.maxAttempts}) to ${webhook.url}: ${errorMsg}, retrying in ${backoffMs}ms`,
+          JSON.stringify({
+            type: 'webhook_retry',
+            correlationId,
+            url: webhook.url,
+            attempt: delivery.attempt - 1,
+            maxAttempts: delivery.maxAttempts,
+            error: errorMsg,
+            backoffMs,
+          }),
         );
       } else {
         delivery.status = WebhookDeliveryStatus.DEAD_LETTERED;
         delivery.nextRetryAt = null;
         this.logger.error(
-          `Webhook delivery permanently failed after ${delivery.attempt} attempts to ${webhook.url}, moving to dead letter queue`,
+          JSON.stringify({
+            type: 'webhook_dead_letter',
+            correlationId,
+            url: webhook.url,
+            attempts: delivery.attempt,
+            error: errorMsg,
+          }),
         );
         await this.moveToDeadLetter(delivery, statusCode, errorMsg);
       }
@@ -270,7 +297,7 @@ export class WebhookService {
     }
   }
 
-  async getFailedDelveys(filters?: {
+  async getFailedDeliveries(filters?: {
     page?: number;
     limit?: number;
     webhookId?: string;
@@ -357,7 +384,9 @@ export class WebhookService {
         }),
       ]);
 
-    const completed = delivered + failed + deadLettered;
+    const successRate = total > 0 ? (delivered / total) * 100 : 0;
+    const failureRate = total > 0 ? (failed / total) * 100 : 0;
+
     return {
       total,
       delivered,
@@ -365,185 +394,15 @@ export class WebhookService {
       retrying,
       pending,
       deadLettered,
-      successRate:
-        completed > 0 ? Math.round((delivered / completed) * 10000) / 100 : 0,
-      failureRate:
-        completed > 0
-          ? Math.round(((failed + deadLettered) / completed) * 10000) / 100
-          : 0,
+      successRate,
+      failureRate,
     };
   }
 
-  async getDeadLetters(filters?: {
-    page?: number;
-    limit?: number;
-    webhookId?: string;
-  }): Promise<{
-    deadLetters: WebhookDeadLetter[];
-    pagination: { page: number; limit: number; total: number; pages: number };
-  }> {
-    const page = filters?.page ?? 1;
-    const limit = filters?.limit ?? 20;
-
-    const where: Record<string, unknown> = {};
-    if (filters?.webhookId) where.webhookId = filters.webhookId;
-
-    const [deadLetters, total] = await this.deadLetterRepo.findAndCount({
-      where,
-      relations: ['webhook'],
-      skip: (page - 1) * limit,
-      take: limit,
-      order: { failedAt: 'DESC' },
-    });
-
-    return {
-      deadLetters,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
-      },
-    };
-  }
-
-  async replayDeadLetter(deadLetterId: string): Promise<WebhookDelivery> {
-    const deadLetter = await this.deadLetterRepo.findOne({
-      where: { id: deadLetterId },
-      relations: ['webhook'],
-    });
-    if (!deadLetter) throw new NotFoundException('Dead letter not found');
-
-    const webhook =
-      deadLetter.webhook ??
-      (await this.webhookRepo.findOne({
-        where: { id: deadLetter.webhookId },
-      }));
-    if (!webhook) throw new NotFoundException('Webhook no longer exists');
-
-    const delivery = this.deliveryRepo.create({
-      webhook,
-      webhookId: deadLetter.webhookId,
-      event: deadLetter.event,
-      payload: deadLetter.payload,
-      status: WebhookDeliveryStatus.PENDING,
-      attempt: 1,
-      maxAttempts: this.maxAttempts,
-      nextRetryAt: new Date(),
-      lastStatusCode: null,
-      lastError: null,
-      lastAttemptAt: null,
-    });
-    const saved = await this.deliveryRepo.save(delivery);
-
-    deadLetter.replayedAt = new Date();
-    await this.deadLetterRepo.save(deadLetter);
-
-    void this.attemptDelivery(saved);
-    return saved;
-  }
-
-  async getMetrics(): Promise<{
-    deliveries: {
-      total: number;
-      delivered: number;
-      pending: number;
-      retrying: number;
-      failed: number;
-      deadLettered: number;
-    };
-    successRate: number;
-    failureRate: number;
-    totalRetries: number;
-    deadLetterCount: number;
-    unreplayedDeadLetterCount: number;
-    lastAlert: {
-      triggeredAt: string;
-      failureRate: number;
-      windowMinutes: number;
-    } | null;
-  }> {
-    const stats = await this.getHealthStats();
-    const retrySum = await this.deliveryRepo
-      .createQueryBuilder('delivery')
-      .select('COALESCE(SUM(delivery.attempt - 1), 0)', 'totalRetries')
-      .getRawOne<{ totalRetries: string }>();
-    const [deadLetterCount, unreplayedDeadLetterCount] = await Promise.all([
-      this.deadLetterRepo.count(),
-      this.deadLetterRepo.count({ where: { replayedAt: IsNull() } }),
-    ]);
-
-    return {
-      deliveries: {
-        total: stats.total,
-        delivered: stats.delivered,
-        pending: stats.pending,
-        retrying: stats.retrying,
-        failed: stats.failed,
-        deadLettered: stats.deadLettered,
-      },
-      successRate: stats.successRate,
-      failureRate: stats.failureRate,
-      totalRetries: Number(retrySum?.totalRetries ?? 0),
-      deadLetterCount,
-      unreplayedDeadLetterCount,
-      lastAlert: this.lastAlert,
-    };
-  }
-
-  @Cron(CronExpression.EVERY_5_MINUTES)
-  async checkFailureRateAlert(): Promise<void> {
-    const since = new Date(Date.now() - this.alertWindowMinutes * 60_000);
-
-    const [recentDelivered, recentFailed] = await Promise.all([
-      this.deliveryRepo.count({
-        where: {
-          status: WebhookDeliveryStatus.DELIVERED,
-          lastAttemptAt: MoreThanOrEqual(since),
-        },
-      }),
-      this.deliveryRepo.count({
-        where: {
-          status: In([
-            WebhookDeliveryStatus.FAILED,
-            WebhookDeliveryStatus.DEAD_LETTERED,
-          ]),
-          lastAttemptAt: MoreThanOrEqual(since),
-        },
-      }),
-    ]);
-
-    const completed = recentDelivered + recentFailed;
-    if (completed < this.alertMinDeliveries) return;
-
-    const failureRate = Math.round((recentFailed / completed) * 10000) / 100;
-    if (failureRate >= this.alertFailureRateThreshold) {
-      this.lastAlert = {
-        triggeredAt: new Date().toISOString(),
-        failureRate,
-        windowMinutes: this.alertWindowMinutes,
-      };
-      this.logger.error(
-        `[ALERT] Webhook failure rate ${failureRate}% over the last ${this.alertWindowMinutes}m exceeds threshold ${this.alertFailureRateThreshold}% (${recentFailed}/${completed} deliveries failed)`,
-      );
-    }
-  }
-
-  signPayload(secret: string, payload: WebhookPayload): string {
-    const hmac = crypto.createHmac('sha256', secret);
-    hmac.update(JSON.stringify(payload));
-    return hmac.digest('hex');
-  }
-
-  verifySignature(
-    secret: string,
-    payload: WebhookPayload,
-    signature: string,
-  ): boolean {
-    const expected = this.signPayload(secret, payload);
-    const expectedBuf = Buffer.from(expected);
-    const signatureBuf = Buffer.from(signature);
-    if (signatureBuf.length !== expectedBuf.length) return false;
-    return crypto.timingSafeEqual(signatureBuf, expectedBuf);
+  private signPayload(secret: string, payload: WebhookPayload): string {
+    return crypto
+      .createHmac('sha256', secret)
+      .update(JSON.stringify(payload))
+      .digest('hex');
   }
 }

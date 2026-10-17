@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module, forwardRef, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { validateJwtSecret } from './modules/auth/services/jwt-validation.util';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
@@ -56,6 +56,9 @@ import databaseConfig, {
 import { ApiV2Module } from './modules/versioning/api-v2.module';
 import { BackupModule } from './modules/backup/backup.module';
 import { BackupRecord } from './modules/backup/entities/backup-record.entity';
+import { RequestContextMiddleware } from './common/middleware/request-context.middleware';
+import { RequestLoggingMiddleware } from './middleware/request-logging.middleware';
+import { redactLogPaths } from './common/logging/redact.util';
 
 @Module({
   imports: [
@@ -67,7 +70,25 @@ import { BackupRecord } from './modules/backup/entities/backup-record.entity';
           pinoHttp: {
             level: config.get('LOG_LEVEL', 'info'),
             genReqId: (req) => {
-              return req.headers['x-request-id'] || crypto.randomUUID();
+              const header = req.headers['x-request-id'];
+              const requestId = Array.isArray(header) ? header[0] : header;
+              const id = requestId || crypto.randomUUID();
+              (req as { id?: string }).id = id;
+              return id;
+            },
+            customProps: (req) => ({
+              requestId: (req as { id?: string }).id,
+            }),
+            redact: {
+              paths: redactLogPaths,
+              censor: '[REDACTED]',
+            },
+            serializers: {
+              req: (req: { id?: string; method?: string; url?: string }) => ({
+                id: req.id,
+                method: req.method,
+                url: req.url,
+              }),
             },
             transport:
               config.get('NODE_ENV') !== 'production'
@@ -162,4 +183,9 @@ import { BackupRecord } from './modules/backup/entities/backup-record.entity';
   controllers: [AppController],
   providers: [AppService],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RequestContextMiddleware).forRoutes('*');
+    consumer.apply(RequestLoggingMiddleware).forRoutes('*');
+  }
+}
