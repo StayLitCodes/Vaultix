@@ -10,7 +10,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigType } from '@nestjs/config';
 import { createHash } from 'crypto';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import stellarConfigFactory from '../../../config/stellar.config';
 import { StellarService } from '../../../services/stellar.service';
@@ -71,13 +71,25 @@ export class EscrowCreationService {
         'The counterparty must be a different wallet',
       );
     }
+    if (dto.asset !== 'XLM' && !dto.assetIssuer) {
+      throw new BadRequestException(
+        'assetIssuer is required when the escrow asset is not XLM',
+      );
+    }
+    if (dto.asset === 'XLM' && dto.assetIssuer) {
+      throw new BadRequestException('Native XLM must not have an issuer');
+    }
 
     const [counterparty, asset] = await Promise.all([
       this.userRepository.findOne({
         where: { walletAddress: dto.counterpartyAddress },
       }),
       this.assetRepository.findOne({
-        where: { code: dto.asset, active: true },
+        where: {
+          code: dto.asset,
+          issuer: dto.asset === 'XLM' ? IsNull() : dto.assetIssuer,
+          active: true,
+        },
       }),
     ]);
     if (!counterparty) {
@@ -87,6 +99,30 @@ export class EscrowCreationService {
     }
     if (!asset)
       throw new BadRequestException(`Asset ${dto.asset} is not supported`);
+    if (asset.code !== 'XLM') {
+      const [sourceHasTrustline, counterpartyHasTrustline] = await Promise.all([
+        this.stellarService.hasTrustline(
+          sourceAddress,
+          asset.code,
+          asset.issuer!,
+        ),
+        this.stellarService.hasTrustline(
+          dto.counterpartyAddress,
+          asset.code,
+          asset.issuer!,
+        ),
+      ]);
+      if (!sourceHasTrustline) {
+        throw new BadRequestException(
+          `The source account has no trustline for ${asset.code} from ${asset.issuer}`,
+        );
+      }
+      if (!counterpartyHasTrustline) {
+        throw new BadRequestException(
+          `The counterparty account has no trustline for ${asset.code} from ${asset.issuer}`,
+        );
+      }
+    }
     if (
       !Number.isInteger(asset.decimals) ||
       asset.decimals < 0 ||
@@ -150,7 +186,7 @@ export class EscrowCreationService {
     const tokenAddress =
       asset.code === 'XLM'
         ? nativeTokenContract!
-        : new StellarSdk.Asset(asset.code, asset.issuer).contractId(
+        : new StellarSdk.Asset(asset.code, asset.issuer!).contractId(
             this.stellarConfig.networkPassphrase,
           );
     const operations = this.escrowOperations.createEscrowInitializationOps(
@@ -312,7 +348,11 @@ export class EscrowCreationService {
         where: { walletAddress: payload.counterpartyAddress },
       }),
       this.assetRepository.findOne({
-        where: { code: payload.asset, active: true },
+        where: {
+          code: payload.asset,
+          issuer: payload.asset === 'XLM' ? IsNull() : payload.assetIssuer,
+          active: true,
+        },
       }),
     ]);
     if (!creator || !counterparty || !asset) {
@@ -347,7 +387,7 @@ export class EscrowCreationService {
       title: payload.title,
       description: payload.description,
       amount: payload.amount,
-      asset: { code: asset.code, issuer: asset.issuer },
+      asset: { code: asset.code, issuer: asset.issuer ?? undefined },
       type: payload.milestones.length > 0 ? 'milestone' : 'standard',
       parties: [
         { userId: intent.creatorId, role: PartyRole.BUYER },
@@ -374,6 +414,7 @@ export class EscrowCreationService {
       category: dto.category,
       amount: dto.amount,
       asset: dto.asset,
+      assetIssuer: dto.assetIssuer,
       counterpartyAddress: dto.counterpartyAddress,
       deadline: new Date(dto.deadline).toISOString(),
       milestones: dto.milestones ?? [],

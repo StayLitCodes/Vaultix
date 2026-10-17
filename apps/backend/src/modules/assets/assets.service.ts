@@ -18,25 +18,25 @@ export class AssetsService {
   ) {}
 
   async create(createAssetDto: CreateAssetDto): Promise<AllowedAsset> {
-    if (createAssetDto.code !== 'XLM') {
-      if (!createAssetDto.issuer) {
-        throw new BadRequestException(
-          'Issuer is required for non-native assets',
-        );
-      }
-
-      const isValid = await this.stellarService.validateAsset(
-        createAssetDto.code,
-        createAssetDto.issuer,
+    this.validateAssetIdentity(createAssetDto.code, createAssetDto.issuer);
+    const metadata =
+      createAssetDto.code === 'XLM'
+        ? null
+        : await this.stellarService.getAssetMetadata(
+            createAssetDto.code,
+            createAssetDto.issuer!,
+          );
+    if (createAssetDto.code !== 'XLM' && !metadata) {
+      throw new BadRequestException(
+        `Asset ${createAssetDto.code} from ${createAssetDto.issuer} does not exist on Stellar`,
       );
-      if (!isValid) {
-        throw new BadRequestException(
-          `Asset ${createAssetDto.code} from ${createAssetDto.issuer} does not exist on Stellar`,
-        );
-      }
     }
 
-    const asset = this.assetRepository.create(createAssetDto);
+    const asset = this.assetRepository.create({
+      ...createAssetDto,
+      ...(metadata ?? {}),
+      lastValidatedAt: metadata ? new Date() : null,
+    });
     return this.assetRepository.save(asset);
   }
 
@@ -59,23 +59,32 @@ export class AssetsService {
   ): Promise<AllowedAsset> {
     const asset = await this.findOne(id);
 
-    if (
-      updateAssetDto.code &&
-      updateAssetDto.code !== 'XLM' &&
-      updateAssetDto.issuer
-    ) {
-      const isValid = await this.stellarService.validateAsset(
-        updateAssetDto.code,
-        updateAssetDto.issuer,
+    const nextCode = updateAssetDto.code ?? asset.code;
+    const nextIssuer =
+      nextCode === 'XLM' ? null : (updateAssetDto.issuer ?? asset.issuer);
+    this.validateAssetIdentity(nextCode, nextIssuer);
+    if (nextCode !== 'XLM') {
+      const metadata = await this.stellarService.getAssetMetadata(
+        nextCode,
+        nextIssuer!,
       );
-      if (!isValid) {
+      if (!metadata) {
         throw new BadRequestException(
-          `Asset ${updateAssetDto.code} from ${updateAssetDto.issuer} does not exist on Stellar`,
+          `Asset ${nextCode} from ${nextIssuer} does not exist on Stellar`,
         );
       }
+      Object.assign(asset, metadata, { lastValidatedAt: new Date() });
+    } else {
+      Object.assign(asset, {
+        homeDomain: null,
+        assetType: null,
+        numAccounts: null,
+        lastValidatedAt: null,
+      });
     }
 
     Object.assign(asset, updateAssetDto);
+    if (updateAssetDto.code === 'XLM') asset.issuer = null;
     return this.assetRepository.save(asset);
   }
 
@@ -89,6 +98,9 @@ export class AssetsService {
     assetCode: string,
     issuer?: string,
   ): Promise<{ balance: number; assetCode: string; issuer?: string }> {
+    if (assetCode !== 'XLM' && assetCode !== 'native' && !issuer) {
+      throw new BadRequestException('Issuer is required for non-native assets');
+    }
     try {
       const account = await this.stellarService.getAccount(walletAddress);
       const balanceItem = account.balances.find((b) => {
@@ -123,6 +135,18 @@ export class AssetsService {
       throw new BadRequestException(
         `Failed to fetch balance: account ${walletAddress} may not exist or cannot be reached.`,
       );
+    }
+  }
+
+  private validateAssetIdentity(code: string, issuer?: string | null): void {
+    if (code === 'XLM') {
+      if (issuer) {
+        throw new BadRequestException('Native XLM must not have an issuer');
+      }
+      return;
+    }
+    if (!issuer) {
+      throw new BadRequestException('Issuer is required for non-native assets');
     }
   }
 }

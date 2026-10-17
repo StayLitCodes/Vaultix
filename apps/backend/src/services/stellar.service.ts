@@ -70,20 +70,71 @@ export class StellarService {
    * @param issuer Asset issuer
    */
   async validateAsset(code: string, issuer: string): Promise<boolean> {
+    return (await this.getAssetMetadata(code, issuer)) !== null;
+  }
+
+  /** Returns current Horizon metadata for an issued asset, or null if it is not listed. */
+  async getAssetMetadata(
+    code: string,
+    issuer: string,
+  ): Promise<{
+    code: string;
+    issuer: string;
+    homeDomain: string | null;
+    assetType: string | null;
+    numAccounts: number | null;
+  } | null> {
     try {
+      // Asset constructor enforces Stellar's asset-code and issuer formats.
+      new StellarSdk.Asset(code, issuer);
       this.logger.log(`Validating asset: ${code} from ${issuer}`);
       const assets = await this.server
         .assets()
         .forCode(code)
         .forIssuer(issuer)
         .call();
-      return assets.records.length > 0;
+      const record = assets.records.find(
+        (item: { asset_code?: string; asset_issuer?: string }) =>
+          item.asset_code === code && item.asset_issuer === issuer,
+      ) as
+        | {
+            home_domain?: string;
+            asset_type?: string;
+            num_accounts?: number;
+          }
+        | undefined;
+      if (!record) return null;
+      return {
+        code,
+        issuer,
+        homeDomain: record.home_domain ?? null,
+        assetType: record.asset_type ?? null,
+        numAccounts: record.num_accounts ?? null,
+      };
     } catch (error) {
       this.logger.error(
         `Failed to validate asset ${code}: ${this.getErrorMessage(error)}`,
       );
+      return null;
+    }
+  }
+
+  /** Checks whether an account currently has the exact issued-asset trustline. */
+  async hasTrustline(
+    accountId: string,
+    code: string,
+    issuer: string,
+  ): Promise<boolean> {
+    try {
+      new StellarSdk.Asset(code, issuer);
+    } catch {
       return false;
     }
+    const account = await this.getAccount(accountId);
+    return account.balances.some(
+      (balance) =>
+        balance.asset_code === code && balance.asset_issuer === issuer,
+    );
   }
 
   /**

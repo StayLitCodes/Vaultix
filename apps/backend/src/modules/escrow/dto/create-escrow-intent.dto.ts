@@ -12,6 +12,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { IsStellarAddress } from '../../../utils/validators';
 
 export class CreationMilestoneDto {
   @IsString()
@@ -64,6 +65,10 @@ export class PrepareEscrowCreationDto {
   @IsNotEmpty()
   @MaxLength(12)
   asset: string;
+
+  @IsStellarAddress()
+  @IsOptional()
+  assetIssuer?: string;
 
   @IsString()
   @Matches(/^G[A-Z2-7]{55}$/)

@@ -488,7 +488,7 @@ export class StellarEventListenerService
         assetContractId =
           'CDLZFC3SYJYDZT7K67VZ75YJFCGSN5W4B77T2YI2EHCWH6I6D6LNCU6B';
       } else {
-        const stellarAsset = new Asset(asset.code, asset.issuer);
+        const stellarAsset = new Asset(asset.code, asset.issuer!);
         assetContractId = stellarAsset.contractId(networkPassphrase);
       }
 
