@@ -9,6 +9,7 @@ import { WebSocketProvider } from '@/app/contexts/WebSocketContext';
 import { WalletProvider } from '@/app/contexts/WalletContext';
 import { WalletSessionCoordinator } from '@/components/WalletSessionCoordinator';
 import { CurrencyProvider } from '@/context/CurrencyContext';
+import { OfflineBanner } from '@/components/OfflineBanner';
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({
@@ -24,6 +25,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <ToastProvider>
+          <OfflineBanner />
           <ErrorBoundary>
             <WalletProvider>
               <WalletSessionCoordinator />

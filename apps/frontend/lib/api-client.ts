@@ -22,6 +22,18 @@ export class IdentityChangedError extends Error {
   }
 }
 
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+
+  constructor(status: number, message: string, code?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
 class ApiClient {
   private authToken: string | null = null;
   private identityGeneration = 0;
@@ -112,7 +124,19 @@ class ApiClient {
         const error = await response
           .json()
           .catch(() => ({ message: "Request failed" }));
-        throw new Error(error.message || `HTTP ${response.status}`);
+        const errorBody = typeof error === 'object' && error !== null
+          ? error as { message?: unknown; code?: unknown }
+          : {};
+        const message = Array.isArray(errorBody.message)
+          ? errorBody.message.join(', ')
+          : typeof errorBody.message === 'string'
+            ? errorBody.message
+            : `HTTP ${response.status}`;
+        throw new ApiError(
+          response.status,
+          message,
+          typeof errorBody.code === 'string' ? errorBody.code : undefined,
+        );
       }
 
       if (response.status === 204) {

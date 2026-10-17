@@ -16,7 +16,7 @@ import { ThrottlerGuard } from '@nestjs/throttler';
 
 class CreateWebhookDto {
   url: string;
-  secret: string;
+  secret?: string;
   events: WebhookEvent[];
 }
 
@@ -45,7 +45,25 @@ export class WebhookController {
   async list(@Req() req: { user: { id: string } }) {
     const userId = req?.user?.id;
     if (!userId) throw new Error('User ID missing');
-    return this.webhookService.getUserWebhooks(userId);
+    const webhooks = await this.webhookService.getUserWebhooks(userId);
+    return webhooks.map(({ id, url, events, isActive, createdAt, updatedAt }) => ({
+      id,
+      url,
+      events,
+      isActive,
+      createdAt,
+      updatedAt,
+    }));
+  }
+
+  @Post(':id/rotate-secret')
+  async rotateSecret(
+    @Req() req: { user: { id: string } },
+    @Param('id') id: string,
+  ) {
+    const userId = req?.user?.id;
+    if (!userId) throw new Error('User ID missing');
+    return this.webhookService.rotateWebhookSecret(userId, id);
   }
 
   @Delete(':id')

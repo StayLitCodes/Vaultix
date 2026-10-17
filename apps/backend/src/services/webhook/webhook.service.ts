@@ -24,6 +24,7 @@ import axios from 'axios';
 const DEFAULT_RETRY_SCHEDULE_MS = [
   60_000, 300_000, 1_800_000, 7_200_000, 43_200_000, 86_400_000,
 ];
+const SECRET_ROTATION_GRACE_PERIOD_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class WebhookService {
@@ -83,7 +84,7 @@ export class WebhookService {
   async createWebhook(
     userId: string,
     url: string,
-    secret: string,
+    secret: string | undefined,
     events: WebhookEvent[],
   ): Promise<Webhook> {
     if (events.length > this.MAX_EVENTS_PER_WEBHOOK) {
@@ -101,7 +102,7 @@ export class WebhookService {
 
     const webhook = this.webhookRepo.create({
       url,
-      secret,
+      secret: secret || crypto.randomBytes(32).toString('hex'),
       events,
       user: { id: userId },
       isActive: true,
@@ -111,6 +112,31 @@ export class WebhookService {
 
   async getUserWebhooks(userId: string): Promise<Webhook[]> {
     return this.webhookRepo.find({ where: { user: { id: userId } } });
+  }
+
+  async rotateWebhookSecret(
+    userId: string,
+    webhookId: string,
+  ): Promise<{ secret: string; previousSecretExpiresAt: Date }> {
+    const webhook = await this.webhookRepo.findOne({
+      where: { id: webhookId },
+      relations: ['user'],
+    });
+    if (!webhook) throw new NotFoundException('Webhook not found');
+    if (webhook.user.id !== userId) {
+      throw new ForbiddenException('Not your webhook');
+    }
+
+    const secret = crypto.randomBytes(32).toString('hex');
+    const previousSecretExpiresAt = new Date(
+      Date.now() + SECRET_ROTATION_GRACE_PERIOD_MS,
+    );
+    webhook.previousSecret = webhook.secret;
+    webhook.previousSecretExpiresAt = previousSecretExpiresAt;
+    webhook.secret = secret;
+    await this.webhookRepo.save(webhook);
+
+    return { secret, previousSecretExpiresAt };
   }
 
   async deleteWebhook(userId: string, webhookId: string): Promise<void> {
@@ -165,14 +191,30 @@ export class WebhookService {
     }
 
     const payload = delivery.payload as unknown as WebhookPayload;
-    const signature = this.signPayload(webhook.secret, payload);
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const rawBody = JSON.stringify(payload);
+    const signatures = [
+      this.signPayload(webhook.secret, rawBody, timestamp),
+    ];
+    if (
+      webhook.previousSecret &&
+      webhook.previousSecretExpiresAt &&
+      webhook.previousSecretExpiresAt.getTime() > Date.now()
+    ) {
+      signatures.push(
+        this.signPayload(webhook.previousSecret, rawBody, timestamp),
+      );
+    }
     let statusCode: number | null = null;
     let errorMsg: string | null = null;
 
     try {
-      const response = await axios.post(webhook.url, payload, {
+      const response = await axios.post(webhook.url, rawBody, {
         headers: {
-          'X-Vaultix-Signature': signature,
+          'X-Vaultix-Signature': signatures
+            .map((signature) => `sha256=${signature}`)
+            .join(', '),
+          'X-Vaultix-Timestamp': timestamp,
           'Content-Type': 'application/json',
         },
         timeout: this.requestTimeoutMs,
@@ -529,18 +571,19 @@ export class WebhookService {
     }
   }
 
-  signPayload(secret: string, payload: WebhookPayload): string {
+  signPayload(secret: string, rawBody: string, timestamp: string): string {
     const hmac = crypto.createHmac('sha256', secret);
-    hmac.update(JSON.stringify(payload));
+    hmac.update(`${timestamp}.${rawBody}`);
     return hmac.digest('hex');
   }
 
   verifySignature(
     secret: string,
-    payload: WebhookPayload,
+    rawBody: string,
+    timestamp: string,
     signature: string,
   ): boolean {
-    const expected = this.signPayload(secret, payload);
+    const expected = this.signPayload(secret, rawBody, timestamp);
     const expectedBuf = Buffer.from(expected);
     const signatureBuf = Buffer.from(signature);
     if (signatureBuf.length !== expectedBuf.length) return false;
