@@ -116,6 +116,22 @@ describe('WebhookService', () => {
       expect(result).toEqual(mockWebhook);
     });
 
+    it('generates an endpoint-specific signing secret when omitted', async () => {
+      webhookRepo.find.mockResolvedValue([]);
+      webhookRepo.create.mockReturnValue(mockWebhook as any);
+      webhookRepo.save.mockResolvedValue(mockWebhook as any);
+
+      await service.createWebhook('u1', 'test.com', undefined, [
+        'escrow.created',
+      ]);
+
+      expect(webhookRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          secret: expect.stringMatching(/^[a-f0-9]{64}$/),
+        }),
+      );
+    });
+
     it('should throw if too many events', async () => {
       await expect(
         service.createWebhook(
@@ -156,6 +172,36 @@ describe('WebhookService', () => {
       webhookRepo.findOne.mockResolvedValue(null);
       await expect(service.deleteWebhook('u1', 'w1')).rejects.toThrow(
         NotFoundException,
+      );
+    });
+  });
+
+  describe('rotateWebhookSecret', () => {
+    it('rotates an owned endpoint secret and retains the previous secret for 24 hours', async () => {
+      const webhook = { ...mockWebhook } as Webhook;
+      webhookRepo.findOne.mockResolvedValue(webhook as any);
+      webhookRepo.save.mockImplementation((value) => Promise.resolve(value as any));
+      const before = Date.now();
+
+      const result = await service.rotateWebhookSecret('u1', 'w1');
+
+      expect(result.secret).toMatch(/^[a-f0-9]{64}$/);
+      expect(result.secret).not.toBe(mockWebhook.secret);
+      expect(webhook.previousSecret).toBe(mockWebhook.secret);
+      expect(webhook.previousSecretExpiresAt?.getTime()).toBeGreaterThanOrEqual(
+        before + 24 * 60 * 60 * 1000,
+      );
+      expect(webhookRepo.save).toHaveBeenCalledWith(webhook);
+    });
+
+    it('rejects rotation for another user\'s endpoint', async () => {
+      webhookRepo.findOne.mockResolvedValue({
+        ...mockWebhook,
+        user: { id: 'u2' },
+      } as any);
+
+      await expect(service.rotateWebhookSecret('u1', 'w1')).rejects.toThrow(
+        ForbiddenException,
       );
     });
   });
@@ -243,9 +289,70 @@ describe('WebhookService', () => {
       expect(delivery.lastAttemptAt).toBeInstanceOf(Date);
       expect(mockedAxios.post).toHaveBeenCalledWith(
         mockWebhook.url,
-        expect.anything(),
-        expect.objectContaining({ timeout: 30_000 }),
+        expect.any(String),
+        expect.objectContaining({
+          timeout: 30_000,
+          headers: expect.objectContaining({
+            'X-Vaultix-Signature': expect.stringMatching(/^sha256=[a-f0-9]{64}$/),
+            'X-Vaultix-Timestamp': expect.stringMatching(/^\d+$/),
+          }),
+        }),
       );
+
+      const [, rawBody, requestOptions] = mockedAxios.post.mock.calls[0];
+      const headers = requestOptions?.headers as Record<string, string>;
+      const signature = headers['X-Vaultix-Signature'].replace('sha256=', '');
+      expect(
+        service.verifySignature(
+          mockWebhook.secret,
+          rawBody as string,
+          headers['X-Vaultix-Timestamp'],
+          signature,
+        ),
+      ).toBe(true);
+    });
+
+    it('sends signatures for both secrets during the rotation grace period', async () => {
+      mockedAxios.post.mockResolvedValue({ status: 200 });
+      const delivery = {
+        ...baseDelivery,
+        webhook: {
+          ...mockWebhook,
+          previousSecret: 'previous-test-secret',
+          previousSecretExpiresAt: new Date(Date.now() + 60_000),
+        },
+      };
+      deliveryRepo.save.mockImplementation((value) => Promise.resolve(value as any));
+
+      await service.attemptDelivery(delivery as any);
+
+      const requestOptions = mockedAxios.post.mock.calls[0][2];
+      const headers = requestOptions?.headers as Record<string, string>;
+      const signatures = headers['X-Vaultix-Signature'].split(', ');
+      expect(signatures).toHaveLength(2);
+      expect(signatures[0]).toMatch(/^sha256=[a-f0-9]{64}$/);
+      expect(signatures[1]).toMatch(/^sha256=[a-f0-9]{64}$/);
+    });
+
+    it('stops signing with the previous secret after the grace period', async () => {
+      mockedAxios.post.mockResolvedValue({ status: 200 });
+      const delivery = {
+        ...baseDelivery,
+        webhook: {
+          ...mockWebhook,
+          previousSecret: 'expired-previous-secret',
+          previousSecretExpiresAt: new Date(Date.now() - 1),
+        },
+      };
+      deliveryRepo.save.mockImplementation((value) => Promise.resolve(value as any));
+
+      await service.attemptDelivery(delivery as any);
+
+      const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<
+        string,
+        string
+      >;
+      expect(headers['X-Vaultix-Signature'].split(', ')).toHaveLength(1);
     });
 
     it('should set status to retrying on failure with attempts remaining', async () => {
@@ -634,28 +741,42 @@ describe('WebhookService', () => {
 
   describe('verifySignature', () => {
     it('should verify signature correctly', () => {
-      const payload: any = { foo: 'bar' };
+      const rawBody = JSON.stringify({ foo: 'bar' });
       const secret = 'test-secret';
-      const signature = service.signPayload(secret, payload);
-      const isValid = service.verifySignature(secret, payload, signature);
+      const timestamp = '1760000000';
+      const signature = service.signPayload(secret, rawBody, timestamp);
+      const isValid = service.verifySignature(
+        secret,
+        rawBody,
+        timestamp,
+        signature,
+      );
       expect(isValid).toBe(true);
     });
 
     it('should reject signatures with mismatched length', () => {
-      const payload: any = { foo: 'bar' };
-      expect(service.verifySignature('test-secret', payload, 'short')).toBe(
-        false,
-      );
+      expect(
+        service.verifySignature('test-secret', '{}', '1760000000', 'short'),
+      ).toBe(false);
     });
 
     it('should reject tampered signatures', () => {
-      const payload: any = { foo: 'bar' };
-      const signature = service.signPayload('test-secret', payload);
+      const rawBody = JSON.stringify({ foo: 'bar' });
+      const signature = service.signPayload(
+        'test-secret',
+        rawBody,
+        '1760000000',
+      );
       const tampered =
         signature.slice(0, -1) + (signature.endsWith('0') ? '1' : '0');
-      expect(service.verifySignature('test-secret', payload, tampered)).toBe(
-        false,
-      );
+      expect(
+        service.verifySignature(
+          'test-secret',
+          rawBody,
+          '1760000000',
+          tampered,
+        ),
+      ).toBe(false);
     });
   });
 });

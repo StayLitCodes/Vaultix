@@ -179,6 +179,10 @@ $ npm run migration:show
 
 Note: In development, `synchronize: false` is set to ensure schema changes are always handled via migrations. Migrations run automatically on application startup (`migrationsRun: true`).
 
+## Outgoing Webhooks
+
+Webhook deliveries are signed with timestamped HMAC-SHA256 signatures. See [Webhook Signing](docs/WEBHOOK_SIGNING.md) for receiver verification examples in Node.js and Python, replay protection guidance, and endpoint secret rotation details.
+
 ### Health check
 
 `GET /health/database` reports the active driver, connection status, and

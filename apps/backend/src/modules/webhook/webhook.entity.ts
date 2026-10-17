@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { User } from '../user/entities/user.entity';
 import type { WebhookEvent } from '../../types/webhook/webhook.types';
+import { DATETIME_COLUMN_TYPE } from '../../utils/database-column-types';
 
 @Entity('webhooks')
 export class Webhook {
@@ -19,6 +20,12 @@ export class Webhook {
 
   @Column()
   secret!: string;
+
+  @Column({ type: 'varchar', nullable: true })
+  previousSecret!: string | null;
+
+  @Column({ type: DATETIME_COLUMN_TYPE, nullable: true })
+  previousSecretExpiresAt!: Date | null;
 
   @Column('simple-array')
   events!: WebhookEvent[];
