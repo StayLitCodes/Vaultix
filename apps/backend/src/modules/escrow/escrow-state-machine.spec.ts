@@ -18,6 +18,7 @@ import {
   validateTransition,
   isTerminalStatus,
 } from './escrow-state-machine';
+import * as fc from 'fast-check';
 
 describe('EscrowStateMachine', () => {
   describe('canTransition', () => {
@@ -177,6 +178,209 @@ describe('EscrowStateMachine', () => {
 
     it('should return false for DISPUTED', () => {
       expect(isTerminalStatus(EscrowStatus.DISPUTED)).toBe(false);
+    });
+  });
+
+  describe('property-based invariants', () => {
+    const ALL_STATUSES: EscrowStatus[] = [
+      EscrowStatus.PENDING,
+      EscrowStatus.ACTIVE,
+      EscrowStatus.COMPLETED,
+      EscrowStatus.CANCELLED,
+      EscrowStatus.DISPUTED,
+      EscrowStatus.EXPIRED,
+    ];
+
+    const TERMINAL_STATUSES: EscrowStatus[] = [
+      EscrowStatus.COMPLETED,
+      EscrowStatus.CANCELLED,
+      EscrowStatus.EXPIRED,
+    ];
+
+    const NON_TERMINAL_STATUSES: EscrowStatus[] = [
+      EscrowStatus.PENDING,
+      EscrowStatus.ACTIVE,
+      EscrowStatus.DISPUTED,
+    ];
+
+    const statusArb = fc.constantFrom(...ALL_STATUSES);
+
+    const terminalStatusArb = fc.constantFrom(...TERMINAL_STATUSES);
+
+    const nonTerminalStatusArb = fc.constantFrom(...NON_TERMINAL_STATUSES);
+
+    interface EscrowModel {
+      status: EscrowStatus;
+      deposited: number;
+      released: number;
+    }
+
+    type Operation =
+      | { kind: 'transition'; to: EscrowStatus }
+      | { kind: 'release'; amount: number };
+
+    const operationArb: fc.Arbitrary<Operation> = fc.oneof(
+      fc.record({
+        kind: fc.constant('transition' as const),
+        to: statusArb,
+      }),
+      fc.record({
+        kind: fc.constant('release' as const),
+        amount: fc.integer({ min: 0, max: 1_000_000 }),
+      }),
+    );
+
+    const operationsArb = fc.array(operationArb, { maxLength: 30 });
+
+    const applyOperation = (
+      model: EscrowModel,
+      op: Operation,
+    ): EscrowModel => {
+      if (op.kind === 'transition') {
+        if (canTransition(model.status, op.to)) {
+          return { ...model, status: op.to };
+        }
+        return model;
+      }
+
+      // release: only allowed while ACTIVE, and never exceeds remaining funds
+      if (model.status !== EscrowStatus.ACTIVE) {
+        return model;
+      }
+      const remaining = model.deposited - model.released;
+      const amount = Math.min(op.amount, remaining);
+      return { ...model, released: model.released + amount };
+    };
+
+    const assertInvariants = (model: EscrowModel) => {
+      // Funds conserved: released never exceeds deposited
+      expect(model.released).toBeGreaterThanOrEqual(0);
+      expect(model.released).toBeLessThanOrEqual(model.deposited);
+
+      // Terminal states have no outgoing transitions
+      if (isTerminalStatus(model.status)) {
+        for (const target of ALL_STATUSES) {
+          expect(canTransition(model.status, target)).toBe(false);
+        }
+      }
+
+      // Non-terminal states must have at least one valid transition
+      if (!isTerminalStatus(model.status)) {
+        const hasOutgoing = ALL_STATUSES.some((target) =>
+          canTransition(model.status, target),
+        );
+        expect(hasOutgoing).toBe(true);
+      }
+    };
+
+    it('preserves invariants across random operation sequences', () => {
+      fc.assert(
+        fc.property(
+          fc.integer({ min: 0, max: 1_000_000 }),
+          operationsArb,
+          (deposited, operations) => {
+            let model: EscrowModel = {
+              status: EscrowStatus.PENDING,
+              deposited,
+              released: 0,
+            };
+
+            assertInvariants(model);
+
+            for (const op of operations) {
+              model = applyOperation(model, op);
+              assertInvariants(model);
+            }
+          },
+        ),
+        { numRuns: 200 },
+      );
+    });
+
+    it('never transitions out of a terminal state', () => {
+      fc.assert(
+        fc.property(
+          terminalStatusArb,
+          fc.array(statusArb, { maxLength: 20 }),
+          (terminal, targets) => {
+            let status = terminal;
+            for (const target of targets) {
+              expect(canTransition(status, target)).toBe(false);
+              expect(() => validateTransition(status, target)).toThrow(
+                BadRequestException,
+              );
+              // status must remain unchanged
+              status = terminal;
+            }
+            expect(isTerminalStatus(status)).toBe(true);
+          },
+        ),
+        { numRuns: 100 },
+      );
+    });
+
+    it('release never exceeds the deposited amount', () => {
+      fc.assert(
+        fc.property(
+          fc.integer({ min: 0, max: 1_000_000 }),
+          fc.array(fc.integer({ min: 0, max: 1_000_000 }), { maxLength: 30 }),
+          (deposited, releases) => {
+            let released = 0;
+            let status: EscrowStatus = EscrowStatus.ACTIVE;
+
+            for (const requested of releases) {
+              if (status !== EscrowStatus.ACTIVE) {
+                break;
+              }
+              const remaining = deposited - released;
+              const amount = Math.min(requested, remaining);
+              released += amount;
+              expect(released).toBeLessThanOrEqual(deposited);
+            }
+          },
+        ),
+        { numRuns: 200 },
+      );
+    });
+
+    it('canTransition is consistent with validateTransition', () => {
+      fc.assert(
+        fc.property(statusArb, statusArb, (from, to) => {
+          const allowed = canTransition(from, to);
+          if (allowed) {
+            expect(() => validateTransition(from, to)).not.toThrow();
+          } else {
+            expect(() => validateTransition(from, to)).toThrow(
+              BadRequestException,
+            );
+          }
+        }),
+        { numRuns: 200 },
+      );
+    });
+
+    it('isTerminalStatus agrees with absence of outgoing transitions', () => {
+      fc.assert(
+        fc.property(statusArb, (status) => {
+          const hasOutgoing = ALL_STATUSES.some((target) =>
+            canTransition(status, target),
+          );
+          expect(isTerminalStatus(status)).toBe(!hasOutgoing);
+        }),
+        { numRuns: 100 },
+      );
+    });
+
+    it('non-terminal statuses always permit at least one transition', () => {
+      fc.assert(
+        fc.property(nonTerminalStatusArb, (status) => {
+          const hasOutgoing = ALL_STATUSES.some((target) =>
+            canTransition(status, target),
+          );
+          expect(hasOutgoing).toBe(true);
+        }),
+        { numRuns: 100 },
+      );
     });
   });
 });

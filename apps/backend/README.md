@@ -7,10 +7,10 @@
 
   <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
     <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
+<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPP Version" /></a>
+<a href="https://www.npmjs.com/package/@nestjs/core" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
+<a href="https://www.npmjs.com/package/@nestjs/common" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
+<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master.svg" alt="CircleCI" /></a>
 <a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
 <a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
 <a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
@@ -57,22 +57,48 @@ $ npm run test:e2e
 $ npm run test:cov
 ```
 
+### Property-based / fuzz tests (escrow state transitions)
+
+The escrow state machine is covered by property-based tests (using [fast-check](https://github.com/dubs/fast-check)) that generate random sequences of valid and invalid operations and assert invariants after every step:
+
+- **Funds conserved** — the sum of escrow balances plus released/refunded amounts always equals the deposited amount.
+- *(Terminal states are absorbing** — once an escrow reaches a terminal state (completed, refunded, cancelled), no further transition is permitted.
+- **Release never exceeds deposit** — the cumulative released amount can never exceed the originally deposited amount.
+
+The generator produces both valid operation sequences and invalid ones (e.g. releasing after completion, refunding more than deposited) to verify that invalid transitions are rejected without corrupting state.
+
+### Running the fuzz tests
+
+```bash
+# Run the fuzz / property-based suite
+$ npm run test -- escrow-property
+
+# Override the number of generated cases (default: 100, bounded for CI)
+$ PROPTY_CASES=500 npm run test -- escrow-property
+```
+
+The case count is bounded via the `PROPERTIES_CASES` environment variable (default `100`) so CI runs remain fast and deterministic. Failures print the generated operation sequence and the violated invariant for reproduction.
+
 ## Security Headers
+
+```bash
+$ npm run test:cov
+```
 
 The backend uses [Helmet](https://helmetjs.github.io/) to automatically set security-related HTTP headers on all responses. Since this is an API-only server (no HTML serving), headers are tuned accordingly.
 
 ### Headers Configured
 
-| Header                      | Value                                        | Purpose                                          |
-| --------------------------- | -------------------------------------------- | ------------------------------------------------ |
-| `X-Frame-Options`           | `DENY`                                       | Prevents clickjacking by disallowing framing     |
-| `X-Content-Type-Options`    | `nosniff`                                    | Prevents MIME-type sniffing                      |
-| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains`        | Enforces HTTPS (HSTS)                            |
-| `Referrer-Policy`           | `strict-origin-when-cross-origin`            | Controls referrer information sent with requests |
+| Header                      | Value                                        | Purpose                                      |
+| ---------------------------- | ---------------------------------------------- | ----------------------------------------------- |
+| `X-Frame-Options`             | `DENY`                                            | Prevents clickjacking by disallowing framing     |
+| `X-Content-Type-Options`      | `nosniff`                                        | Prevents MIME-type sniffing                  |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains`        | Enforces HTTPS (HSTS)                        |
+| `Referrer-Policy`             | `strict-origin-when-cross-origin`            | Controls referrer information sent with requests |
 | `Content-Security-Policy`   | `default-src 'self'; script-src 'self'; ...` | Restricts resource loading to same origin        |
-| `X-XSS-Protection`          | _(disabled)_                                 | Modern browsers use CSP instead                  |
+| `X-XSS-Protection`         | _(disabled)_                                   | Modern browsers use CSP instead                  |
 
-### CORS Configuration
+### CORSConfiguration
 
 CORS origins are configurable via the `CORS_ORIGINS` environment variable (comma-separated list). Defaults to `http://localhost:3000,http://localhost:3001` for local development.
 
@@ -86,9 +112,9 @@ The backend implements a three-tier role system enforced via JWT authentication 
 
 ### Roles
 
-| Role          | Description                                                                                                    |
-| ------------- | -------------------------------------------------------------------------------------------------------------- |
-| `USER`        | Default role for all registered users. Can create/manage own escrows.                                          |
+| Role          | Description                                                                              |
+| ------------- | ---------------------------------------------------------------------------------------------- |
+| `USER`       | Default role for all registered users. Can create/manage own escrows.                                      |
 | `ADMIN`       | Platform administrators. Access to admin dashboard, escrow management, user management, audit logs, analytics. |
 | `SUPER_ADMIN` | Highest privilege level. Includes all ADMIN capabilities plus user role management (promote/demote).           |
 
@@ -97,21 +123,20 @@ The backend implements a three-tier role system enforced via JWT authentication 
 All admin endpoints require **both** guards in sequence:
 
 ```
-@UseGuards(AuthGuard, AdminGuard)   // ADMIN or SUPER_ADMIN
-@UseGuards(AuthGuard, SuperAdminGuard)  // SUPER_ADMIN only
+@UseGuards(AuthGuard, AdminGuard)   // ADMIN or SUPER_ADMIN@@UseGuards(AuthGuard, SuperAdminGuard)  // SUPER_ADMIN only
 ```
 
-- **AuthGuard** — validates JWT, looks up user from DB, attaches `{ userId, walletAddress, role }` to request. Rejects suspended accounts.
-- **AdminGuard** — verifies `role` is `ADMIN` or `SUPER_ADMIN`. Returns `403` with clear message otherwise.
-- **SuperAdminGuard** — verifies `role` is `SUPER_ADMIN`. Returns `403` with clear message otherwise.
+- `AuthGuard` — validates JWT, looks up user from DB, attaches `{ userId, walletAddress, role }` to request. Rejects suspended accounts.
+- `AdminGuard` — verifies `role` is `ADMIN` or `SUPER_ADMIN`. Returns `403` with clear message otherwise.
+- `SuperAdminGuard` — verifies `role` is `SUPER_ADMIN`. Returns `403` with clear message otherwise.
 
 ### Role Management Endpoints (Super-Admin Only)
 
-| Method | Endpoint                      | Description                                       |
-| ------ | ----------------------------- | ------------------------------------------------- |
-| `POST` | `/v1/admin/users/:id/promote` | Promote user to ADMIN. Requires `reason` in body. |
-| `POST` | `/v1/admin/users/:id/demote`  | Demote user to USER. Requires `reason` in body.   |
-| `GET`  | `/v1/admin/users/:id/roles`   | View role change history for a user.              |
+| Method | Endpoint                      | Description                                         |
+| ------ | ------------------------------ | ------------------------------------------------------------ |
+| `POST` | `/v1/admin/users/:id/promote` | Promote user to ADMIN. Requires `reason` in body.                     |
+| `POST` | `/v1/admin/users/:id/demote`  | Demote user to USER. Requires `reason` in body.                       |
+| `GET`  | `/v1/admin/users/:id/roles`   | View role change history for a user.                                    |
 
 ### Safety Rules
 
@@ -154,7 +179,7 @@ DATABASE_URL=postgresql://vaultix_user:vaultix_pass@localhost:5432/vaultix_db
 
 ### Migrations
 
-This project uses TypeORM migrations for database schema management.
+This project uses TypeOORM migrations for database schema management.
 SQLite and PostgreSQL each have their own migration history, since the two
 dialects don't share SQL syntax — `src/migrations/` for SQLite,
 `src/migrations-postgres/` for PostgreSQL. `data-source.ts` and
@@ -205,7 +230,7 @@ $ npm install -g @nestjs/mau
 $ mau deploy
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+With Mau, you can deploy your application in just a few clicks, allowing you to focus on developing features rather than managing infrastructure.
 
 ## Resources
 
@@ -213,16 +238,16 @@ Check out a few resources that may come in handy when working with NestJS:
 
 - Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
 - For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
+- To dive deeper into hands-on experience, check out our official video [courses](https://courses.nestjs.com).
 - Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
+- Visualize your application graph and interact with your NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
+- Need professional support or advice from the team? (part-time or full-time)? Visit our official [enterprise support](https://enterprise.nestjs.com).
 - To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
 - Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
 
 ## Support
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
 
 ## Stay in touch
 

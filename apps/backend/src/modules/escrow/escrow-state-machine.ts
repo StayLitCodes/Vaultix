@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { EscrowStatus } from './entities/escrow.entity';
 
-const validTransitions: Record<EscrowStatus, EscrowStatus[]> = {
+export const validTransitions: Record<EscrowStatus, EscrowStatus[]> = {
   [EscrowStatus.PENDING]: [
     EscrowStatus.ACTIVE,
     EscrowStatus.CANCELLED,
@@ -50,4 +50,17 @@ export function isTerminalStatus(status: EscrowStatus): boolean {
     status === EscrowStatus.EXPIRED ||
     status === EscrowStatus.REFUNDED
   );
+}
+
+export interface EscrowBalanceState {
+  depositedAmount: bigint;
+  releasedAmount: bigint;
+}
+
+export function assertFundsConserved(state: EscrowBalanceState): void {
+  if (state.releasedAmount < 0n || state.depositedAmount < 0n || state.releasedAmount > state.depositedAmount) {
+    throw new BadRequestException(
+      `Escrow funds violated: released ${state.releasedAmount} of deposited ${state.depositedAmount}`,
+    );
+  }
 }
