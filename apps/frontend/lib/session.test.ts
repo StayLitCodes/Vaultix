@@ -68,4 +68,41 @@ describe("session", () => {
     expect(localStorage.getItem("vaultix_token")).toBeNull();
     expect(apiClient.cancelPendingRequests).toHaveBeenCalled();
   });
+
+  it("keeps rotated access and refresh tokens in the session", () => {
+    saveSession({
+      accessToken: fakeJwt(WALLET_A),
+      refreshToken: "refresh-a",
+      walletAddress: WALLET_A,
+    });
+
+    window.dispatchEvent(
+      new CustomEvent("auth:access-token-refreshed", {
+        detail: {
+          accessToken: "rotated-access",
+          refreshToken: "rotated-refresh",
+        },
+      }),
+    );
+
+    expect(getSession()).toEqual({
+      accessToken: "rotated-access",
+      refreshToken: "rotated-refresh",
+      walletAddress: WALLET_A,
+    });
+    expect(localStorage.getItem("vaultix_refresh_token")).toBe("rotated-refresh");
+  });
+
+  it("clears the in-memory session when refresh invalidates authentication", () => {
+    saveSession({
+      accessToken: fakeJwt(WALLET_A),
+      refreshToken: "refresh-a",
+      walletAddress: WALLET_A,
+    });
+
+    window.dispatchEvent(new CustomEvent("auth:session-cleared"));
+
+    expect(getSession()).toBeNull();
+    expect(localStorage.getItem("vaultix_session_wallet")).toBeNull();
+  });
 });

@@ -6,6 +6,7 @@ import {
   FileText, CheckCircle2, TrendingUp, 
   DollarSign, Edit3, Check, X, Copy, ExternalLink 
 } from 'lucide-react';
+import { apiClient } from '@/lib/api-client';
 
 interface EscrowRecord {
   id: string;
@@ -19,15 +20,15 @@ interface ProfileData {
   walletAddress: string;
   displayName: string;
   createdAt: string;
-  role: 'USER' | 'ADMIN' | 'VERIFIER';
-  stats: {
+  role?: 'USER' | 'ADMIN' | 'VERIFIER';
+  stats?: {
     totalCreated: number;
     totalParticipated: number;
     completedCount: number;
     disputeCount: number;
     totalVolume: number;
   };
-  recentHistory: EscrowRecord[];
+  recentHistory?: EscrowRecord[];
 }
 
 export default function ProfilePage() {
@@ -41,12 +42,9 @@ export default function ProfilePage() {
   // 1. Data Hydration Ingestion Matrix
   const fetchProfile = useCallback(async () => {
     try {
-      const response = await fetch('/api/user/profile');
-      if (response.ok) {
-        const data = await response.json();
-        setProfile(data);
-        setNameInput(data.displayName || '');
-      }
+      const data = await apiClient.get<ProfileData>('/auth/me');
+      setProfile(data);
+      setNameInput(data.displayName || '');
     } catch (err) {
       console.error('Failed to resolve profile dataset registries:', err);
     } finally {
@@ -63,15 +61,12 @@ export default function ProfilePage() {
     if (!nameInput.trim() || isSavingName) return;
     setIsSavingName(true);
     try {
-      const response = await fetch('/api/user/profile/update', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ displayName: nameInput.trim() }),
-      });
-      if (response.ok) {
-        setProfile(prev => prev ? { ...prev, displayName: nameInput.trim() } : null);
-        setIsEditingName(false);
-      }
+      const updatedProfile = await apiClient.patch<ProfileData>(
+        '/auth/profile',
+        { displayName: nameInput.trim() },
+      );
+      setProfile(prev => prev ? { ...prev, ...updatedProfile } : null);
+      setIsEditingName(false);
     } catch (err) {
       console.error('Failed to commit profile display name mutations:', err);
     } finally {
@@ -88,7 +83,7 @@ export default function ProfilePage() {
 
   // 3. Mathematical Algorithmic Reputation Computations
   const computedMetrics = useMemo(() => {
-    if (!profile) return null;
+    if (!profile?.stats) return null;
 
     const { totalCreated, totalParticipated, completedCount, disputeCount, totalVolume } = profile.stats;
     const totalParticipation = totalCreated + totalParticipated;
@@ -152,7 +147,7 @@ export default function ProfilePage() {
     );
   }
 
-  if (!profile || !computedMetrics) return null;
+  if (!profile) return null;
 
   return (
     <div className="w-full min-h-screen bg-background text-foreground p-6 md:p-8 space-y-6 max-w-6xl mx-auto transition-colors duration-200">
@@ -203,7 +198,7 @@ export default function ProfilePage() {
         {/* System Authorized Role Badge Block */}
         <div className="shrink-0 flex sm:flex-col items-center sm:items-end gap-2 text-right">
           <span className="px-2.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/50 dark:border-blue-900/60 dark:text-blue-400 font-bold text-[10px] tracking-wider rounded-full uppercase">
-            {profile.role} Badge
+            {profile.role ? `${profile.role} Badge` : 'Account'}
           </span>
           <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
             <Calendar size={12} />
@@ -213,6 +208,7 @@ export default function ProfilePage() {
       </div>
 
       {/* CORE TWO-COLUMN MAIN WORKSPACE */}
+      {profile.stats && computedMetrics ? (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
         
         {/* LEFT COLUMN: TRUST AND REPUTATION METRICS (1-span) */}
@@ -290,11 +286,11 @@ export default function ProfilePage() {
           <div className="bg-card text-card-foreground border border-border p-5 rounded-2xl shadow-sm">
             <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-4">Recent Portfolio Activity</h3>
             
-            {profile.recentHistory.length === 0 ? (
+            {(profile.recentHistory ?? []).length === 0 ? (
               <p className="text-xs text-muted-foreground text-center italic py-6">Zero historical transaction entries reported.</p>
             ) : (
               <div className="space-y-2">
-                {profile.recentHistory.map((escrow) => (
+                {(profile.recentHistory ?? []).map((escrow) => (
                   <div key={escrow.id} className="p-3 bg-muted/40 border border-border rounded-xl flex items-center justify-between text-xs font-medium hover:border-muted-foreground transition-colors">
                     <div className="min-w-0 pr-2">
                       <span className="font-bold block truncate">{escrow.title}</span>
@@ -302,7 +298,6 @@ export default function ProfilePage() {
                         {new Date(escrow.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}
                       </span>
                     </div>
-                    
                     <div className="flex items-center gap-4 shrink-0 text-right">
                       <div>
                         <span className="block font-mono font-bold">${escrow.amount.toLocaleString()}</span>
@@ -326,6 +321,9 @@ export default function ProfilePage() {
         </div>
 
       </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">Profile metrics are not available.</p>
+      )}
     </div>
   );
 }

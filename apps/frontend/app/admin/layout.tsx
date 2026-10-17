@@ -17,6 +17,7 @@ import {
   Coins,
   Loader2,
 } from 'lucide-react';
+import { apiClient } from '@/lib/api-client';
 
 const navItems = [
   { href: '/admin', label: 'Overview', icon: LayoutDashboard },
@@ -51,17 +52,10 @@ export default function AdminLayout({
 
     async function verifyAdminRole() {
       try {
-        const res = await fetch('/auth/me', {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-        });
-
-        if (!res.ok) {
-          throw new Error('Authentication failed or token expired');
-        }
-
-        const data = await res.json();
+        const data = await apiClient.get<{
+          role?: string;
+          isAdmin?: boolean;
+        }>('/auth/me');
 
         // Check if user has admin role
         if (data && (data.role === 'admin' || data.isAdmin === true)) {

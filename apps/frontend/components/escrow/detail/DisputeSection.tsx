@@ -14,6 +14,7 @@ import { IDispute, IDisputeTimeline } from "@/types/escrow";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CanonicalEscrowStatus } from '@/utils/escrowStatus';
+import { apiClient } from "@/lib/api-client";
 
 interface DisputeSectionProps {
   escrowId: string;
@@ -50,13 +51,10 @@ const DisputeSection: React.FC<DisputeSectionProps> = ({
       setLoading(true);
 
       // Fetch dispute timeline
-      const timelineResponse = await fetch(
-        `/api/escrows/${escrowId}/dispute/timeline`,
-      );
-      if (timelineResponse.ok) {
-        const timelineData = await timelineResponse.json();
-        setTimeline(timelineData.timeline || []);
-      }
+      const timelineData = await apiClient.get<{
+        timeline?: IDisputeTimeline[];
+      }>(`/escrows/${escrowId}/dispute`);
+      setTimeline(timelineData.timeline ?? []);
     } catch (error) {
       console.error("Error fetching dispute timeline:", error);
     } finally {
@@ -214,7 +212,6 @@ const DisputeSection: React.FC<DisputeSectionProps> = ({
                 >
                   {isImage ? (
                     <div className="relative group">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={url}
                         alt={`Evidence ${index + 1}`}

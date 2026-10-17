@@ -16,6 +16,7 @@ import { IEscrowExtended } from "@/types/escrow";
 import TransactionTracker from "@/components/stellar/TransactionTracker";
 import { toast } from "sonner";
 import { CanonicalEscrowStatus } from '@/utils/escrowStatus';
+import { apiClient } from "@/lib/api-client";
 
 type ReleaseMode = "manual" | "auto";
 
@@ -170,27 +171,12 @@ export const ReleaseFundsModal: React.FC<ReleaseFundsModalProps> = ({
         setSigningPhase("waiting");
         await Promise.resolve();
         setSigningPhase("submitting");
-        const response = await fetch(`/api/escrows/${escrow.id}/release`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          signal: abortController.signal,
-        });
-
-        if (!response.ok) {
-          const data = await response
-            .json()
-            .catch(() => ({ message: "Failed to release funds" }));
-          throw new Error(
-            data.message || "Failed to release funds. Please try again.",
-          );
-        }
-
-        const data = (await response.json()) as {
+        const data = await apiClient.post<{
           transactionHash?: string;
           status?: string;
-        };
+        }>(`/escrows/${escrow.id}/release`, undefined, {
+          signal: abortController.signal,
+        });
 
         if (data.transactionHash) {
           setTxHash(data.transactionHash);

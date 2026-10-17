@@ -3,6 +3,30 @@
 import { useEffect, useState, useCallback } from "react";
 import { toast } from "sonner";
 import { NotificationEventType, INotificationPreferences, IWebhook } from "@/types/notifications";
+import { apiClient } from "@/lib/api-client";
+import {
+  notificationService,
+  NotificationPreference,
+  UpdatePreferenceDto,
+} from "@/services/notification";
+
+function toUiPreferences(
+  preferences: NotificationPreference[],
+): INotificationPreferences["preferences"] {
+  const email = preferences.find((preference) => preference.channel === "email");
+  const webhook = preferences.find((preference) => preference.channel === "webhook");
+
+  return Object.values(NotificationEventType).reduce(
+    (result, eventType) => {
+      result[eventType] = {
+        email: Boolean(email?.enabled && email.eventTypes.includes(eventType)),
+        webhook: Boolean(webhook?.enabled && webhook.eventTypes.includes(eventType)),
+      };
+      return result;
+    },
+    {} as INotificationPreferences["preferences"],
+  );
+}
 
 const EVENT_LABELS: Record<NotificationEventType, string> = {
   [NotificationEventType.ESCROW_CREATED]: "Escrow Created",
@@ -34,21 +58,12 @@ export default function NotificationPreferences() {
     try {
       setLoading(true);
       const [prefRes, webRes] = await Promise.all([
-        fetch("/api/notifications/preferences"),
-        fetch("/api/webhooks")
+        notificationService.getPreferences(),
+        apiClient.get<IWebhook[]>("/webhooks"),
       ]);
 
-      if (prefRes.ok) {
-        const prefData: INotificationPreferences = await prefRes.json();
-        if (prefData?.preferences) {
-          setPreferences(prefData.preferences);
-        }
-      }
-
-      if (webRes.ok) {
-        const webData = await webRes.json();
-        setWebhooks(webData);
-      }
+      setPreferences(toUiPreferences(prefRes));
+      setWebhooks(webRes);
     } catch (err) {
       console.error("Error fetching notification structures:", err);
       toast.error("Failed to load your notification preference profile.");
@@ -74,13 +89,15 @@ export default function NotificationPreferences() {
   const handleSavePreferences = async () => {
     try {
       setSaving(true);
-      const res = await fetch("/api/notifications/preferences", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ preferences }),
+      const updates: UpdatePreferenceDto[] = (
+        ["email", "webhook"] as const
+      ).map((channel) => {
+        const eventTypes = Object.values(NotificationEventType).filter(
+          (eventType) => preferences[eventType]?.[channel],
+        );
+        return { channel, enabled: eventTypes.length > 0, eventTypes };
       });
-
-      if (!res.ok) throw new Error();
+      await notificationService.updatePreferences(updates);
       toast.success("Notification configurations synced successfully.");
     } catch {
       toast.error("Failed to persist channels profile updates.");
@@ -101,13 +118,10 @@ export default function NotificationPreferences() {
     }
 
     try {
-      const res = await fetch("/api/webhooks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: newUrl, eventTypes: selectedWebhookEvents }),
+      await apiClient.post("/webhooks", {
+        url: newUrl,
+        eventTypes: selectedWebhookEvents,
       });
-
-      if (!res.ok) throw new Error();
       toast.success("Webhook channel target registered.");
       setNewUrl("");
       setSelectedWebhookEvents([]);
@@ -119,8 +133,7 @@ export default function NotificationPreferences() {
 
   const handleDeleteWebhook = async (id: string) => {
     try {
-      const res = await fetch(`/api/webhooks/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error();
+      await apiClient.delete(`/webhooks/${id}`);
       toast.success("Webhook listener destroyed cleanly.");
       void fetchData();
     } catch {
@@ -136,8 +149,7 @@ export default function NotificationPreferences() {
         ? "/api/notifications/test-email" 
         : `/api/webhooks/${targetId}/test`;
 
-      const res = await fetch(endpoint, { method: "POST" });
-      if (!res.ok) throw new Error();
+      await apiClient.post(endpoint);
       toast.success(`Test verification dispatched via standard ${channel} streams.`);
     } catch {
       toast.error(`Verification testing path dropped for execution handle ${channel}.`);

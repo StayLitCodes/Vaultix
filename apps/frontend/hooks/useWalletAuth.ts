@@ -1,8 +1,6 @@
 import { useState } from "react";
 import { saveSession } from "@/lib/session";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-const API_VERSION_PREFIX = "/v1";
+import { apiClient } from "@/lib/api-client";
 
 export interface WalletAuthState {
   loading: boolean;
@@ -26,16 +24,10 @@ export const useWalletAuth = () => {
   const signIn = async (publicKey: string): Promise<boolean> => {
     setState({ loading: true, error: null, token: null });
     try {
-      const challengeRes = await fetch(
-        `${API_URL}${API_VERSION_PREFIX}/auth/challenge`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ walletAddress: publicKey }),
-        },
+      const { message } = await apiClient.post<{ message: string }>(
+        "/auth/challenge",
+        { walletAddress: publicKey },
       );
-      if (!challengeRes.ok) throw new Error("Failed to fetch challenge");
-      const { message } = await challengeRes.json();
 
       const { signedMessage } = await (window as any).freighter.signMessage(
         message,
@@ -44,19 +36,13 @@ export const useWalletAuth = () => {
         },
       );
 
-      const verifyRes = await fetch(
-        `${API_URL}${API_VERSION_PREFIX}/auth/verify`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            publicKey,
-            signature: signedMessage,
-          }),
-        },
-      );
-      if (!verifyRes.ok) throw new Error("Authentication failed");
-      const { accessToken, refreshToken } = await verifyRes.json();
+      const { accessToken, refreshToken } = await apiClient.post<{
+        accessToken: string;
+        refreshToken: string;
+      }>("/auth/verify", {
+        publicKey,
+        signature: signedMessage,
+      });
       if (!accessToken || !refreshToken) {
         throw new Error("Authentication failed");
       }
@@ -69,10 +55,10 @@ export const useWalletAuth = () => {
 
       setState({ loading: false, error: null, token: accessToken });
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       setState({
         loading: false,
-        error: err.message ?? "Unknown error",
+        error: err instanceof Error ? err.message : "Unknown error",
         token: null,
       });
       return false;

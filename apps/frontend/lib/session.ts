@@ -120,13 +120,29 @@ export function __resetSessionForTests(): void {
 
 if (typeof window !== "undefined") {
   window.addEventListener("auth:access-token-refreshed", (event) => {
-    const accessToken = (event as CustomEvent<{ accessToken?: string }>).detail
-      ?.accessToken;
+    const { accessToken, refreshToken } = (
+      event as CustomEvent<{ accessToken?: string; refreshToken?: string }>
+    ).detail ?? {};
     if (current && accessToken) {
-      current = { ...current, accessToken };
+      current = {
+        ...current,
+        accessToken,
+        refreshToken: refreshToken ?? current.refreshToken,
+      };
       window.localStorage.setItem("vaultix_token", accessToken);
+      if (refreshToken) {
+        window.localStorage.setItem("vaultix_refresh_token", refreshToken);
+      }
       notify();
     }
+  });
+
+  window.addEventListener("auth:session-cleared", () => {
+    const hadSession = current !== null;
+    current = null;
+    hydrated = true;
+    window.localStorage.removeItem(SESSION_WALLET_KEY);
+    if (hadSession) notify();
   });
 
   // Keep other tabs in sync: a login/logout/token-refresh in one tab

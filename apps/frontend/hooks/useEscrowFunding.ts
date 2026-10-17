@@ -4,9 +4,7 @@ import {
   StellarNetwork,
   awaitConfirmation,
 } from "@/lib/transaction-status";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-const API_VERSION_PREFIX = "/v1";
+import { apiClient } from "@/lib/api-client";
 
 /** How long to keep waiting for the chain to confirm a submitted funding tx. */
 const CONFIRMATION_TIMEOUT_MS = 60_000;
@@ -159,27 +157,21 @@ export const useEscrowFunding = (options: UseEscrowFundingOptions = {}) => {
 
       setState((current: FundingState) => ({ ...current, phase: "submitting" }));
 
-      const res = await fetch(
-        `${API_URL}${API_VERSION_PREFIX}/escrows/${escrowId}/fund`,
+      const { txHash } = await apiClient.post<{ txHash?: string }>(
+        `/escrows/${escrowId}/fund`,
+        { signedXDR },
         {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ signedXDR }),
           signal: abortController.signal,
+          onResponse: () => {
+            // The endpoint accepted the signed envelope; confirmation now
+            // depends on the ledger rather than the HTTP response body.
+            setState((current: FundingState) => ({
+              ...current,
+              phase: "confirming",
+            }));
+          },
         },
       );
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        throw new Error(data?.message ?? "Funding submission failed");
-      }
-
-      // The submission endpoint accepted the signed envelope, so from here on the
-      // question is whether a ledger confirms it — not whether the HTTP call
-      // succeeded.
-      setState((current: FundingState) => ({ ...current, phase: "confirming" }));
-
-      const { txHash } = await res.json();
       if (!txHash) {
         throw new Error("Funding submission did not return a transaction hash.");
       }

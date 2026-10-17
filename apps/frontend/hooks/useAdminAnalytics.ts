@@ -5,30 +5,33 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
-const API_VERSION_PREFIX = "/v1";
+import { apiClient } from "@/lib/api-client";
 
 export interface VolumePoint {
   date: string;
   volume: number;
 }
 
-async function fetchVolume(from?: string, to?: string): Promise<VolumePoint[]> {
+async function fetchVolume(
+  from?: string,
+  to?: string,
+  signal?: AbortSignal,
+): Promise<VolumePoint[]> {
   const params = new URLSearchParams();
   if (from) params.set("from", from);
   if (to) params.set("to", to);
-  const res = await fetch(
-    `${API_URL}${API_VERSION_PREFIX}/admin/analytics/volume?${params.toString()}`,
+  const query = params.toString();
+  const response = await apiClient.get<{ charts: VolumePoint[] }>(
+    `/admin/analytics/volume${query ? `?${query}` : ""}`,
+    { signal },
   );
-  if (!res.ok) throw new Error("Failed to load analytics volume");
-  return res.json();
+  return response.charts;
 }
 
 export function useAdminAnalyticsVolume(from?: string, to?: string) {
   return useQuery({
     queryKey: ["admin-analytics-volume", from, to],
-    queryFn: () => fetchVolume(from, to),
+    queryFn: ({ signal }) => fetchVolume(from, to, signal),
     staleTime: 60_000,
   });
 }
