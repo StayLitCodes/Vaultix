@@ -15,6 +15,28 @@ const API_BASE_URL = getApiBaseUrl();
 // API version prefix - all requests go through /v1/
 const API_VERSION_PREFIX = "/v1";
 
+<<<<<<< Updated upstream
+=======
+export class IdentityChangedError extends Error {
+  constructor() {
+    super("Request cancelled due to wallet identity change");
+    this.name = "IdentityChangedError";
+  }
+}
+
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+
+  constructor(status: number, message: string, code?: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
+>>>>>>> Stashed changes
 class ApiClient {
   private authToken: string | null = null;
 
@@ -77,7 +99,19 @@ class ApiClient {
         const error = await response
           .json()
           .catch(() => ({ message: "Request failed" }));
-        throw new Error(error.message || `HTTP ${response.status}`);
+        const errorBody = typeof error === 'object' && error !== null
+          ? error as { message?: unknown; code?: unknown }
+          : {};
+        const message = Array.isArray(errorBody.message)
+          ? errorBody.message.join(', ')
+          : typeof errorBody.message === 'string'
+            ? errorBody.message
+            : `HTTP ${response.status}`;
+        throw new ApiError(
+          response.status,
+          message,
+          typeof errorBody.code === 'string' ? errorBody.code : undefined,
+        );
       }
 
       if (response.status === 204) {
