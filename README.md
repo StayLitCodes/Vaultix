@@ -95,6 +95,7 @@ Get QuickEx running locally in minutes. This setup covers all three apps: fronte
 
 Before you begin, ensure you have the following installed:
 
+- **GNU Make** - For the root development and verification targets
 - **Node.js** 20+ ([Download](https://nodejs.org)) - JavaScript runtime
 - **npm** 10+ (bundled with Node.js 20+) - Package manager (see [Package manager](#package-manager))
 - **PostgreSQL** 14+ ([Download](https://www.postgresql.org)) OR **SQLite** (for simpler setup)
@@ -104,8 +105,14 @@ Before you begin, ensure you have the following installed:
 - **Stellar Wallet** - Freighter or Lobster wallet browser extension ([Install Freighter](https://freighter.app))
 
 **Optional:**
-- **Docker** - For containerized PostgreSQL
+- **Docker with Compose** - For `./scripts/setup.sh --with-db`
+- **Rust/Cargo** - For on-chain contract development and tests
 - **VS Code** with Rust Analyzer, ESLint, Prettier extensions
+
+Check your local tool versions, required development environment variables, and
+default service ports with `./scripts/doctor.sh`. See the
+[environment diagnostics guide](docs/ENVIRONMENT.md#environment-diagnostics)
+for details and JSON output for CI.
 
 ### Package manager
 
@@ -160,27 +167,30 @@ Please keep `--no-verify` for emergencies only - CI runs the same checks.
    cd vaultix
    ```
 
-2. **Install dependencies**. From the repository root (this also installs the
-   root tooling and the husky git hooks):
+2. **Bootstrap the monorepo**. From the repository root, this copies available
+   env templates without overwriting existing files and installs dependencies
+   for the root and all three apps:
    ```bash
-   npm install
+   ./scripts/setup.sh
    ```
 
-   Each app is an independent package with its own dependencies:
+   To also start local PostgreSQL and run backend migrations:
    ```bash
-   npm --prefix apps/backend install
-   npm --prefix apps/frontend install
-   npm --prefix apps/mobile install   # optional (React Native app)
+   ./scripts/setup.sh --with-db
    ```
+
+   `--with-db` requires Docker Compose and uses the local credentials in
+   `apps/backend/docker-compose.yml`. It does not change an existing backend
+   `.env`; set `DATABASE_URL` there if the running backend should use PostgreSQL
+   instead of its default SQLite configuration. On Windows, run the script in
+   WSL (recommended) or Git Bash with Node/npm and any requested tools on PATH.
 
 3. **Set up environment variables**:
-   
-   **Backend** (`apps/backend/.env`):
-   ```bash
-   cp apps/backend/.env.example apps/backend/.env
-   ```
-   
-   Edit `apps/backend/.env` with your configuration:
+
+   The bootstrap creates `apps/backend/.env`, `apps/frontend/.env`, and
+   `apps/mobile/.env` from their examples only when those files do not already
+   exist. Edit the backend file with your local configuration and replace the
+   example secrets before starting the backend:
    ```env
    # Database Configuration
    DATABASE_PATH=./data/vaultix.db  # SQLite path (or use DATABASE_URL for PostgreSQL)
@@ -210,12 +220,8 @@ Please keep `--no-verify` for emergencies only - CI runs the same checks.
    EMAIL_FROM=no-reply@vaultix.io
    ```
    
-   **Frontend** (`apps/frontend/.env.local`):
-   ```bash
-   cp apps/frontend/.env.example apps/frontend/.env.local
-   ```
-   
-   Create `apps/frontend/.env.local`:
+   Review `apps/frontend/.env` and set the backend URL if it differs from the
+   local default:
    ```env
    NEXT_PUBLIC_API_BASE_URL=http://localhost:3000
    NEXT_PUBLIC_STELLAR_NETWORK=testnet
@@ -232,22 +238,21 @@ Please keep `--no-verify` for emergencies only - CI runs the same checks.
 
 **Run the services (Recommended)**
 
-The backend and the frontend are separate apps and are started in separate
-terminals:
+Start the backend and frontend development servers together from the repository
+root:
 
 ```bash
-# Terminal 1 - Backend
-cd apps/backend
-npm run start:dev
-
-# Terminal 2 - Frontend
-cd apps/frontend
-npm run dev
+make dev
 
 # Terminal 3 - Watch onchain contracts (optional)
 cd apps/onchain
 cargo build --target wasm32v1-none --release
 ```
+
+Run `make help` for the available development, test, lint, build, database, and
+contract-test targets. See [CONTRIBUTING.md](CONTRIBUTING.md#make-targets) for
+prerequisites and details; `make db-reset` deletes the local PostgreSQL data
+volume.
 
 ### Testing Your Setup
 

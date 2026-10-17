@@ -13,6 +13,33 @@ This document lists every environment variable used across the Vaultix monorepo,
 - **Secret** — must never be committed to source control. Use a secrets manager (GitHub Secrets, Doppler, etc.) or a local `.env` file that is in `.gitignore`.
 - **Safe to commit** — can appear in `.env.example` without security risk.
 
+## Environment diagnostics
+
+From the repository root, run:
+
+```bash
+./scripts/doctor.sh
+./scripts/doctor.sh --json
+```
+
+The script checks Node.js (20+), npm, Rust, and either the `stellar` or
+`soroban` CLI; it reports pnpm and Docker when installed, but neither is
+required by this repository's npm-based local workflow. It checks the local
+development variables `JWT_SECRET`, `STELLAR_NETWORK`, `WALLET_SECRET`, and
+`NEXT_PUBLIC_API_BASE_URL` in the process environment and common root/backend/
+frontend/mobile `.env` file locations. It only checks whether values are
+present and never prints their contents. Make sure required secrets are real
+local values rather than the example placeholders in `.env.example`.
+
+Ports `3000`, `3001`, and `5432` are checked when `lsof` or `nc` is available.
+An occupied port or a port that cannot be checked is a warning; missing
+required tools or variables cause a non-zero exit status. `--json` writes the
+same checks and a pass/warn/fail summary as JSON for CI.
+
+The script requires Bash and works on Linux and macOS. On Windows, run it from
+WSL or Git Bash. Port checks require `lsof` or `nc`; without either, the script
+reports that port availability could not be checked.
+
 ---
 
 ## Variables that must agree across services
